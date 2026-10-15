@@ -5,10 +5,8 @@ import { sendToBackground } from '@/lib/messaging';
 import type { FindDuplicatesResponse } from '@/lib/messaging';
 import type { TabInfo } from '@/lib/match';
 
-export default defineUnlistedScript(() => {
-  const root = document.getElementById('root')!;
-  createRoot(root).render(<ConfirmPage />);
-});
+const root = document.getElementById('root')!;
+createRoot(root).render(<ConfirmPage />);
 
 function ConfirmPage() {
   const [targetUrl] = useState(() => {
