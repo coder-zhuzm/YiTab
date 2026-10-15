@@ -23,7 +23,11 @@ function ConfirmPage() {
   }, [targetUrl]);
 
   const openAnyway = () => {
-    sendToBackground({ type: 'confirmOpen', url: targetUrl }).then(() => window.close());
+    // 由本页发起导航；不要 window.close()——导航本身就会替换掉确认页，
+    // 提前 close 会打断尚未提交的导航，导致"标签关闭但什么都没打开"。
+    return sendToBackground({ type: 'confirmOpen', url: targetUrl }).then(() => {
+      window.location.href = targetUrl;
+    });
   };
 
   return (

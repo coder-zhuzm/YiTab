@@ -26,10 +26,10 @@ export default defineBackground(() => {
       if (msg.type === 'findDuplicates') {
         sendResponse(await findDuplicates(msg.url));
       } else if (msg.type === 'confirmOpen') {
+        // 只登记放行，导航由确认页自己发起（location.href）。
+        // 不在这里 tabs.update：页面随后 window.close() 会和未提交的导航竞态，
+        // 关闭早于提交时会掐断导航，表现为"标签关了但页面没开"。
         if (sender.tab?.id != null) allowed.set(sender.tab.id, Date.now());
-        await browser.tabs
-          .update(sender.tab!.id, { url: msg.url })
-          .catch(() => {});
         sendResponse({ ok: true });
       } else if (msg.type === 'switchTab') {
         await switchTab(msg, sender.tab?.id, sender.tab?.windowId);
