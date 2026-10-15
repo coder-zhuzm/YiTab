@@ -10,6 +10,7 @@ import {
   hostOf,
   type TabInfo,
 } from '@/lib/match';
+import { analyzeTabsByDomain, getDeterministicColor } from '@/lib/snapshots';
 import type { BackgroundRequest } from '@/lib/messaging';
 
 const ALLOW_TTL = 8000;
@@ -135,6 +136,78 @@ export default defineBackground(() => {
           sendResponse({ ok: true, groups: [] });
         } else if (msg.type === 'getSettings') {
           sendResponse({ ok: true, settings: await getSettings() });
+        } else if (msg.type === 'autoGroupTabs') {
+          const win =
+            msg.windowId ??
+            sender.tab?.windowId ??
+            (await chrome.windows?.getLastFocused({ populate: false }).catch(() => null))?.id;
+          if (win == null || !chrome.tabs?.group) {
+            sendResponse({ ok: false, createdGroupsCount: 0, groupedTabsCount: 0 });
+            return;
+          }
+          const tabs = await chrome.tabs.query({ windowId: win });
+          const groups = analyzeTabsByDomain(tabs, msg.minCount ?? 2);
+          let createdGroupsCount = 0;
+          let groupedTabsCount = 0;
+          for (const g of groups) {
+            try {
+              const groupId = await chrome.tabs.group({ tabIds: g.tabIds });
+              await chrome.tabGroups.update(groupId, {
+                title: g.domain,
+                color: getDeterministicColor(g.domain),
+              });
+              createdGroupsCount++;
+              groupedTabsCount += g.tabIds.length;
+            } catch (e) {
+              console.warn('[YiTab] autoGroupTabs failed for domain:', g.domain, e);
+            }
+          }
+          sendResponse({ ok: true, createdGroupsCount, groupedTabsCount });
+        } else if (msg.type === 'ungroupAllTabs') {
+          const win =
+            msg.windowId ??
+            sender.tab?.windowId ??
+            (await chrome.windows?.getLastFocused({ populate: false }).catch(() => null))?.id;
+          if (win == null || !chrome.tabs?.ungroup) {
+            sendResponse({ ok: false, ungroupedCount: 0 });
+            return;
+          }
+          const tabs = await chrome.tabs.query({ windowId: win });
+          const groupedTabIds = tabs
+            .filter((t) => t.groupId != null && t.groupId > 0 && t.id != null)
+            .map((t) => t.id!);
+          if (groupedTabIds.length) {
+            await chrome.tabs.ungroup(groupedTabIds).catch(() => {});
+          }
+          sendResponse({ ok: true, ungroupedCount: groupedTabIds.length });
+        } else if (msg.type === 'getCurrentWindowTabs') {
+          const win =
+            msg.windowId ??
+            sender.tab?.windowId ??
+            (await chrome.windows?.getLastFocused({ populate: false }).catch(() => null))?.id;
+          const tabs = await chrome.tabs.query(
+            win != null ? { windowId: win } : { currentWindow: true },
+          );
+          sendResponse({
+            ok: true,
+            windowId: win ?? 0,
+            tabs: tabs.map((t) => ({
+              title: t.title || t.url || '',
+              url: t.url || '',
+              favIconUrl: t.favIconUrl,
+            })),
+          });
+        } else if (msg.type === 'restoreSnapshot') {
+          if (Array.isArray(msg.urls) && msg.urls.length) {
+            if (msg.newWindow && chrome.windows?.create) {
+              await chrome.windows.create({ url: msg.urls });
+            } else {
+              for (const url of msg.urls) {
+                await chrome.tabs.create({ url }).catch(() => {});
+              }
+            }
+          }
+          sendResponse({ ok: true });
         }
       } catch (err) {
         console.error('[YiTab] Error handling message:', err);

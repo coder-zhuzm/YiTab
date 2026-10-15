@@ -49,6 +49,13 @@
   <img src="./docs/images/yitab-preview-options.png" alt="YiTab 规则配置中心" width="850" />
 </p>
 
+### 4. 标签归拢与会话快照（Extension Popup）
+点击浏览器工具栏图标即可唤出控制面板：一键按域名智能聚拢当前窗口标签至 Chrome 原生彩色标签组、暂存与恢复多份会话快照，或以 Markdown 列表、Markdown 表格、纯文本及 JSON 结构极速复制导出。
+
+<p align="center">
+  <img src="./docs/images/yitab-preview-popup.png" alt="YiTab 标签归拢与会话快照弹窗" width="400" />
+</p>
+
 ---
 
 ## 核心特性
@@ -139,17 +146,18 @@ graph LR
     C --> D[v1.0 书签健康与生态]
 ```
 
-### 阶段一：智能去重与拦截增强 (v0.3.x) - [当前阶段]
+### 阶段一：智能去重与拦截增强 (v0.3.x) - [已发布]
 - [x] 基于网络生命周期的整页导航去重拦截（Committed Navigation）
 - [x] 现代单页应用无刷新路由去重（SPA History / Hash State Toast）
 - [x] 2×2 粒度匹配矩阵（Smart, URL, Path, Domain）与参数归一化
 - [x] 交互式拦截确认页（操作吸顶、URL 剖析、全键盘支持）
 - [x] 原生 Chrome 标签组创建与归拢集成
 
-### 阶段二：标签归类与会话快照 (v0.4.x)
-- [ ] **域名智能归拢**：一键将当前窗口的杂乱标签按域名自动聚合成对应命名的 Chrome 标签组
-- [ ] **会话快照归档 (Session Snapshot)**：一键暂存当前窗口全部标签页为命名快照，支持稍后一键恢复或跨设备导出
-- [ ] **多格式导出**：支持将当前窗口/选定标签一键复制为标准 Markdown 链接列表或 JSON 结构
+### 阶段二：标签归类与会话快照 (v0.4.x) - [当前发布]
+- [x] **域名智能归拢**：一键将当前窗口的杂乱标签按域名自动聚合成对应命名的 Chrome 标签组与解散撤销
+- [x] **会话快照归档 (Session Snapshot)**：一键暂存当前窗口全部标签页为命名快照，支持稍后一键恢复、查看与单项管理
+- [x] **多格式导出**：支持将当前窗口/快照标签一键复制为标准 Markdown 列表、Markdown 表格、纯 URL 或 JSON 结构
+- [x] **工具栏控制弹窗 (Popup)**：轻量交互面板集成标签聚合、快照中心与导出模块
 
 ### 阶段三：快速检索与命令导航 (v0.5.x)
 - [ ] **全局命令面板 (Command Palette)**：全局快捷键唤出（如 `Alt+K`），快速模糊搜索并跳转已开标签页、书签与近期历史
@@ -166,7 +174,7 @@ graph LR
 - **核心框架**：[WXT](https://wxt.dev/)（新一代 WebExtension 框架，MV3 原生、Vite 驱动）
 - **UI 界面**：React 18 + TypeScript (Strict Mode) + Ant Design 5 (Token 主题深度定制)
 - **隔离机制**：Shadow DOM 样式隔离（SPA 浮窗）+ 独立 Extension 页面
-- **自动化测试**：Node.js 原生测试套件（35 项核心算法用例）+ Headless Chromium 真实端到端测试（Smoke Test）+ CDP 自动截图管线
+- **自动化测试**：Node.js 原生测试套件（39 项核心算法用例）+ Headless Chromium 真实端到端测试（Smoke Test）+ CDP 自动截图管线
 
 ---
 

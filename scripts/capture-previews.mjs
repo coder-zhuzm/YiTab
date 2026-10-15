@@ -149,6 +149,20 @@ try {
     clientSpa.close();
   }
 
+  // 4. Screenshot Popup UI (Retina 2x)
+  {
+    const { targetId } = await browser.call('Target.createTarget', { url: `${origin}/popup.html` });
+    const target = await until(async () => (await targets()).find(t => t.id === targetId), 'popup target');
+    const client = await connect(target.webSocketDebuggerUrl);
+    await client.call('Emulation.setDeviceMetricsOverride', { width: 400, height: 580, deviceScaleFactor: 2, mobile: false });
+    await until(() => client.evaluate(`document.body.innerText.includes('域名智能聚合')`), 'popup rendered');
+    await delay(600);
+    const { data } = await client.call('Page.captureScreenshot', { format: 'png' });
+    await writeFile(join(outDir, 'yitab-preview-popup.png'), Buffer.from(data, 'base64'));
+    console.log('Captured: docs/images/yitab-preview-popup.png');
+    client.close();
+  }
+
   console.log('All screenshots successfully updated!');
 } finally {
   browser?.close();

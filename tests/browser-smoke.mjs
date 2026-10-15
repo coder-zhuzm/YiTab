@@ -109,7 +109,17 @@ try {
   await clientSpa.evaluate(`document.getElementById('yitab-spa-toast-root').shadowRoot.getElementById('yitab-dismiss').click()`);
   await until(async () => !(await clientSpa.evaluate(`Boolean(document.getElementById('yitab-spa-toast-root'))`)), 'SPA toast dismissed');
 
-  console.log('PASS: options render, controlled Radio sequential saves, broad-mode warning, smart interception, match reason, open-anyway keeps both tabs, SPA in-page toast detection and dismiss.');
+  // --- Part 4: Popup UI (Organize, Snapshots, Export) ---
+  const { targetId: popupId } = await browser.call('Target.createTarget', { url: `${origin}/popup.html` });
+  const popupTarget = await until(async () => (await targets()).find(t => t.id === popupId), 'popup target');
+  const popupClient = await connect(popupTarget.webSocketDebuggerUrl);
+  const popupText = await until(() => popupClient.evaluate(`document.body.innerText.includes('域名智能聚合') && document.body.innerText`), 'popup UI rendered');
+  assert.ok(popupText.includes('标签归拢'), 'popup organize tab');
+  assert.ok(popupText.includes('会话快照'), 'popup snapshots tab');
+  assert.ok(popupText.includes('多格式导出'), 'popup export tab');
+  popupClient.close();
+
+  console.log('PASS: options render, controlled Radio sequential saves, broad-mode warning, smart interception, match reason, open-anyway keeps both tabs, SPA in-page toast detection and dismiss, popup UI tabs and domain grouping.');
 } finally {
   options?.close();
   doc1?.close();

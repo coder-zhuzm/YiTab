@@ -1,7 +1,8 @@
 import type { Settings } from './settings';
 import type { TabInfo } from './match';
+import type { SessionSnapshot, TabSnapshotItem } from './snapshots';
 
-/** confirm 页 / content script / options 与 background 之间的消息协议 */
+/** confirm 页 / popup / content script / options 与 background 之间的消息协议 */
 
 export interface FindDuplicatesRequest {
   type: 'findDuplicates';
@@ -58,6 +59,30 @@ export interface GetSettingsRequest {
   type: 'getSettings';
 }
 
+/** 阶段二：域名智能归拢与会话快照管理协议 */
+
+export interface AutoGroupTabsRequest {
+  type: 'autoGroupTabs';
+  windowId?: number;
+  minCount?: number;
+}
+
+export interface UngroupAllTabsRequest {
+  type: 'ungroupAllTabs';
+  windowId?: number;
+}
+
+export interface GetCurrentWindowTabsRequest {
+  type: 'getCurrentWindowTabs';
+  windowId?: number;
+}
+
+export interface RestoreSnapshotRequest {
+  type: 'restoreSnapshot';
+  urls: string[];
+  newWindow?: boolean;
+}
+
 export type BackgroundRequest =
   | FindDuplicatesRequest
   | ConfirmOpenRequest
@@ -66,7 +91,11 @@ export type BackgroundRequest =
   | GroupTabsRequest
   | UngroupTabsRequest
   | GetTabGroupsRequest
-  | GetSettingsRequest;
+  | GetSettingsRequest
+  | AutoGroupTabsRequest
+  | UngroupAllTabsRequest
+  | GetCurrentWindowTabsRequest
+  | RestoreSnapshotRequest;
 
 export interface FindDuplicatesResponse {
   ok: true;
@@ -74,8 +103,26 @@ export interface FindDuplicatesResponse {
 }
 
 export interface SimpleOkResponse {
-  ok: true;
+  ok: boolean;
   groupId?: number;
+  message?: string;
+}
+
+export interface AutoGroupTabsResponse {
+  ok: boolean;
+  createdGroupsCount: number;
+  groupedTabsCount: number;
+}
+
+export interface UngroupAllTabsResponse {
+  ok: boolean;
+  ungroupedCount: number;
+}
+
+export interface GetCurrentWindowTabsResponse {
+  ok: true;
+  tabs: TabSnapshotItem[];
+  windowId: number;
 }
 
 export interface TabGroupInfo {

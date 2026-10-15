@@ -1,6 +1,6 @@
 {
   "name": "yitab",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "YiTab 一签 — Chrome 标签页 / 书签效率工具套件",
   "private": true,
   "type": "module",
