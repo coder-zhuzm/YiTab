@@ -1,12 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppstoreOutlined,
+  BookOutlined,
   CheckCircleFilled,
   ClockCircleOutlined,
+  CloseOutlined,
   DeleteOutlined,
   EditOutlined,
+  FolderOpenOutlined,
   GlobalOutlined,
+  HistoryOutlined,
   PlusOutlined,
+  ReloadOutlined,
+  RocketOutlined,
   SearchOutlined,
   SettingOutlined,
   SwapOutlined,
@@ -21,6 +27,7 @@ import {
   Form,
   Input,
   type InputRef,
+  message,
   Modal,
   Radio,
   Select,
@@ -30,6 +37,11 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
+import {
+  filterBookmarkCards,
+  loadBookmarkCards,
+  type BookmarkFolderCard,
+} from '@/lib/bookmarks-matrix';
 import {
   formatTimeGreeting,
   generateSvgFavicon,
@@ -62,6 +74,7 @@ import {
   type RecommendedStation,
 } from '@/lib/recommendations';
 import { filterAndRankItems, type SearchItem } from '@/lib/search';
+import { getSnapshots, type SessionSnapshot } from '@/lib/snapshots';
 
 const { Text, Title } = Typography;
 
@@ -100,6 +113,13 @@ export default function NewTabApp() {
   // 猜你想开智能推选
   const [recommendations, setRecommendations] = useState<RecommendedStation[]>([]);
 
+  // 书签快捷平铺看板
+  const [bookmarkCards, setBookmarkCards] = useState<BookmarkFolderCard[]>([]);
+  const [bookmarkSearch, setBookmarkSearch] = useState('');
+
+  // 会话现场恢复
+  const [recentSnapshot, setRecentSnapshot] = useState<SessionSnapshot | null>(null);
+
   // 搜索框状态
   const [searchInput, setSearchInput] = useState('');
   const [activeEngine, setActiveEngine] = useState<SearchEngine>(SEARCH_ENGINES[0]);
@@ -113,6 +133,24 @@ export default function NewTabApp() {
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const [form] = Form.useForm();
   const [groupForm] = Form.useForm();
+
+  // 全键盘快捷键: 按 '/' 键自动聚焦搜索框，按 Escape 失焦
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.key === '/' &&
+        document.activeElement?.tagName !== 'INPUT' &&
+        document.activeElement?.tagName !== 'TEXTAREA'
+      ) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (e.key === 'Escape') {
+        searchInputRef.current?.blur();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // 监听系统深浅色切换
   useEffect(() => {
@@ -174,6 +212,14 @@ export default function NewTabApp() {
       refreshAndCacheRecommendations(8).then((fresh) => {
         if (fresh && fresh.length > 0) {
           setRecommendations(fresh);
+        }
+      });
+
+      // 4. 读取书签平铺目录与最近会话快照
+      loadBookmarkCards().then((cards) => setBookmarkCards(cards));
+      getSnapshots().then((snaps) => {
+        if (snaps && snaps.length > 0) {
+          setRecentSnapshot(snaps[0]);
         }
       });
     }
@@ -332,6 +378,32 @@ export default function NewTabApp() {
     }
   };
 
+  const [messageApi, contextHolder] = message.useMessage();
+  const [snapshotDismissed, setSnapshotDismissed] = useState(false);
+
+  // 过滤书签目录卡片
+  const displayBookmarkCards = useMemo(() => {
+    return filterBookmarkCards(bookmarkCards, bookmarkSearch);
+  }, [bookmarkCards, bookmarkSearch]);
+
+  // 一键恢复会话快照
+  const handleRestoreSnapshot = async (snapshot: SessionSnapshot) => {
+    if (!snapshot.tabs || snapshot.tabs.length === 0) return;
+    if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+      for (const tab of snapshot.tabs) {
+        if (tab.url) {
+          chrome.tabs.create({ url: tab.url, active: false });
+        }
+      }
+      messageApi.success(`已在后台开启 ${snapshot.tabs.length} 个标签页`);
+    } else {
+      snapshot.tabs.slice(0, 5).forEach((t) => {
+        if (t.url) window.open(t.url, '_blank');
+      });
+      messageApi.success(`已恢复会话页面`);
+    }
+  };
+
   return (
     <ConfigProvider
       theme={{
@@ -344,6 +416,7 @@ export default function NewTabApp() {
         },
       }}
     >
+      {contextHolder}
       <div className="newtab-container">
         {/* 顶部状态与模式切换栏 */}
         <header className="newtab-header">
@@ -431,7 +504,7 @@ export default function NewTabApp() {
                 onPressEnter={handleSearchSubmit}
                 style={{ fontSize: 15 }}
                 suffix={
-                  searchInput && (
+                  searchInput ? (
                     <Button
                       type="primary"
                       size="small"
@@ -440,6 +513,19 @@ export default function NewTabApp() {
                     >
                       {parsedSearch.isAddress ? '直达' : '搜索'}
                     </Button>
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: '#94a3b8',
+                        background: isDark ? '#334155' : '#f1f5f9',
+                        padding: '1px 6px',
+                        borderRadius: 4,
+                        userSelect: 'none',
+                      }}
+                    >
+                      / 聚焦
+                    </span>
                   )
                 }
               />
@@ -742,6 +828,132 @@ export default function NewTabApp() {
             </div>
           )}
         </div>
+
+        {/* 📑 书签快捷直展矩阵 (Bookmarks Direct Matrix) */}
+        {bookmarkCards.length > 0 && (
+          <div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 14,
+              }}
+            >
+              <Title level={5} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <BookOutlined style={{ color: '#10b981' }} /> 书签直展矩阵
+                <span style={{ fontSize: 11, fontWeight: 'normal', color: '#94a3b8' }}>
+                  按目录平铺聚合
+                </span>
+              </Title>
+
+              <Input
+                placeholder="快速筛选书签或目录..."
+                prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+                value={bookmarkSearch}
+                onChange={(e) => setBookmarkSearch(e.target.value)}
+                allowClear
+                size="small"
+                style={{ width: 220, borderRadius: 6 }}
+              />
+            </div>
+
+            {displayBookmarkCards.length === 0 ? (
+              <Card style={{ borderRadius: 10, textAlign: 'center', padding: '20px 0' }}>
+                <Empty description="未找到匹配的书签项" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              </Card>
+            ) : (
+              <div className="bookmark-matrix-grid">
+                {displayBookmarkCards.map((card) => (
+                  <div key={card.id} className="bookmark-folder-card">
+                    <div className="bookmark-folder-header">
+                      <Space direction="horizontal" size="small" style={{ overflow: 'hidden' }}>
+                        <FolderOpenOutlined style={{ color: '#f59e0b', fontSize: 15 }} />
+                        <Text strong style={{ fontSize: 13 }} ellipsis>
+                          {card.name}
+                        </Text>
+                      </Space>
+                      <Tag style={{ margin: 0, fontSize: 10 }}>{card.totalCount} 项</Tag>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {card.items.map((item) => {
+                        const fallback = generateSvgFavicon(item.title, item.domain || 'bm');
+                        return (
+                          <div
+                            key={item.id}
+                            className="bookmark-link-item"
+                            onClick={() => handleOpenUrl(item.url)}
+                            title={item.title}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                              <img
+                                src={`https://www.google.com/s2/favicons?domain=${item.domain || 'chrome'}&sz=32`}
+                                alt=""
+                                style={{ width: 14, height: 14, borderRadius: 2, flexShrink: 0 }}
+                                onError={(e) => {
+                                  e.currentTarget.onerror = null;
+                                  e.currentTarget.src = fallback;
+                                }}
+                              />
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {item.title}
+                              </span>
+                            </div>
+                            <span style={{ fontSize: 11, color: '#94a3b8', flexShrink: 0, marginLeft: 6 }}>
+                              {item.domain}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 🗂️ 会话现场恢复栏 (Session Resume Bar) */}
+        {recentSnapshot && !snapshotDismissed && recentSnapshot.tabs.length > 0 && (
+          <div className="session-resume-bar">
+            <Space direction="horizontal" size="middle">
+              <RocketOutlined style={{ color: '#3b82f6', fontSize: 18 }} />
+              <div>
+                <Text strong style={{ fontSize: 13.5 }}>
+                  上次工作现场: {recentSnapshot.name}
+                </Text>
+                <div style={{ fontSize: 11.5, color: '#94a3b8' }}>
+                  包含 {recentSnapshot.tabs.length} 个页面快照 · 保存于{' '}
+                  {new Date(recentSnapshot.createdAt).toLocaleDateString()}{' '}
+                  {new Date(recentSnapshot.createdAt).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </div>
+              </div>
+            </Space>
+
+            <Space direction="horizontal" size="small">
+              <Button
+                type="primary"
+                size="small"
+                icon={<RocketOutlined />}
+                onClick={() => handleRestoreSnapshot(recentSnapshot)}
+              >
+                一键恢复现场 ({recentSnapshot.tabs.length})
+              </Button>
+              <Tooltip title="不再提示本次快照">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<CloseOutlined />}
+                  onClick={() => setSnapshotDismissed(true)}
+                />
+              </Tooltip>
+            </Space>
+          </div>
+        )}
 
         {/* 添加/编辑固钉模态框 */}
         <Modal
