@@ -1,6 +1,7 @@
 import type { Settings } from './settings';
 import type { TabInfo } from './match';
 import type { SessionSnapshot, TabSnapshotItem } from './snapshots';
+import type { SearchItem, SearchItemKind } from './search';
 
 /** confirm 页 / popup / content script / options 与 background 之间的消息协议 */
 
@@ -83,6 +84,21 @@ export interface RestoreSnapshotRequest {
   newWindow?: boolean;
 }
 
+/** 阶段三：快速检索与全局命令面板协议 */
+
+export interface SearchItemsRequest {
+  type: 'searchItems';
+  query: string;
+  kindFilter?: 'all' | SearchItemKind;
+  limit?: number;
+}
+
+export interface ExecuteCommandRequest {
+  type: 'executeCommand';
+  action: string;
+  windowId?: number;
+}
+
 export type BackgroundRequest =
   | FindDuplicatesRequest
   | ConfirmOpenRequest
@@ -95,7 +111,9 @@ export type BackgroundRequest =
   | AutoGroupTabsRequest
   | UngroupAllTabsRequest
   | GetCurrentWindowTabsRequest
-  | RestoreSnapshotRequest;
+  | RestoreSnapshotRequest
+  | SearchItemsRequest
+  | ExecuteCommandRequest;
 
 export interface FindDuplicatesResponse {
   ok: true;
@@ -140,6 +158,16 @@ export interface GetTabGroupsResponse {
 export interface GetSettingsResponse {
   ok: true;
   settings: Settings;
+}
+
+export interface SearchItemsResponse {
+  ok: true;
+  items: SearchItem[];
+}
+
+export interface ExecuteCommandResponse {
+  ok: boolean;
+  message: string;
 }
 
 export function sendToBackground<T>(msg: BackgroundRequest): Promise<T> {

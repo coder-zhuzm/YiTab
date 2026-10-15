@@ -10,7 +10,15 @@ import {
   hostOf,
   type TabInfo,
 } from '@/lib/match';
-import { analyzeTabsByDomain, getDeterministicColor } from '@/lib/snapshots';
+import { analyzeTabsByDomain, getDeterministicColor, saveSnapshot } from '@/lib/snapshots';
+import {
+  ACTION_COMMANDS,
+  extractHostname,
+  filterAndRankItems,
+  formatOmniboxSuggest,
+  type SearchItem,
+  type SearchItemKind,
+} from '@/lib/search';
 import type { BackgroundRequest } from '@/lib/messaging';
 
 const ALLOW_TTL = 8000;
@@ -208,6 +216,19 @@ export default defineBackground(() => {
             }
           }
           sendResponse({ ok: true });
+        } else if (msg.type === 'searchItems') {
+          const items = await queryAllSearchItems(
+            msg.query,
+            msg.kindFilter ?? 'all',
+            msg.limit ?? 30,
+          );
+          sendResponse({ ok: true, items });
+        } else if (msg.type === 'executeCommand') {
+          const message = await executeActionCommand(
+            msg.action,
+            msg.windowId ?? sender.tab?.windowId,
+          );
+          sendResponse({ ok: true, message });
         }
       } catch (err) {
         console.error('[YiTab] Error handling message:', err);
@@ -217,7 +238,59 @@ export default defineBackground(() => {
     return true; // 异步 sendResponse
   });
 
-  console.info('[YiTab] background ready with SPA & TabGroups support');
+  // 阶段三：Omnibox 地址栏搜索集成 (tab + 空格)
+  if (chrome.omnibox) {
+    chrome.omnibox.setDefaultSuggestion({
+      description: 'YiTab: 输入关键词搜索已开标签、书签、历史与快捷指令 (↵ 执行)',
+    });
+
+    chrome.omnibox.onInputChanged.addListener(async (text, suggest) => {
+      try {
+        const items = await queryAllSearchItems(text, 'all', 6);
+        const suggestions = items.map((item) => formatOmniboxSuggest(item, text));
+        suggest(suggestions);
+      } catch (e) {
+        console.warn('[YiTab] omnibox onInputChanged error:', e);
+      }
+    });
+
+    chrome.omnibox.onInputEntered.addListener(async (content, disposition) => {
+      try {
+        await handleOmniboxInput(content, disposition);
+      } catch (e) {
+        console.warn('[YiTab] omnibox onInputEntered error:', e);
+      }
+    });
+  }
+
+  // 阶段三：全局快捷键唤出命令面板 (Alt+K / Cmd+K)
+  if (chrome.commands) {
+    chrome.commands.onCommand.addListener(async (command) => {
+      if (command === 'toggle-palette') {
+        try {
+          const [activeTab] = await chrome.tabs.query({
+            active: true,
+            lastFocusedWindow: true,
+          });
+          if (activeTab?.id != null) {
+            const delivered = await chrome.tabs
+              .sendMessage(activeTab.id, { type: 'yitab_toggle_palette' })
+              .catch(() => null);
+            if (!delivered) {
+              // 在无法运行内容脚本的特殊受限页（如 chrome:// 或 New Tab）回退打开 Popup
+              if (chrome.action?.openPopup) {
+                await chrome.action.openPopup().catch(() => {});
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[YiTab] toggle-palette failed:', e);
+        }
+      }
+    });
+  }
+
+  console.info('[YiTab] background ready with SPA, TabGroups & Omnibox support');
 });
 
 function confirmURL(url: string): string {
@@ -425,3 +498,256 @@ async function handleNavigation(
     }
   }
 }
+
+/** 阶段三：跨标签页、书签、历史与快捷指令的多源统一检索 */
+async function queryAllSearchItems(
+  query: string,
+  kindFilter: 'all' | SearchItemKind = 'all',
+  limit = 30,
+): Promise<SearchItem[]> {
+  const items: SearchItem[] = [];
+
+  // 1. 已打开的标签页
+  if (kindFilter === 'all' || kindFilter === 'tab') {
+    try {
+      const [tabs, groups] = await Promise.all([
+        chrome.tabs.query({}),
+        chrome.tabGroups ? chrome.tabGroups.query({}).catch(() => []) : [],
+      ]);
+      const groupMap = new Map<number, { title?: string; color?: string }>();
+      for (const g of groups) {
+        groupMap.set(g.id, { title: g.title, color: g.color });
+      }
+
+      for (const t of tabs) {
+        if (!t.url || INTERNAL_URL_RE.test(t.url)) continue;
+        const grp = t.groupId && t.groupId > 0 ? groupMap.get(t.groupId) : undefined;
+        items.push({
+          id: `tab:${t.id}`,
+          kind: 'tab',
+          title: t.title || t.url,
+          url: t.url,
+          domain: extractHostname(t.url),
+          favicon: t.favIconUrl,
+          tabId: t.id,
+          windowId: t.windowId,
+          active: t.active,
+          groupId: t.groupId && t.groupId > 0 ? t.groupId : undefined,
+          groupTitle: grp?.title,
+          groupColor: grp?.color,
+        });
+      }
+    } catch (e) {
+      console.warn('[YiTab] Query tabs for search failed:', e);
+    }
+  }
+
+  // 2. 快捷指令
+  if (kindFilter === 'all' || kindFilter === 'command') {
+    for (const cmd of ACTION_COMMANDS) {
+      items.push({
+        id: cmd.id,
+        kind: 'command',
+        title: cmd.title,
+        description: cmd.description,
+        commandAction: cmd.action,
+      });
+    }
+  }
+
+  // 3. 书签
+  if ((kindFilter === 'all' || kindFilter === 'bookmark') && chrome.bookmarks) {
+    try {
+      const bookmarks = await chrome.bookmarks.search(query || 'http');
+      for (const bm of bookmarks.slice(0, 50)) {
+        if (bm.url && !INTERNAL_URL_RE.test(bm.url)) {
+          items.push({
+            id: `bm:${bm.id}`,
+            kind: 'bookmark',
+            title: bm.title || bm.url,
+            url: bm.url,
+            domain: extractHostname(bm.url),
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[YiTab] Query bookmarks failed:', e);
+    }
+  }
+
+  // 4. 历史记录
+  if ((kindFilter === 'all' || kindFilter === 'history') && chrome.history) {
+    try {
+      const historyItems = await chrome.history.search({ text: query, maxResults: 30 });
+      for (const h of historyItems) {
+        if (h.url && !INTERNAL_URL_RE.test(h.url)) {
+          items.push({
+            id: `hist:${h.id}`,
+            kind: 'history',
+            title: h.title || h.url,
+            url: h.url,
+            domain: extractHostname(h.url),
+            description: h.lastVisitTime
+              ? new Date(h.lastVisitTime).toLocaleDateString()
+              : undefined,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[YiTab] Query history failed:', e);
+    }
+  }
+
+  return filterAndRankItems(items, query, kindFilter, limit);
+}
+
+/** 执行快捷指令 */
+async function executeActionCommand(action: string, windowId?: number): Promise<string> {
+  const win =
+    windowId ??
+    (await chrome.windows?.getLastFocused({ populate: false }).catch(() => null))?.id;
+
+  if (action === 'auto_group') {
+    if (win != null && chrome.tabs?.group) {
+      const tabs = await chrome.tabs.query({ windowId: win });
+      const groups = analyzeTabsByDomain(tabs, 2);
+      let count = 0;
+      for (const g of groups) {
+        try {
+          const groupId = await chrome.tabs.group({ tabIds: g.tabIds });
+          await chrome.tabGroups.update(groupId, {
+            title: g.domain,
+            color: getDeterministicColor(g.domain),
+          });
+          count++;
+        } catch {}
+      }
+      return `已自动聚拢 ${count} 个域名标签组`;
+    }
+    return '当前环境不支持标签分组';
+  }
+
+  if (action === 'ungroup_all') {
+    if (win != null && chrome.tabs?.ungroup) {
+      const tabs = await chrome.tabs.query({ windowId: win });
+      const grouped = tabs
+        .filter((t) => t.groupId != null && t.groupId > 0 && t.id != null)
+        .map((t) => t.id!);
+      if (grouped.length) {
+        await chrome.tabs.ungroup(grouped).catch(() => {});
+      }
+      return `已解散 ${grouped.length} 个标签分组`;
+    }
+    return '未找到分组标签';
+  }
+
+  if (action === 'save_snapshot') {
+    if (win != null) {
+      const tabs = await chrome.tabs.query({ windowId: win });
+      const items = tabs.map((t) => ({
+        title: t.title || t.url || '',
+        url: t.url || '',
+        favIconUrl: t.favIconUrl,
+      }));
+      const snap = await saveSnapshot(items);
+      return `已暂存会话快照「${snap.name}」（${snap.tabs.length} 项）`;
+    }
+    return '暂存快照失败';
+  }
+
+  if (action === 'open_options') {
+    chrome.runtime.openOptionsPage();
+    return '已打开规则配置中心';
+  }
+
+  if (action === 'close_duplicates') {
+    if (win != null) {
+      const [settings, tabs] = await Promise.all([
+        getSettings(),
+        chrome.tabs.query({ windowId: win }),
+      ]);
+      const seenKeys = new Set<string>();
+      const toRemove: number[] = [];
+      for (const t of tabs) {
+        if (!t.url || !t.id || INTERNAL_URL_RE.test(t.url)) continue;
+        const key = computeMatchKey(t.url, settings);
+        if (!key) continue;
+        if (seenKeys.has(key)) {
+          toRemove.push(t.id);
+        } else {
+          seenKeys.add(key);
+        }
+      }
+      if (toRemove.length > 0) {
+        await chrome.tabs.remove(toRemove).catch(() => {});
+        return `已扫描并清理 ${toRemove.length} 个重复标签`;
+      }
+      return '当前窗口未发现重复标签';
+    }
+  }
+
+  return '指令已就绪';
+}
+
+/** Omnibox 回车执行 */
+async function handleOmniboxInput(content: string, disposition: string): Promise<void> {
+  if (content.startsWith('tab:')) {
+    const [, tabIdStr, winIdStr] = content.split(':');
+    const tabId = parseInt(tabIdStr, 10);
+    const windowId = parseInt(winIdStr, 10);
+    if (!isNaN(tabId)) {
+      await chrome.tabs.update(tabId, { active: true }).catch(() => {});
+      if (!isNaN(windowId) && windowId > 0) {
+        await chrome.windows.update(windowId, { focused: true }).catch(() => {});
+      }
+    }
+    return;
+  }
+
+  if (content.startsWith('action:')) {
+    const action = content.slice('action:'.length);
+    await executeActionCommand(action);
+    return;
+  }
+
+  if (content.startsWith('http://') || content.startsWith('https://')) {
+    if (disposition === 'currentTab') {
+      await chrome.tabs.update({ url: content }).catch(() => {});
+    } else {
+      await chrome.tabs
+        .create({ url: content, active: disposition !== 'newBackgroundTab' })
+        .catch(() => {});
+    }
+    return;
+  }
+
+  // 普通文本回车：匹配度最高项
+  const items = await queryAllSearchItems(content, 'all', 1);
+  if (items.length > 0) {
+    const top = items[0];
+    if (top.kind === 'tab' && top.tabId != null) {
+      await chrome.tabs.update(top.tabId, { active: true }).catch(() => {});
+      if (top.windowId != null) {
+        await chrome.windows.update(top.windowId, { focused: true }).catch(() => {});
+      }
+      return;
+    }
+    if (top.kind === 'command' && top.commandAction) {
+      await executeActionCommand(top.commandAction);
+      return;
+    }
+    if (top.url) {
+      await chrome.tabs.create({ url: top.url }).catch(() => {});
+      return;
+    }
+  }
+
+  // 默认导航：搜索
+  const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(content)}`;
+  if (disposition === 'currentTab') {
+    await chrome.tabs.update({ url: searchUrl }).catch(() => {});
+  } else {
+    await chrome.tabs.create({ url: searchUrl }).catch(() => {});
+  }
+}
+

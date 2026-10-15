@@ -28,15 +28,19 @@ import {
   FolderOpenOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SearchOutlined,
   SettingOutlined,
+  ThunderboltOutlined,
   UndoOutlined,
 } from '@ant-design/icons';
 import { sendToBackground } from '@/lib/messaging';
 import type {
   AutoGroupTabsResponse,
   GetCurrentWindowTabsResponse,
+  SearchItemsResponse,
   UngroupAllTabsResponse,
 } from '@/lib/messaging';
+import type { SearchItem, SearchItemKind } from '@/lib/search';
 import {
   analyzeTabsByDomain,
   deleteSnapshot,
@@ -68,6 +72,72 @@ function PopupApp() {
   const [exportSource, setExportSource] = useState<'current' | string>('current');
   const [exportFormat, setExportFormat] = useState<ExportFormat>('markdown_list');
   const [copied, setCopied] = useState(false);
+
+  // 阶段三：搜索与快捷指令状态
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchKind, setSearchKind] = useState<'all' | SearchItemKind>('all');
+  const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  // 执行搜索
+  const performSearch = async (q: string, kind: 'all' | SearchItemKind) => {
+    setSearchLoading(true);
+    try {
+      const res = await sendToBackground<SearchItemsResponse>({
+        type: 'searchItems',
+        query: q,
+        kindFilter: kind,
+        limit: 35,
+      });
+      if (res && res.ok) {
+        setSearchResults(res.items);
+      }
+    } catch (e) {
+      console.warn('Search failed:', e);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTabKey === 'search') {
+      performSearch(searchQuery, searchKind);
+    }
+  }, [activeTabKey, searchKind]);
+
+  const handleSearchInputChange = (val: string) => {
+    setSearchQuery(val);
+    performSearch(val, searchKind);
+  };
+
+  const handleExecuteSearchItem = async (item: SearchItem) => {
+    if (item.kind === 'tab' && item.tabId != null) {
+      await sendToBackground({
+        type: 'switchTab',
+        tabId: item.tabId,
+        windowId: item.windowId ?? 0,
+        closeSelf: false,
+      });
+      window.close();
+      return;
+    }
+    if (item.kind === 'command' && item.commandAction) {
+      const res = await sendToBackground<{ ok: boolean; message: string }>({
+        type: 'executeCommand',
+        action: item.commandAction,
+      });
+      if (res?.message) {
+        alert(res.message);
+      }
+      refreshCurrentWindow();
+      performSearch(searchQuery, searchKind);
+      return;
+    }
+    if (item.url) {
+      chrome.tabs.create({ url: item.url });
+      window.close();
+    }
+  };
 
   // 刷新当前窗口标签与快照
   const refreshCurrentWindow = async () => {
@@ -275,7 +345,7 @@ function PopupApp() {
                     borderRadius: 4,
                   }}
                 >
-                  v0.4.0
+                  v0.5.0
                 </Tag>
               </div>
               <Text type="secondary" style={{ fontSize: 11 }}>
@@ -457,6 +527,192 @@ function PopupApp() {
                       </Button>
                     </Space.Compact>
                   </Card>
+                </div>
+              ),
+            },
+            {
+              key: 'search',
+              label: (
+                <span>
+                  <SearchOutlined />
+                  快速检索
+                </span>
+              ),
+              children: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <Input
+                    prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+                    placeholder="搜索标签、书签或快捷指令 (Alt+K 随时唤出)"
+                    allowClear
+                    value={searchQuery}
+                    onChange={(e) => handleSearchInputChange(e.target.value)}
+                    style={{ borderRadius: 8 }}
+                  />
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Radio.Group
+                      size="small"
+                      value={searchKind}
+                      onChange={(e) => setSearchKind(e.target.value)}
+                      optionType="button"
+                      buttonStyle="solid"
+                    >
+                      <Radio.Button value="all">全部</Radio.Button>
+                      <Radio.Button value="tab">标签</Radio.Button>
+                      <Radio.Button value="command">指令</Radio.Button>
+                      <Radio.Button value="bookmark">书签</Radio.Button>
+                      <Radio.Button value="history">历史</Radio.Button>
+                    </Radio.Group>
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      共 {searchResults.length} 项
+                    </Text>
+                  </div>
+
+                  <div
+                    style={{
+                      maxHeight: 330,
+                      minHeight: 220,
+                      overflowY: 'auto',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                      paddingRight: 2,
+                    }}
+                  >
+                    {searchResults.length === 0 ? (
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description="未找到匹配项，可尝试搜索其他关键词"
+                        style={{ margin: '40px 0' }}
+                      />
+                    ) : (
+                      searchResults.map((item) => {
+                        const kindTagColor =
+                          item.kind === 'tab'
+                            ? 'blue'
+                            : item.kind === 'command'
+                              ? 'purple'
+                              : item.kind === 'bookmark'
+                                ? 'green'
+                                : 'orange';
+                        const kindText =
+                          item.kind === 'tab'
+                            ? '标签'
+                            : item.kind === 'command'
+                              ? '指令'
+                              : item.kind === 'bookmark'
+                                ? '书签'
+                                : '历史';
+
+                        return (
+                          <div
+                            key={item.id}
+                            onClick={() => handleExecuteSearchItem(item)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 10,
+                              padding: '8px 10px',
+                              borderRadius: 8,
+                              background: '#fff',
+                              border: '1px solid #e2e8f0',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = '#4f46e5';
+                              e.currentTarget.style.background = '#f8fafc';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = '#e2e8f0';
+                              e.currentTarget.style.background = '#fff';
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: 24,
+                                height: 24,
+                                borderRadius: 6,
+                                background: '#f1f5f9',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                                overflow: 'hidden',
+                              }}
+                            >
+                              {item.favicon ? (
+                                <img
+                                  src={item.favicon}
+                                  alt=""
+                                  style={{ width: 16, height: 16, objectFit: 'contain' }}
+                                  onError={(e) => {
+                                    (e.target as HTMLElement).style.display = 'none';
+                                  }}
+                                />
+                              ) : item.kind === 'command' ? (
+                                <ThunderboltOutlined
+                                  style={{ color: '#9333ea', fontSize: 13 }}
+                                />
+                              ) : (
+                                <AppstoreOutlined
+                                  style={{ color: '#4f46e5', fontSize: 13 }}
+                                />
+                              )}
+                            </div>
+
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <Text
+                                strong
+                                ellipsis
+                                style={{
+                                  fontSize: 12,
+                                  color: '#0f172a',
+                                  display: 'block',
+                                }}
+                              >
+                                {item.title}
+                              </Text>
+                              <Text
+                                type="secondary"
+                                ellipsis
+                                style={{ fontSize: 11, display: 'block' }}
+                              >
+                                {item.groupTitle && (
+                                  <span
+                                    style={{
+                                      display: 'inline-block',
+                                      width: 5,
+                                      height: 5,
+                                      borderRadius: '50%',
+                                      background: item.groupColor || '#4f46e5',
+                                      marginRight: 4,
+                                    }}
+                                  />
+                                )}
+                                {item.groupTitle ? `${item.groupTitle} · ` : ''}
+                                {item.domain || item.description || item.url}
+                              </Text>
+                            </div>
+
+                            <Tag
+                              color={kindTagColor}
+                              style={{ margin: 0, fontSize: 10, borderRadius: 4 }}
+                            >
+                              {kindText}
+                            </Tag>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               ),
             },

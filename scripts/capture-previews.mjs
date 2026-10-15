@@ -163,6 +163,26 @@ try {
     client.close();
   }
 
+  // 5. Screenshot Global Command Palette (Retina 2x)
+  {
+    const { targetId } = await browser.call('Target.createTarget', { url: `${serverBase}/dashboard` });
+    const target = await until(async () => (await targets()).find(t => t.id === targetId), 'palette target tab');
+    const client = await connect(target.webSocketDebuggerUrl);
+    await client.call('Emulation.setDeviceMetricsOverride', { width: 1200, height: 720, deviceScaleFactor: 2, mobile: false });
+    await until(() => client.evaluate('document.readyState === "complete"'), 'target loaded');
+    await delay(400);
+
+    // Trigger Alt+K
+    await client.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', altKey: true, bubbles: true }))`);
+    await until(() => client.evaluate(`Boolean(document.getElementById('yitab-command-palette-root'))`), 'palette opened');
+    await delay(600);
+
+    const { data } = await client.call('Page.captureScreenshot', { format: 'png' });
+    await writeFile(join(outDir, 'yitab-preview-palette.png'), Buffer.from(data, 'base64'));
+    console.log('Captured: docs/images/yitab-preview-palette.png');
+    client.close();
+  }
+
   console.log('All screenshots successfully updated!');
 } finally {
   browser?.close();

@@ -109,17 +109,55 @@ try {
   await clientSpa.evaluate(`document.getElementById('yitab-spa-toast-root').shadowRoot.getElementById('yitab-dismiss').click()`);
   await until(async () => !(await clientSpa.evaluate(`Boolean(document.getElementById('yitab-spa-toast-root'))`)), 'SPA toast dismissed');
 
-  // --- Part 4: Popup UI (Organize, Snapshots, Export) ---
+  // --- Part 4: Popup UI (Organize, Search, Snapshots, Export) ---
   const { targetId: popupId } = await browser.call('Target.createTarget', { url: `${origin}/popup.html` });
   const popupTarget = await until(async () => (await targets()).find(t => t.id === popupId), 'popup target');
   const popupClient = await connect(popupTarget.webSocketDebuggerUrl);
   const popupText = await until(() => popupClient.evaluate(`document.body.innerText.includes('域名智能聚合') && document.body.innerText`), 'popup UI rendered');
   assert.ok(popupText.includes('标签归拢'), 'popup organize tab');
+  assert.ok(popupText.includes('快速检索'), 'popup search tab');
   assert.ok(popupText.includes('会话快照'), 'popup snapshots tab');
   assert.ok(popupText.includes('多格式导出'), 'popup export tab');
   popupClient.close();
 
-  console.log('PASS: options render, controlled Radio sequential saves, broad-mode warning, smart interception, match reason, open-anyway keeps both tabs, SPA in-page toast detection and dismiss, popup UI tabs and domain grouping.');
+  // --- Part 5: In-Page Command Palette (Alt+K) & Unified Search ---
+  await clientSpa.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', altKey: true, bubbles: true, cancelable: true }))`);
+  await until(() => clientSpa.evaluate(`Boolean(document.getElementById('yitab-command-palette-root'))`), 'command palette mounted on Alt+K');
+  const paletteText = await clientSpa.evaluate(`document.getElementById('yitab-command-palette-root').shadowRoot.querySelector('.palette-box').innerText`);
+  assert.ok(paletteText.includes('全部'), 'palette filter tab all');
+  assert.ok(paletteText.includes('已开标签'), 'palette filter tab tabs');
+  assert.ok(paletteText.includes('快捷指令'), 'palette filter tab commands');
+
+  // Input search query
+  await clientSpa.evaluate(`(() => {
+    const root = document.getElementById('yitab-command-palette-root')?.shadowRoot;
+    const input = root?.getElementById('yitab-palette-input');
+    if (input) {
+      input.value = '归拢';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  })()`);
+  await until(() => clientSpa.evaluate(`
+    Boolean(document.getElementById('yitab-command-palette-root')?.shadowRoot?.querySelector('.palette-box')?.innerText.includes('按域名智能归拢标签'))
+  `), 'search results filtered for command');
+
+  // Close palette on Esc
+  await clientSpa.evaluate(`(() => {
+    const root = document.getElementById('yitab-command-palette-root')?.shadowRoot;
+    const input = root?.getElementById('yitab-palette-input');
+    input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  })()`);
+  await until(async () => !(await clientSpa.evaluate(`Boolean(document.getElementById('yitab-command-palette-root'))`)), 'palette dismissed on Esc');
+
+  // Verify background executeCommand via options page
+  const cmdResult = await options.evaluate(`
+    new Promise(resolve => {
+      chrome.runtime.sendMessage({ type: 'executeCommand', action: 'auto_group' }, res => resolve(res));
+    })
+  `);
+  assert.ok(cmdResult && cmdResult.ok, 'executeCommand returns ok');
+
+  console.log('PASS: options render, controlled Radio sequential saves, broad-mode warning, smart interception, match reason, open-anyway keeps both tabs, SPA in-page toast detection and dismiss, popup UI tabs, in-page Command Palette Alt+K spotlight search, and background command execution.');
 } finally {
   options?.close();
   doc1?.close();
