@@ -11,6 +11,7 @@
     "zip": "wxt build && wxt zip",
     "compile": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "screenshot": "node scripts/capture-previews.mjs",
     "postinstall": "wxt prepare"
   },
   "dependencies": {

@@ -14,6 +14,8 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'package.json'
     tags:
       - 'v*'
 
@@ -34,66 +36,63 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
 
-      - name: 安装项目依赖
-        run: npm ci
-
-      - name: 执行单元测试
-        run: npm test
-
-      - name: 执行 TypeScript 静态类型检查
-        run: npm run compile
-
-      - name: 读取 package.json 版本号并检查 Tag 状态
-        id: pkg_info
+      - name: 检查版本号与发布条件
+        id: check_plan
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "tag_name=v${VERSION}" >> $GITHUB_OUTPUT
 
-          # 检查对应版本的 Tag 是否已经存在于远程或本地
+          TAG_EXISTS=false
           if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
-            echo "tag_exists=true" >> $GITHUB_OUTPUT
-            echo "版本 v${VERSION} 的 Tag 已存在"
-          else
-            echo "tag_exists=false" >> $GITHUB_OUTPUT
-            echo "检测到新版本 v${VERSION}，尚未发布对应 Tag"
+            TAG_EXISTS=true
           fi
 
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "push" ] && [ "$TAG_EXISTS" = "false" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "🚀 检测到 package.json 版本变更 (v${VERSION})，将执行构建与发布"
+          else
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "⏩ 版本 v${VERSION} 已存在且非手动触发，跳过本次构建"
+          fi
+
+      - name: 安装项目依赖
+        if: steps.check_plan.outputs.should_build == 'true'
+        run: npm ci
+
+      - name: 执行单元测试
+        if: steps.check_plan.outputs.should_build == 'true'
+        run: npm test
+
+      - name: 执行 TypeScript 静态类型检查
+        if: steps.check_plan.outputs.should_build == 'true'
+        run: npm run compile
+
       - name: 构建并打包 Chrome 扩展 (.zip)
+        if: steps.check_plan.outputs.should_build == 'true'
         run: npm run zip
 
       - name: 上传构建产物至 GitHub Artifacts (随时可免登录下载)
+        if: steps.check_plan.outputs.should_build == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: yitab-v${{ steps.pkg_info.outputs.version }}-chrome-mv3
+          name: yitab-v${{ steps.check_plan.outputs.version }}-chrome-mv3
           path: .output/*.zip
           retention-days: 90
 
-      - name: 判断是否需要触发 GitHub Release 发布
-        id: should_release
-        run: |
-          # 满足以下任意条件即自动发布：
-          # 1. 显式推送了 v* Git Tag
-          # 2. 手动触发 (workflow_dispatch) 且勾选了 create_release
-          # 3. push 到 main 分支时检测到 package.json 中的版本号尚未发布对应 Tag
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "release=true" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.create_release }}" = "true" ]; then
-            echo "release=true" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ steps.pkg_info.outputs.tag_exists }}" = "false" ]; then
-            echo "release=true" >> $GITHUB_OUTPUT
-          else
-            echo "release=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: 创建 GitHub Release 并挂载扩展安装包
-        if: steps.should_release.outputs.release == 'true'
+        if: |
+          steps.check_plan.outputs.should_build == 'true' &&
+          (github.ref_type == 'tag' ||
+           (github.event_name == 'workflow_dispatch' && inputs.create_release) ||
+           (github.event_name == 'push'))
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.pkg_info.outputs.tag_name }}
-          name: YiTab 一签 ${{ steps.pkg_info.outputs.tag_name }}
+          tag_name: ${{ steps.check_plan.outputs.tag_name }}
+          name: YiTab 一签 ${{ steps.check_plan.outputs.tag_name }}
           files: .output/*.zip
           generate_release_notes: true
           prerelease: ${{ inputs.is_prerelease || false }}

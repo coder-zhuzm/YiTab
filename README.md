@@ -15,6 +15,29 @@
   - **静默切换**（默认）：自动跳到已有标签，新开的标签一闪即逝
   - **页内确认**：新标签原地变成大按钮确认页，一眼看到已有标签的标题/图标，「切换过去」「仍要新开 ↗」点一下即可（支持 `Enter` / `Esc`）
 
+## 界面预览
+
+### 1. 拦截确认页（整页导航拦截）
+> 当你在地址栏、书签、或外部链接打开已有标签时自动拦截。顶部磨砂吸顶操作栏确保按钮永远触手可及，配合等宽 URL 结构高亮和立体 `<kbd>` 快捷键提示。
+
+<p align="center">
+  <img src="./docs/images/yitab-preview-confirm.png" alt="YiTab 拦截确认页预览" width="850" />
+</p>
+
+### 2. SPA 站内路由悬浮提示（非侵入式轻量拦截）
+> 针对现代单页应用（GitHub、Jira、各类管理控制台）的前端路由跳转，采用隔离 Shadow DOM 灵动岛通知条，不刷新、不破坏当前页面状态与输入内容。
+
+<p align="center">
+  <img src="./docs/images/yitab-preview-spa-toast.png" alt="YiTab SPA 站内路由悬浮提示预览" width="560" />
+</p>
+
+### 3. 设置中心（全局与细粒度网站规则）
+> 提供 2x2 交互式匹配模式网格（智能 Smart、完整 URL、同路径 Path、同域名 Domain），带有实时代码芯片说明，支持参数忽略与域名例外规则。
+
+<p align="center">
+  <img src="./docs/images/yitab-preview-options.png" alt="YiTab 设置中心预览" width="850" />
+</p>
+
 ## 特性
 
 | 特性 | 说明 |
