@@ -2,46 +2,149 @@ import { browser } from 'wxt/browser';
 import { getSettings, watchSettings } from '@/lib/settings';
 import {
   INTERNAL_URL_RE,
-  isDuplicate,
+  matchDuplicate,
   inWhitelist,
   queryWebTabs,
+  computeMatchKey,
+  resolveRule,
+  hostOf,
   type TabInfo,
 } from '@/lib/match';
 import type { BackgroundRequest } from '@/lib/messaging';
 
 const ALLOW_TTL = 8000;
-/** 「仍要新开」放行表：tabId -> 时间戳。按标签放行可覆盖整条重定向链 */
-const allowed = new Map<number, number>();
+
+/** 「仍要打开」放行表：tabId -> { targetUrl, matchKey, expiresAt }。精确放行目标及其重定向链 */
+interface AllowedEntry {
+  targetUrl: string;
+  matchKey: string | null;
+  expiresAt: number;
+}
+const allowed = new Map<number, AllowedEntry>();
+
+/** 标签导航状态跟踪，用于 SPA 连续变化防竞态与锚点过滤 */
+interface TabState {
+  lastUrl: string;
+  lastMatchKey: string | null;
+  seq: number;
+}
+const tabStates = new Map<number, TabState>();
 
 export default defineBackground(() => {
   watchSettings();
 
+  // 1. 整页导航（地址栏、书签、新标签等真实提交的整页加载）
   chrome.webNavigation.onCommitted.addListener((details) => {
     if (details.frameId !== 0 || details.tabId < 0) return;
-    handleNavigation(details.tabId, details.url);
+    handleNavigation(details.tabId, details.url, 'committed');
+  });
+
+  // 2. SPA History API 路由变化（pushState / replaceState）
+  chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+    if (details.frameId !== 0 || details.tabId < 0) return;
+    handleNavigation(details.tabId, details.url, 'history');
+  });
+
+  // 3. Hash 路由变化
+  chrome.webNavigation.onReferenceFragmentUpdated.addListener((details) => {
+    if (details.frameId !== 0 || details.tabId < 0) return;
+    handleNavigation(details.tabId, details.url, 'fragment');
+  });
+
+  // 标签关闭时清理状态表
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    allowed.delete(tabId);
+    tabStates.delete(tabId);
   });
 
   chrome.runtime.onMessage.addListener((msg: BackgroundRequest, sender, sendResponse) => {
     (async () => {
-      if (msg.type === 'findDuplicates') {
-        sendResponse(await findDuplicates(msg.url));
-      } else if (msg.type === 'confirmOpen') {
-        // 只登记放行，导航由确认页自己发起（location.href）。
-        // 不在这里 tabs.update：页面随后 window.close() 会和未提交的导航竞态，
-        // 关闭早于提交时会掐断导航，表现为"标签关了但页面没开"。
-        if (sender.tab?.id != null) allowed.set(sender.tab.id, Date.now());
-        sendResponse({ ok: true });
-      } else if (msg.type === 'switchTab') {
-        await switchTab(msg, sender.tab?.id, sender.tab?.windowId);
-        sendResponse({ ok: true });
-      } else if (msg.type === 'getSettings') {
-        sendResponse({ ok: true, settings: await getSettings() });
+      try {
+        if (msg.type === 'findDuplicates') {
+          sendResponse(await findDuplicates(msg.url));
+        } else if (msg.type === 'confirmOpen') {
+          // 只登记放行，导航由确认页自己发起（location.href）。
+          // 记录目标地址及其 matchKey，在时限内仅对该目标（及重定向链）放行。
+          if (sender.tab?.id != null) {
+            const settings = await getSettings();
+            const matchKey = computeMatchKey(msg.url, settings);
+            allowed.set(sender.tab.id, {
+              targetUrl: msg.url,
+              matchKey,
+              expiresAt: Date.now() + ALLOW_TTL,
+            });
+          }
+          sendResponse({ ok: true });
+        } else if (msg.type === 'switchTab') {
+          await switchTab(msg, sender.tab?.id, sender.tab?.windowId);
+          sendResponse({ ok: true });
+        } else if (msg.type === 'closeTabs') {
+          if (Array.isArray(msg.tabIds) && msg.tabIds.length) {
+            await browser.tabs.remove(msg.tabIds).catch(() => {});
+          }
+          sendResponse({ ok: true });
+        } else if (msg.type === 'groupTabs') {
+          if (chrome.tabs.group && Array.isArray(msg.tabIds) && msg.tabIds.length) {
+            try {
+              const opts: { tabIds: number[]; groupId?: number } = { tabIds: msg.tabIds };
+              if (msg.groupId != null && msg.groupId > 0) {
+                opts.groupId = msg.groupId;
+              }
+              const groupId = await chrome.tabs.group(opts);
+              if (msg.title || msg.color) {
+                await chrome.tabGroups.update(groupId, {
+                  title: msg.title,
+                  color: msg.color,
+                });
+              }
+              sendResponse({ ok: true, groupId });
+              return;
+            } catch (err) {
+              console.warn('[YiTab] Failed to group tabs:', err);
+            }
+          }
+          sendResponse({ ok: false });
+        } else if (msg.type === 'ungroupTabs') {
+          if (chrome.tabs.ungroup && Array.isArray(msg.tabIds) && msg.tabIds.length) {
+            try {
+              await chrome.tabs.ungroup(msg.tabIds);
+              sendResponse({ ok: true });
+              return;
+            } catch (err) {
+              console.warn('[YiTab] Failed to ungroup tabs:', err);
+            }
+          }
+          sendResponse({ ok: false });
+        } else if (msg.type === 'getTabGroups') {
+          if (chrome.tabGroups) {
+            try {
+              const query = msg.windowId != null ? { windowId: msg.windowId } : {};
+              const groups = await chrome.tabGroups.query(query);
+              sendResponse({
+                ok: true,
+                groups: groups.map((g) => ({
+                  id: g.id,
+                  windowId: g.windowId,
+                  title: g.title,
+                  color: g.color,
+                })),
+              });
+              return;
+            } catch {}
+          }
+          sendResponse({ ok: true, groups: [] });
+        } else if (msg.type === 'getSettings') {
+          sendResponse({ ok: true, settings: await getSettings() });
+        }
+      } catch (err) {
+        console.error('[YiTab] Error handling message:', err);
+        sendResponse({ ok: false });
       }
     })();
     return true; // 异步 sendResponse
   });
 
-  console.info('[YiTab] background ready');
+  console.info('[YiTab] background ready with SPA & TabGroups support');
 });
 
 function confirmURL(url: string): string {
@@ -49,19 +152,41 @@ function confirmURL(url: string): string {
 }
 
 async function findDuplicates(url: string): Promise<{ ok: true; tabs: TabInfo[] }> {
-  const { matchMode } = await getSettings();
-  const tabs = await queryWebTabs();
-  return {
-    ok: true,
-    tabs: tabs
-      .filter((t) => !!t.url && isDuplicate(url, t.url, matchMode))
-      .map((t) => ({
+  const [settings, tabs] = await Promise.all([getSettings(), queryWebTabs()]);
+
+  // 获取各分组信息（标题、颜色）
+  const groupMap = new Map<number, { title?: string; color?: string }>();
+  if (chrome.tabGroups) {
+    try {
+      const groups = await chrome.tabGroups.query({});
+      for (const g of groups) {
+        groupMap.set(g.id, { title: g.title, color: g.color });
+      }
+    } catch {
+      // 忽略 tabGroups 查询异常
+    }
+  }
+
+  const matched = tabs
+    .filter((t) => !!t.url && !!matchDuplicate(url, t.url, settings))
+    .map((t) => {
+      const g = t.groupId && t.groupId > 0 ? groupMap.get(t.groupId) : undefined;
+      return {
         id: t.id!,
         windowId: t.windowId,
         title: t.title ?? t.url ?? '',
         url: t.url ?? '',
         favicon: t.favIconUrl || '',
-      })),
+        groupId: t.groupId && t.groupId > 0 ? t.groupId : undefined,
+        groupTitle: g?.title,
+        groupColor: g?.color,
+        match: matchDuplicate(url, t.url!, settings) ?? undefined,
+      };
+    });
+
+  return {
+    ok: true,
+    tabs: matched,
   };
 }
 
@@ -88,43 +213,142 @@ async function switchTab(
   }
 }
 
-/** 核心检测：任何顶层导航提交后立刻检查重复 */
-async function handleNavigation(tabId: number, url?: string): Promise<void> {
+/** 核心检测：导航事件后检查重复 */
+async function handleNavigation(
+  tabId: number,
+  url?: string,
+  eventType: 'committed' | 'history' | 'fragment' = 'committed',
+): Promise<void> {
   if (!url || INTERNAL_URL_RE.test(url)) return;
 
-  // 「仍要新开」放行：该标签在时限内的导航直接通过（含重定向链）
-  const allowedAt = allowed.get(tabId);
-  if (allowedAt && Date.now() - allowedAt < ALLOW_TTL) return;
+  // 记录序列号，避免连续导航异步竞争导致用过期事件覆盖最新状态
+  const state = tabStates.get(tabId) ?? { lastUrl: '', lastMatchKey: null, seq: 0 };
+  const currentSeq = ++state.seq;
+  tabStates.set(tabId, state);
 
-  // 设置读取和标签查询并行，缩短从提交到切走的延迟
-  const [settings, allTabs] = await Promise.all([getSettings(), queryWebTabs()]);
-  if (inWhitelist(url, settings.whitelist)) return;
+  // 预取配置以计算匹配 key
+  const settings = await getSettings();
+  if (state.seq !== currentSeq) return; // 已有更新的导航事件发生
 
-  const target =
-    allTabs.find(
-      (t) => t.id !== tabId && !!t.url && isDuplicate(url, t.url, settings.matchMode),
-    ) ?? null;
-  if (!target || target.id == null) return;
+  const currentMatchKey = computeMatchKey(url, settings);
 
-  if (settings.interceptMode === 'ask') {
-    // 确认页式：把当前标签原地重定向为大按钮确认页
-    browser.tabs.update(tabId, { url: confirmURL(url) }).catch(() => {});
+  // 1. 普通锚点变化过滤（如 #intro -> #comments，两者 matchKey 相同则不触发重复提示）
+  if (eventType === 'fragment') {
+    if (state.lastMatchKey != null && state.lastMatchKey === currentMatchKey) {
+      state.lastUrl = url;
+      return;
+    }
+  }
+
+  // 2. 同域名模式防过度骚扰：已在站内正常浏览的 SPA 站内路由跳转，不应在每个链接都弹提示
+  if (eventType !== 'committed') {
+    const { mode } = resolveRule(url, settings);
+    if (mode === 'domain' && state.lastUrl && hostOf(state.lastUrl) === hostOf(url)) {
+      state.lastUrl = url;
+      state.lastMatchKey = currentMatchKey;
+      return;
+    }
+  }
+
+  // 3. 「仍要打开」放行：时限内仅对目标地址及等价 matchKey 的导航链放行
+  const allowEntry = allowed.get(tabId);
+  if (allowEntry) {
+    if (Date.now() > allowEntry.expiresAt) {
+      allowed.delete(tabId);
+    } else {
+      if (
+        allowEntry.targetUrl === url ||
+        (allowEntry.matchKey != null && allowEntry.matchKey === currentMatchKey)
+      ) {
+        state.lastUrl = url;
+        state.lastMatchKey = currentMatchKey;
+        return;
+      }
+    }
+  }
+
+  // 4. 白名单检查
+  if (inWhitelist(url, settings.whitelist)) {
+    state.lastUrl = url;
+    state.lastMatchKey = currentMatchKey;
     return;
   }
 
-  // 静默切换式：聚焦旧标签；当前标签非窗口内唯一标签则关闭，
-  // 是唯一标签（关掉会连窗口一起关）时退回确认页
+  // 5. 查询其他所有网页标签
+  const allTabs = await queryWebTabs();
+  if (state.seq !== currentSeq) return;
+
+  // 校验当前标签依然存在且 URL 未变
   try {
-    await browser.tabs.update(target.id, { active: true });
-    await browser.windows.update(target.windowId, { focused: true });
     const cur = await browser.tabs.get(tabId);
-    const sibs = await browser.tabs.query({ windowId: cur.windowId });
-    if (sibs.length > 1) {
-      await browser.tabs.remove(tabId);
-    } else {
-      browser.tabs.update(tabId, { url: confirmURL(url) }).catch(() => {});
-    }
+    if (cur.url && cur.url !== url) return;
   } catch {
-    /* 标签可能已被用户关掉 */
+    return; // 标签已关闭
+  }
+
+  const target =
+    allTabs.find(
+      (t) => t.id !== tabId && !!t.url && !!matchDuplicate(url, t.url, settings),
+    ) ?? null;
+  if (!target || target.id == null) {
+    state.lastUrl = url;
+    state.lastMatchKey = currentMatchKey;
+    return;
+  }
+
+  const match = matchDuplicate(url, target.url!, settings);
+  state.lastUrl = url;
+  state.lastMatchKey = currentMatchKey;
+
+  // 6. 执行交互策略
+  if (eventType === 'committed') {
+    // 整页导航（新标签页、地址栏、书签）
+    if (settings.interceptMode === 'ask') {
+      browser.tabs.update(tabId, { url: confirmURL(url) }).catch(() => {});
+      return;
+    }
+
+    // 静默切换式
+    try {
+      await browser.tabs.update(target.id, { active: true });
+      await browser.windows.update(target.windowId, { focused: true });
+      const cur = await browser.tabs.get(tabId);
+      const sibs = await browser.tabs.query({ windowId: cur.windowId });
+      if (sibs.length > 1) {
+        await browser.tabs.remove(tabId);
+      } else {
+        browser.tabs.update(tabId, { url: confirmURL(url) }).catch(() => {});
+      }
+    } catch {}
+  } else {
+    // SPA 内部路由切换（history / fragment）
+    if (settings.interceptMode === 'auto') {
+      // 自动静默切换（不关闭正在浏览的当前标签页）
+      try {
+        await browser.tabs.update(target.id, { active: true });
+        await browser.windows.update(target.windowId, { focused: true });
+      } catch {}
+      return;
+    }
+
+    // 页内确认式：发送轻量页内提示给 Content Script，避免跳出确认页卸载单页应用
+    const tabInfo: TabInfo = {
+      id: target.id,
+      windowId: target.windowId,
+      title: target.title ?? target.url ?? '',
+      url: target.url ?? '',
+      favicon: target.favIconUrl || '',
+      match: match ?? undefined,
+    };
+
+    try {
+      await chrome.tabs.sendMessage(tabId, {
+        type: 'yitab_spa_duplicate',
+        candidateUrl: url,
+        targetTab: tabInfo,
+      });
+    } catch {
+      // 受限页面或 Content Script 尚未就绪，安全静默放行，避免破坏运行中的页面
+    }
   }
 }
