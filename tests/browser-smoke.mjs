@@ -116,8 +116,9 @@ try {
   const popupText = await until(() => popupClient.evaluate(`document.body.innerText.includes('域名智能聚合') && document.body.innerText`), 'popup UI rendered');
   assert.ok(popupText.includes('标签归拢'), 'popup organize tab');
   assert.ok(popupText.includes('快速检索'), 'popup search tab');
+  assert.ok(popupText.includes('书签健康'), 'popup bookmarks tab');
   assert.ok(popupText.includes('会话快照'), 'popup snapshots tab');
-  assert.ok(popupText.includes('多格式导出'), 'popup export tab');
+  assert.ok(popupText.includes('休眠') || popupText.includes('内存'), 'tab memory optimizer');
   popupClient.close();
 
   // --- Part 5: In-Page Command Palette (Alt+K) & Unified Search ---

@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  App,
   Badge,
   Button,
   Card,
   ConfigProvider,
   Empty,
   Input,
-  Modal,
   Popconfirm,
   Radio,
   Space,
@@ -19,8 +17,10 @@ import {
 } from 'antd';
 import {
   AppstoreOutlined,
+  BookOutlined,
   CameraOutlined,
   CheckOutlined,
+  CloudDownloadOutlined,
   CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
@@ -28,6 +28,7 @@ import {
   FolderOpenOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RestOutlined,
   SearchOutlined,
   SettingOutlined,
   ThunderboltOutlined,
@@ -35,12 +36,24 @@ import {
 } from '@ant-design/icons';
 import { sendToBackground } from '@/lib/messaging';
 import type {
+  ArchiveInactiveTabsResponse,
   AutoGroupTabsResponse,
+  CleanBookmarksResponse,
+  DiscardTabsResponse,
+  ExportBookmarksBackupResponse,
   GetCurrentWindowTabsResponse,
+  GetTabHealthResponse,
+  ScanBookmarksResponse,
   SearchItemsResponse,
   UngroupAllTabsResponse,
 } from '@/lib/messaging';
 import type { SearchItem, SearchItemKind } from '@/lib/search';
+import {
+  computeRecommendedDeletePlan,
+  type BookmarkDuplicateGroup,
+  type BookmarkScanReport,
+} from '@/lib/bookmarks';
+import { ESTIMATED_MB_PER_TAB, type TabHealthReport } from '@/lib/tab-health';
 import {
   analyzeTabsByDomain,
   deleteSnapshot,
@@ -61,6 +74,17 @@ function PopupApp() {
   const [currentTabs, setCurrentTabs] = useState<TabSnapshotItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTabKey, setActiveTabKey] = useState('organize');
+
+  // 阶段四：标签健康与闲置休眠状态
+  const [tabHealth, setTabHealth] = useState<TabHealthReport | null>(null);
+  const [discardLoading, setDiscardLoading] = useState(false);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+
+  // 阶段四：书签健康与智能去重状态
+  const [bookmarkReport, setBookmarkReport] = useState<BookmarkScanReport | null>(null);
+  const [bookmarkScanning, setBookmarkScanning] = useState(false);
+  const [bookmarkCleaning, setBookmarkCleaning] = useState(false);
+  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
 
   // 快照状态
   const [snapshots, setSnapshots] = useState<SessionSnapshot[]>([]);
@@ -102,6 +126,8 @@ function PopupApp() {
   useEffect(() => {
     if (activeTabKey === 'search') {
       performSearch(searchQuery, searchKind);
+    } else if (activeTabKey === 'bookmarks' && !bookmarkReport && !bookmarkScanning) {
+      scanBookmarks();
     }
   }, [activeTabKey, searchKind]);
 
@@ -139,15 +165,19 @@ function PopupApp() {
     }
   };
 
-  // 刷新当前窗口标签与快照
+  // 刷新当前窗口标签、健康数据与快照
   const refreshCurrentWindow = async () => {
     setLoading(true);
     try {
-      const res = await sendToBackground<GetCurrentWindowTabsResponse>({
-        type: 'getCurrentWindowTabs',
-      });
-      if (res.ok) {
-        setCurrentTabs(res.tabs);
+      const [tabsRes, healthRes] = await Promise.all([
+        sendToBackground<GetCurrentWindowTabsResponse>({ type: 'getCurrentWindowTabs' }),
+        sendToBackground<GetTabHealthResponse>({ type: 'getTabHealth' }),
+      ]);
+      if (tabsRes.ok) {
+        setCurrentTabs(tabsRes.tabs);
+      }
+      if (healthRes.ok) {
+        setTabHealth(healthRes.health);
       }
       const snaps = await getSnapshots();
       setSnapshots(snaps);
@@ -215,6 +245,124 @@ function PopupApp() {
     }
   };
 
+  // 一键休眠当前窗口所有闲置标签（释放内存）
+  const handleDiscardInactiveTabs = async () => {
+    setDiscardLoading(true);
+    try {
+      const res = await sendToBackground<DiscardTabsResponse>({
+        type: 'discardTabs',
+      });
+      if (res.ok && res.discardedCount > 0) {
+        alert(`已成功休眠 ${res.discardedCount} 个闲置标签，估算释放约 ${res.freedMemoryMb}MB 内存！`);
+      } else {
+        alert('当前没有符合条件的闲置标签（播放中、固定或活动标签受保护）');
+      }
+      refreshCurrentWindow();
+    } catch {
+      alert('休眠标签操作失败');
+    } finally {
+      setDiscardLoading(false);
+    }
+  };
+
+  // 一键沉淀归档并安全关闭闲置标签
+  const handleArchiveInactiveTabs = async () => {
+    setArchiveLoading(true);
+    try {
+      const res = await sendToBackground<ArchiveInactiveTabsResponse>({
+        type: 'archiveInactiveTabs',
+      });
+      if (res.ok && res.archivedCount > 0) {
+        alert(`已成功归档 ${res.archivedCount} 个闲置标签并关闭！快照已保存为：「${res.snapshotName}」`);
+      } else {
+        alert('当前没有需要沉淀归档的闲置标签');
+      }
+      refreshCurrentWindow();
+    } catch {
+      alert('沉淀归档操作失败');
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
+  // 扫描书签树
+  const scanBookmarks = async () => {
+    setBookmarkScanning(true);
+    try {
+      const res = await sendToBackground<ScanBookmarksResponse>({
+        type: 'scanBookmarks',
+      });
+      if (res.ok && res.report) {
+        setBookmarkReport(res.report);
+      } else if (res.error) {
+        alert(res.error);
+      }
+    } catch (e) {
+      console.warn('Scan bookmarks failed:', e);
+    } finally {
+      setBookmarkScanning(false);
+    }
+  };
+
+  // 按建议一键批量清理书签
+  const handleCleanRecommendedBookmarks = async () => {
+    if (!bookmarkReport || bookmarkReport.redundantCount === 0) return;
+    const { deleteIds } = computeRecommendedDeletePlan(bookmarkReport.groups);
+    if (!deleteIds.length) return;
+
+    setBookmarkCleaning(true);
+    try {
+      const res = await sendToBackground<CleanBookmarksResponse>({
+        type: 'cleanBookmarks',
+        bookmarkIds: deleteIds,
+      });
+      if (res.ok) {
+        alert(`已成功清理 ${res.removedCount} 个多余重复书签，已保留推荐项！`);
+        await scanBookmarks();
+      }
+    } catch {
+      alert('清理书签失败');
+    } finally {
+      setBookmarkCleaning(false);
+    }
+  };
+
+  // 单独删除一个书签副本
+  const handleDeleteSingleBookmark = async (id: string) => {
+    try {
+      const res = await sendToBackground<CleanBookmarksResponse>({
+        type: 'cleanBookmarks',
+        bookmarkIds: [id],
+      });
+      if (res.ok) {
+        await scanBookmarks();
+      }
+    } catch {
+      alert('删除书签失败');
+    }
+  };
+
+  // 导出书签备份 (Netscape HTML / JSON)
+  const handleBackupBookmarks = async (format: 'html' | 'json') => {
+    try {
+      const res = await sendToBackground<ExportBookmarksBackupResponse>({
+        type: 'exportBookmarksBackup',
+        format,
+      });
+      if (res.ok) {
+        const blob = new Blob([res.content], { type: res.mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = res.filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      alert('导出书签备份失败');
+    }
+  };
+
   // 保存当前会话快照
   const handleSaveSnapshot = async () => {
     if (!currentTabs.length) return;
@@ -274,7 +422,7 @@ function PopupApp() {
     });
   };
 
-  // 下载文件
+  // 下载导出文件
   const handleDownload = () => {
     if (!exportedText) return;
     const isJson = exportFormat === 'json';
@@ -345,7 +493,7 @@ function PopupApp() {
                     borderRadius: 4,
                   }}
                 >
-                  v0.5.0
+                  v1.0.0
                 </Tag>
               </div>
               <Text type="secondary" style={{ fontSize: 11 }}>
@@ -354,7 +502,7 @@ function PopupApp() {
             </div>
           </div>
           <Space size={4}>
-            <Tooltip title="刷新窗口标签">
+            <Tooltip title="刷新窗口与健康数据">
               <Button
                 type="text"
                 size="small"
@@ -384,12 +532,12 @@ function PopupApp() {
               label: (
                 <span>
                   <AppstoreOutlined />
-                  标签归拢
+                  标签治理
                 </span>
               ),
               children: (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {/* 智能归拢卡片 */}
+                  {/* 1. 域名智能归拢卡片 */}
                   <Card
                     size="small"
                     style={{
@@ -400,7 +548,7 @@ function PopupApp() {
                   >
                     <div style={{ marginBottom: 10 }}>
                       <Text strong style={{ fontSize: 13, color: '#1e293b' }}>
-                        域名智能聚合
+                        域名智能聚合与标签归拢
                       </Text>
                       <Paragraph
                         type="secondary"
@@ -492,7 +640,7 @@ function PopupApp() {
                     </div>
                   </Card>
 
-                  {/* 快捷暂存卡片 */}
+                  {/* 2. 闲置标签休眠与沉淀归档 (阶段四) */}
                   <Card
                     size="small"
                     style={{
@@ -501,31 +649,66 @@ function PopupApp() {
                       border: '1px solid #e2e8f0',
                     }}
                   >
-                    <div style={{ marginBottom: 8 }}>
-                      <Text strong style={{ fontSize: 13, color: '#1e293b' }}>
-                        暂存当前会话
-                      </Text>
-                      <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-                        立即快照暂存当前窗口全部 {currentTabs.length} 个标签页，稍后可随时恢复。
-                      </Text>
-                    </div>
-                    <Space.Compact style={{ width: '100%' }}>
-                      <Input
-                        placeholder="快照名称 (留空按时间自动命名)"
-                        value={newSnapshotName}
-                        onChange={(e) => setNewSnapshotName(e.target.value)}
-                        onPressEnter={handleSaveSnapshot}
-                      />
-                      <Button
-                        type="primary"
-                        icon={<CameraOutlined />}
-                        loading={isSavingSnapshot}
-                        onClick={handleSaveSnapshot}
-                        style={{ background: '#4f46e5' }}
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text strong style={{ fontSize: 13, color: '#1e293b' }}>
+                          闲置休眠与内存沉淀
+                        </Text>
+                        {tabHealth && (
+                          <Tag color="cyan" style={{ margin: 0, fontSize: 11, borderRadius: 4 }}>
+                            可释放 ~{tabHealth.estimatedMemorySavedMb} MB
+                          </Tag>
+                        )}
+                      </div>
+                      <Paragraph
+                        type="secondary"
+                        style={{ fontSize: 12, margin: '2px 0 0', lineHeight: 1.4 }}
                       >
-                        暂存
-                      </Button>
-                    </Space.Compact>
+                        非活动标签释放常驻内存（保留在标签栏）；或一键保存为快照后安全关闭。
+                      </Paragraph>
+                    </div>
+
+                    <div
+                      style={{
+                        background: '#f8fafc',
+                        padding: '8px 10px',
+                        borderRadius: 6,
+                        marginBottom: 12,
+                        fontSize: 11,
+                        color: '#64748b',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <span>已休眠: <strong style={{ color: '#0f172a' }}>{tabHealth?.discardedCount ?? 0}</strong></span>
+                      <span>发声/保护: <strong style={{ color: '#0f172a' }}>{(tabHealth?.audibleCount ?? 0) + (tabHealth?.pinnedCount ?? 0)}</strong></span>
+                      <span>可休眠: <strong style={{ color: '#4f46e5' }}>{tabHealth?.eligibleDiscardCount ?? 0}</strong></span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <Tooltip title="调用 Chrome 原生 discard 接口，释放内存，标签仍保留在标签栏">
+                        <Button
+                          block
+                          icon={<RestOutlined />}
+                          loading={discardLoading}
+                          onClick={handleDiscardInactiveTabs}
+                          style={{ height: 34, fontWeight: 500 }}
+                        >
+                          一键休眠闲置
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title="将闲置标签暂存为快照并安全关闭，彻底清理标签栏">
+                        <Button
+                          block
+                          icon={<CameraOutlined />}
+                          loading={archiveLoading}
+                          onClick={handleArchiveInactiveTabs}
+                          style={{ height: 34, fontWeight: 500 }}
+                        >
+                          沉淀归档并关闭
+                        </Button>
+                      </Tooltip>
+                    </div>
                   </Card>
                 </div>
               ),
@@ -652,19 +835,13 @@ function PopupApp() {
                                 <img
                                   src={item.favicon}
                                   alt=""
-                                  style={{ width: 16, height: 16, objectFit: 'contain' }}
-                                  onError={(e) => {
-                                    (e.target as HTMLElement).style.display = 'none';
-                                  }}
+                                  style={{ width: 14, height: 14 }}
+                                  onError={(e) => (e.currentTarget.style.display = 'none')}
                                 />
                               ) : item.kind === 'command' ? (
-                                <ThunderboltOutlined
-                                  style={{ color: '#9333ea', fontSize: 13 }}
-                                />
+                                <ThunderboltOutlined style={{ fontSize: 13, color: '#4f46e5' }} />
                               ) : (
-                                <AppstoreOutlined
-                                  style={{ color: '#4f46e5', fontSize: 13 }}
-                                />
+                                <span style={{ fontSize: 12 }}>🌐</span>
                               )}
                             </div>
 
@@ -673,8 +850,8 @@ function PopupApp() {
                                 strong
                                 ellipsis
                                 style={{
-                                  fontSize: 12,
-                                  color: '#0f172a',
+                                  fontSize: 13,
+                                  color: item.active ? '#4f46e5' : '#1e293b',
                                   display: 'block',
                                 }}
                               >
@@ -713,6 +890,240 @@ function PopupApp() {
                       })
                     )}
                   </div>
+                </div>
+              ),
+            },
+            {
+              key: 'bookmarks',
+              label: (
+                <span>
+                  <BookOutlined />
+                  书签健康
+                  {bookmarkReport && bookmarkReport.redundantCount > 0 && (
+                    <Badge
+                      count={bookmarkReport.redundantCount}
+                      style={{
+                        marginLeft: 4,
+                        backgroundColor: '#ef4444',
+                        boxShadow: 'none',
+                      }}
+                    />
+                  )}
+                </span>
+              ),
+              children: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {/* 顶部报告与操作卡片 */}
+                  <Card
+                    size="small"
+                    style={{
+                      borderRadius: 10,
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                      border: '1px solid #e2e8f0',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <div>
+                        <Text strong style={{ fontSize: 13, color: '#1e293b' }}>
+                          书签智能去重
+                        </Text>
+                        <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
+                          扫描收藏夹全树，按目录深度与标题质量推荐保留最佳书签
+                        </Text>
+                      </div>
+                      <Button
+                        size="small"
+                        icon={<ReloadOutlined />}
+                        loading={bookmarkScanning}
+                        onClick={scanBookmarks}
+                      >
+                        重新扫描
+                      </Button>
+                    </div>
+
+                    {bookmarkReport ? (
+                      <div
+                        style={{
+                          background: '#f8fafc',
+                          padding: '8px 10px',
+                          borderRadius: 6,
+                          marginBottom: 10,
+                          fontSize: 11,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          color: '#64748b',
+                        }}
+                      >
+                        <span>总书签: <strong style={{ color: '#0f172a' }}>{bookmarkReport.totalBookmarks}</strong></span>
+                        <span>文件夹: <strong style={{ color: '#0f172a' }}>{bookmarkReport.totalFolders}</strong></span>
+                        <span>重复组: <strong style={{ color: '#4f46e5' }}>{bookmarkReport.duplicateGroupCount}</strong></span>
+                        <span>可清理: <strong style={{ color: '#ef4444' }}>{bookmarkReport.redundantCount}</strong></span>
+                      </div>
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                        <Button
+                          type="primary"
+                          icon={<BookOutlined />}
+                          loading={bookmarkScanning}
+                          onClick={scanBookmarks}
+                          style={{ background: '#4f46e5' }}
+                        >
+                          开始扫描书签树
+                        </Button>
+                      </div>
+                    )}
+
+                    {bookmarkReport && bookmarkReport.redundantCount > 0 && (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <Popconfirm
+                          title="确认按建议一键清理？"
+                          description={`将删除 ${bookmarkReport.redundantCount} 个冗余副本，保留分类最深、标题最完整的优质书签。`}
+                          onConfirm={handleCleanRecommendedBookmarks}
+                          okText="立即清理"
+                          cancelText="取消"
+                        >
+                          <Button
+                            type="primary"
+                            danger
+                            block
+                            loading={bookmarkCleaning}
+                            icon={<DeleteOutlined />}
+                            style={{ fontWeight: 600, height: 32 }}
+                          >
+                            一键按建议清理 ({bookmarkReport.redundantCount} 项)
+                          </Button>
+                        </Popconfirm>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                      <Button
+                        size="small"
+                        block
+                        icon={<CloudDownloadOutlined />}
+                        onClick={() => handleBackupBookmarks('html')}
+                      >
+                        导出标准 HTML 备份
+                      </Button>
+                      <Button
+                        size="small"
+                        block
+                        icon={<DownloadOutlined />}
+                        onClick={() => handleBackupBookmarks('json')}
+                      >
+                        导出 JSON
+                      </Button>
+                    </div>
+                  </Card>
+
+                  {/* 重复书签列表 */}
+                  {bookmarkReport && (
+                    <div
+                      style={{
+                        maxHeight: 250,
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                      }}
+                    >
+                      {bookmarkReport.groups.length === 0 ? (
+                        <Empty
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          description="非常棒！您的收藏夹很健康，未发现重复书签。"
+                          style={{ margin: '30px 0' }}
+                        />
+                      ) : (
+                        bookmarkReport.groups.map((group) => {
+                          const isExpanded = expandedGroupKey === group.groupKey;
+                          return (
+                            <div
+                              key={group.groupKey}
+                              style={{
+                                background: '#fff',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: 8,
+                                padding: '8px 10px',
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                              }}
+                            >
+                              <div
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                                onClick={() => setExpandedGroupKey(isExpanded ? null : group.groupKey)}
+                              >
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <Text strong ellipsis style={{ fontSize: 13, color: '#1e293b', display: 'block' }}>
+                                    {group.title}
+                                  </Text>
+                                  <Text type="secondary" ellipsis style={{ fontSize: 11, display: 'block' }}>
+                                    {group.normalizedUrl}
+                                  </Text>
+                                </div>
+                                <Tag color="volcano" style={{ margin: 0, fontSize: 10, borderRadius: 4 }}>
+                                  {group.items.length} 个副本
+                                </Tag>
+                              </div>
+
+                              {isExpanded && (
+                                <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                  {group.items.map((it) => {
+                                    const isKeep = it.id === group.recommendedKeepId;
+                                    return (
+                                      <div
+                                        key={it.id}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'space-between',
+                                          padding: '4px 6px',
+                                          borderRadius: 4,
+                                          background: isKeep ? '#f0fdf4' : '#fff',
+                                          border: isKeep ? '1px solid #bbf7d0' : '1px solid #f1f5f9',
+                                        }}
+                                      >
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <Tag
+                                              color={isKeep ? 'green' : 'default'}
+                                              style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 4px' }}
+                                            >
+                                              {isKeep ? '推荐保留' : '待清理'}
+                                            </Tag>
+                                            <Text ellipsis style={{ fontSize: 12, color: '#334155' }}>
+                                              {it.title}
+                                            </Text>
+                                          </div>
+                                          <Text type="secondary" ellipsis style={{ fontSize: 10, display: 'block', marginTop: 2 }}>
+                                            目录: {it.folderPath.join(' / ') || '书签栏根目录'}
+                                          </Text>
+                                        </div>
+
+                                        {!isKeep && (
+                                          <Popconfirm
+                                            title="确认删除该重复书签？"
+                                            onConfirm={() => handleDeleteSingleBookmark(it.id)}
+                                            okText="删除"
+                                            cancelText="取消"
+                                          >
+                                            <Button
+                                              type="text"
+                                              danger
+                                              size="small"
+                                              icon={<DeleteOutlined style={{ fontSize: 12 }} />}
+                                            />
+                                          </Popconfirm>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
                 </div>
               ),
             },
@@ -770,7 +1181,7 @@ function PopupApp() {
                         display: 'flex',
                         flexDirection: 'column',
                         gap: 8,
-                        maxHeight: 360,
+                        maxHeight: 280,
                         overflowY: 'auto',
                       }}
                     >
@@ -911,82 +1322,49 @@ function PopupApp() {
                       })}
                     </div>
                   )}
-                </div>
-              ),
-            },
-            {
-              key: 'export',
-              label: (
-                <span>
-                  <ExportOutlined />
-                  多格式导出
-                </span>
-              ),
-              children: (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      选择导出格式 ({exportTargetTabs.length} 个标签)：
-                    </Text>
-                    <Radio.Group
-                      size="small"
-                      value={exportFormat}
-                      onChange={(e) => setExportFormat(e.target.value)}
-                      optionType="button"
-                      buttonStyle="solid"
-                    >
-                      <Radio.Button value="markdown_list">MD 列表</Radio.Button>
-                      <Radio.Button value="markdown_table">MD 表格</Radio.Button>
-                      <Radio.Button value="urls_only">纯网址</Radio.Button>
-                      <Radio.Button value="json">JSON</Radio.Button>
-                    </Radio.Group>
-                  </div>
 
-                  {/* 预览展示区域 */}
-                  <div
-                    style={{
-                      background: '#0f172a',
-                      color: '#f8fafc',
-                      borderRadius: 8,
-                      padding: '10px 12px',
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                      fontSize: 11,
-                      lineHeight: 1.45,
-                      maxHeight: 260,
-                      minHeight: 200,
-                      overflowY: 'auto',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-all',
-                    }}
-                  >
-                    {exportedText || '// 暂无标签可供导出'}
-                  </div>
+                  {/* 导出工具集成 */}
+                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <Text strong style={{ fontSize: 12, color: '#334155' }}>
+                        多格式快速导出
+                      </Text>
+                      <Radio.Group
+                        size="small"
+                        value={exportFormat}
+                        onChange={(e) => setExportFormat(e.target.value)}
+                        optionType="button"
+                        buttonStyle="solid"
+                      >
+                        <Radio.Button value="markdown_list">MD</Radio.Button>
+                        <Radio.Button value="markdown_table">表格</Radio.Button>
+                        <Radio.Button value="urls_only">网址</Radio.Button>
+                        <Radio.Button value="json">JSON</Radio.Button>
+                      </Radio.Group>
+                    </div>
 
-                  {/* 底部按钮栏 */}
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Button
-                      type="primary"
-                      block
-                      icon={copied ? <CheckOutlined /> : <CopyOutlined />}
-                      onClick={handleCopy}
-                      style={{
-                        background: copied
-                          ? '#10b981'
-                          : 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
-                        border: 'none',
-                        fontWeight: 600,
-                        height: 34,
-                      }}
-                    >
-                      {copied ? '已复制到剪贴板！' : '复制到剪贴板'}
-                    </Button>
-                    <Button
-                      icon={<DownloadOutlined />}
-                      onClick={handleDownload}
-                      style={{ height: 34 }}
-                    >
-                      下载文件
-                    </Button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <Button
+                        type="primary"
+                        block
+                        size="small"
+                        icon={copied ? <CheckOutlined /> : <CopyOutlined />}
+                        onClick={handleCopy}
+                        style={{
+                          background: copied ? '#10b981' : '#4f46e5',
+                          fontWeight: 500,
+                        }}
+                      >
+                        {copied ? '已复制！' : '复制标签文本'}
+                      </Button>
+                      <Button
+                        size="small"
+                        icon={<DownloadOutlined />}
+                        onClick={handleDownload}
+                      >
+                        下载
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ),

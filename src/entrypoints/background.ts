@@ -19,6 +19,17 @@ import {
   type SearchItem,
   type SearchItemKind,
 } from '@/lib/search';
+import {
+  scanBookmarkDuplicates,
+  exportBookmarksAsNetscapeHtml,
+  exportBookmarksAsJson,
+  computeRecommendedDeletePlan,
+} from '@/lib/bookmarks';
+import {
+  analyzeTabHealth,
+  ESTIMATED_MB_PER_TAB,
+  isEligibleForDiscard,
+} from '@/lib/tab-health';
 import type { BackgroundRequest } from '@/lib/messaging';
 
 const ALLOW_TTL = 8000;
@@ -229,6 +240,131 @@ export default defineBackground(() => {
             msg.windowId ?? sender.tab?.windowId,
           );
           sendResponse({ ok: true, message });
+        } else if (msg.type === 'scanBookmarks') {
+          if (!chrome.bookmarks) {
+            sendResponse({ ok: false, error: '未获取书签读取权限' });
+            return;
+          }
+          const tree = await chrome.bookmarks.getTree();
+          const report = scanBookmarkDuplicates(tree);
+          sendResponse({ ok: true, report });
+        } else if (msg.type === 'cleanBookmarks') {
+          if (!chrome.bookmarks) {
+            sendResponse({ ok: false, error: '未获取书签管理权限' });
+            return;
+          }
+          let removedCount = 0;
+          for (const id of msg.bookmarkIds) {
+            try {
+              await chrome.bookmarks.remove(id);
+              removedCount++;
+            } catch (err) {
+              console.warn('[YiTab] Failed to remove bookmark:', id, err);
+            }
+          }
+          sendResponse({ ok: true, removedCount });
+        } else if (msg.type === 'exportBookmarksBackup') {
+          if (!chrome.bookmarks) {
+            sendResponse({ ok: false, error: '未获取书签权限' });
+            return;
+          }
+          const tree = await chrome.bookmarks.getTree();
+          const dateStr = new Date().toISOString().slice(0, 10);
+          if (msg.format === 'html') {
+            const content = exportBookmarksAsNetscapeHtml(tree);
+            sendResponse({
+              ok: true,
+              content,
+              filename: `yitab-bookmarks-backup-${dateStr}.html`,
+              mimeType: 'text/html;charset=utf-8',
+            });
+          } else {
+            const content = exportBookmarksAsJson(tree);
+            sendResponse({
+              ok: true,
+              content,
+              filename: `yitab-bookmarks-backup-${dateStr}.json`,
+              mimeType: 'application/json;charset=utf-8',
+            });
+          }
+        } else if (msg.type === 'getTabHealth') {
+          const win =
+            msg.windowId ??
+            sender.tab?.windowId ??
+            (await chrome.windows?.getLastFocused({ populate: false }).catch(() => null))?.id;
+          const tabs = await chrome.tabs.query(
+            win != null ? { windowId: win } : { currentWindow: true },
+          );
+          const health = analyzeTabHealth(tabs);
+          sendResponse({ ok: true, health });
+        } else if (msg.type === 'discardTabs') {
+          const win =
+            msg.windowId ??
+            sender.tab?.windowId ??
+            (await chrome.windows?.getLastFocused({ populate: false }).catch(() => null))?.id;
+          const tabs = await chrome.tabs.query(
+            win != null ? { windowId: win } : { currentWindow: true },
+          );
+          const targetIds =
+            msg.tabIds && msg.tabIds.length > 0
+              ? msg.tabIds
+              : tabs.filter((t) => isEligibleForDiscard(t)).map((t) => t.id!).filter(Boolean);
+
+          let discardedCount = 0;
+          for (const tid of targetIds) {
+            try {
+              await chrome.tabs.discard(tid);
+              discardedCount++;
+            } catch (err) {
+              console.warn('[YiTab] Failed to discard tab:', tid, err);
+            }
+          }
+          sendResponse({
+            ok: true,
+            discardedCount,
+            freedMemoryMb: discardedCount * ESTIMATED_MB_PER_TAB,
+          });
+        } else if (msg.type === 'archiveInactiveTabs') {
+          const win =
+            msg.windowId ??
+            sender.tab?.windowId ??
+            (await chrome.windows?.getLastFocused({ populate: false }).catch(() => null))?.id;
+          const tabs = await chrome.tabs.query(
+            win != null ? { windowId: win } : { currentWindow: true },
+          );
+          const eligibleTabs = tabs.filter((t) =>
+            msg.tabIds && msg.tabIds.length > 0
+              ? msg.tabIds.includes(t.id!)
+              : isEligibleForDiscard(t),
+          );
+
+          if (!eligibleTabs.length) {
+            sendResponse({ ok: false, archivedCount: 0, snapshotName: '' });
+            return;
+          }
+
+          const snapshotItems = eligibleTabs.map((t) => ({
+            title: t.title || t.url || '',
+            url: t.url || '',
+            favIconUrl: t.favIconUrl,
+          }));
+
+          const now = new Date();
+          const timeStr = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+          const snapName =
+            msg.customName || `闲置标签沉淀归档 (${eligibleTabs.length} 标签) · ${timeStr}`;
+
+          const snap = await saveSnapshot(snapshotItems, snapName);
+          const toCloseIds = eligibleTabs.map((t) => t.id!).filter(Boolean);
+          if (toCloseIds.length > 0) {
+            await chrome.tabs.remove(toCloseIds).catch(() => {});
+          }
+
+          sendResponse({
+            ok: true,
+            archivedCount: toCloseIds.length,
+            snapshotName: snap.name,
+          });
         }
       } catch (err) {
         console.error('[YiTab] Error handling message:', err);
@@ -684,6 +820,77 @@ async function executeActionCommand(action: string, windowId?: number): Promise<
       }
       return '当前窗口未发现重复标签';
     }
+  }
+
+  if (action === 'discard_inactive_tabs') {
+    if (win != null) {
+      const tabs = await chrome.tabs.query({ windowId: win });
+      const eligible = tabs.filter((t) => isEligibleForDiscard(t));
+      let count = 0;
+      for (const t of eligible) {
+        if (t.id != null) {
+          try {
+            await chrome.tabs.discard(t.id);
+            count++;
+          } catch {}
+        }
+      }
+      if (count > 0) {
+        return `已休眠 ${count} 个闲置标签，估算释放约 ${count * ESTIMATED_MB_PER_TAB}MB 内存`;
+      }
+      return '当前窗口暂无符合休眠条件的闲置标签';
+    }
+    return '执行休眠失败';
+  }
+
+  if (action === 'archive_inactive_tabs') {
+    if (win != null) {
+      const tabs = await chrome.tabs.query({ windowId: win });
+      const eligible = tabs.filter((t) => isEligibleForDiscard(t));
+      if (!eligible.length) {
+        return '当前窗口没有需要沉淀归档的闲置标签';
+      }
+      const snapshotItems = eligible.map((t) => ({
+        title: t.title || t.url || '',
+        url: t.url || '',
+        favIconUrl: t.favIconUrl,
+      }));
+      const now = new Date();
+      const timeStr = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const snap = await saveSnapshot(
+        snapshotItems,
+        `闲置标签沉淀归档 (${eligible.length} 标签) · ${timeStr}`,
+      );
+      const toClose = eligible.map((t) => t.id!).filter(Boolean);
+      await chrome.tabs.remove(toClose).catch(() => {});
+      return `已沉淀归档 ${toClose.length} 个闲置标签并安全关闭（快照: ${snap.name}）`;
+    }
+    return '沉淀归档失败';
+  }
+
+  if (action === 'clean_duplicate_bookmarks') {
+    if (chrome.bookmarks) {
+      const tree = await chrome.bookmarks.getTree();
+      const report = scanBookmarkDuplicates(tree);
+      if (report.redundantCount > 0) {
+        const { deleteIds } = computeRecommendedDeletePlan(report.groups);
+        let removed = 0;
+        for (const id of deleteIds) {
+          try {
+            await chrome.bookmarks.remove(id);
+            removed++;
+          } catch {}
+        }
+        return `已智能扫描并清理 ${removed} 个多余重复书签`;
+      }
+      return '当前收藏夹未发现重复书签';
+    }
+    return '无书签管理权限';
+  }
+
+  if (action === 'open_bookmarks_health') {
+    chrome.runtime.openOptionsPage();
+    return '已打开书签健康与去重中心';
   }
 
   return '指令已就绪';

@@ -98,6 +98,38 @@ export const ACTION_COMMANDS: ActionCommand[] = [
     keywords: ['clean', 'dedup', 'chongfu', 'qingli', '清理', '去重', '关闭重复'],
     icon: 'clean',
   },
+  {
+    id: 'cmd:discard_inactive_tabs',
+    action: 'discard_inactive_tabs',
+    title: '一键休眠闲置标签 (释放内存)',
+    description: '安全休眠非活动未播放音频的标签，释放常驻内存 (Freeze)',
+    keywords: ['discard', 'sleep', 'xiumian', 'neicun', 'freeze', '休眠', '内存', '冻结', '省电'],
+    icon: 'sleep',
+  },
+  {
+    id: 'cmd:archive_inactive_tabs',
+    action: 'archive_inactive_tabs',
+    title: '沉淀归档闲置标签 (存为快照并关闭)',
+    description: '将所有不活跃标签保存为独立会话快照后安全关闭，恢复清爽标签栏',
+    keywords: ['archive', 'stash', 'guidang', 'chendian', '归档', '沉淀', '存快照', '清理闲置'],
+    icon: 'archive',
+  },
+  {
+    id: 'cmd:clean_duplicate_bookmarks',
+    action: 'clean_duplicate_bookmarks',
+    title: '扫描并清理重复书签',
+    description: '智能检测收藏夹中的多余重复项并按建议安全清理',
+    keywords: ['bookmark', 'shuqian', 'clean', 'chongfu', '书签', '收藏夹', '书签去重'],
+    icon: 'bookmark',
+  },
+  {
+    id: 'cmd:open_bookmarks_health',
+    action: 'open_bookmarks_health',
+    title: '打开书签健康与维护中心',
+    description: '查看全量书签树重复扫描报告、失效检测与标准备份导出',
+    keywords: ['bookmark', 'health', 'jiankang', 'shuqian', '书签', '健康中心', '书签管理'],
+    icon: 'heart',
+  },
 ];
 
 /** 提取干净的显示域名 */

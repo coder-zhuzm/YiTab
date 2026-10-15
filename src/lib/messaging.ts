@@ -2,6 +2,8 @@ import type { Settings } from './settings';
 import type { TabInfo } from './match';
 import type { SessionSnapshot, TabSnapshotItem } from './snapshots';
 import type { SearchItem, SearchItemKind } from './search';
+import type { BookmarkScanReport } from './bookmarks';
+import type { TabHealthReport } from './tab-health';
 
 /** confirm 页 / popup / content script / options 与 background 之间的消息协议 */
 
@@ -99,6 +101,40 @@ export interface ExecuteCommandRequest {
   windowId?: number;
 }
 
+/** 阶段四：书签生态与闲置标签休眠维护协议 */
+
+export interface ScanBookmarksRequest {
+  type: 'scanBookmarks';
+}
+
+export interface CleanBookmarksRequest {
+  type: 'cleanBookmarks';
+  bookmarkIds: string[];
+}
+
+export interface ExportBookmarksBackupRequest {
+  type: 'exportBookmarksBackup';
+  format: 'html' | 'json';
+}
+
+export interface GetTabHealthRequest {
+  type: 'getTabHealth';
+  windowId?: number;
+}
+
+export interface DiscardTabsRequest {
+  type: 'discardTabs';
+  tabIds?: number[];
+  windowId?: number;
+}
+
+export interface ArchiveInactiveTabsRequest {
+  type: 'archiveInactiveTabs';
+  tabIds?: number[];
+  windowId?: number;
+  customName?: string;
+}
+
 export type BackgroundRequest =
   | FindDuplicatesRequest
   | ConfirmOpenRequest
@@ -113,7 +149,13 @@ export type BackgroundRequest =
   | GetCurrentWindowTabsRequest
   | RestoreSnapshotRequest
   | SearchItemsRequest
-  | ExecuteCommandRequest;
+  | ExecuteCommandRequest
+  | ScanBookmarksRequest
+  | CleanBookmarksRequest
+  | ExportBookmarksBackupRequest
+  | GetTabHealthRequest
+  | DiscardTabsRequest
+  | ArchiveInactiveTabsRequest;
 
 export interface FindDuplicatesResponse {
   ok: true;
@@ -168,6 +210,42 @@ export interface SearchItemsResponse {
 export interface ExecuteCommandResponse {
   ok: boolean;
   message: string;
+}
+
+export interface ScanBookmarksResponse {
+  ok: boolean;
+  report?: BookmarkScanReport;
+  error?: string;
+}
+
+export interface CleanBookmarksResponse {
+  ok: boolean;
+  removedCount: number;
+  error?: string;
+}
+
+export interface ExportBookmarksBackupResponse {
+  ok: boolean;
+  content: string;
+  filename: string;
+  mimeType: string;
+}
+
+export interface GetTabHealthResponse {
+  ok: boolean;
+  health: TabHealthReport;
+}
+
+export interface DiscardTabsResponse {
+  ok: boolean;
+  discardedCount: number;
+  freedMemoryMb: number;
+}
+
+export interface ArchiveInactiveTabsResponse {
+  ok: boolean;
+  archivedCount: number;
+  snapshotName: string;
 }
 
 export function sendToBackground<T>(msg: BackgroundRequest): Promise<T> {
