@@ -1,140 +1,182 @@
 # YiTab 一签
 
-> 围绕 Chrome 标签页与书签的效率工具套件。第一个功能：**打开重复标签前拦截，自动切换或一键确认。**
-
-[![Chrome](https://img.shields.io/badge/Chrome-MV3-blue)](https://developer.chrome.com/docs/extensions/develop/migrate)
-[![React](https://img.shields.io/badge/React-18-61dafb)](https://react.dev)
-[![WXT](https://img.shields.io/badge/Built%20with-WXT-5a0fc8)](https://wxt.dev)
-
-## 这解决了什么问题
-
-日常开网页时经常遇到「这个页面我是不是已经开过了？」——靠人眼翻标签太累，等发现重复时已经堆了一堆。YiTab 在你**照常使用**（地址栏输入、点书签、点链接、中键新开）的同时自动完成判断：
-
-- **没有重复** → 什么都不发生，体验零变化
-- **发现重复** → 按你选的模式处理：
-  - **静默切换**（默认）：自动跳到已有标签，新开的标签一闪即逝
-  - **页内确认**：新标签原地变成大按钮确认页，一眼看到已有标签的标题/图标，「切换过去」「仍要新开 ↗」点一下即可（支持 `Enter` / `Esc`）
-
-## 界面预览
-
-### 1. 拦截确认页（整页导航拦截）
-> 当你在地址栏、书签、或外部链接打开已有标签时自动拦截。顶部磨砂吸顶操作栏确保按钮永远触手可及，配合等宽 URL 结构高亮和立体 `<kbd>` 快捷键提示。
-
 <p align="center">
-  <img src="./docs/images/yitab-preview-confirm.png" alt="YiTab 拦截确认页预览" width="850" />
+  <strong>轻量、无侵入的 Chrome 标签页去重与效率管理套件</strong>
 </p>
 
-### 2. SPA 站内路由悬浮提示（非侵入式轻量拦截）
-> 针对现代单页应用（GitHub、Jira、各类管理控制台）的前端路由跳转，采用隔离 Shadow DOM 灵动岛通知条，不刷新、不破坏当前页面状态与输入内容。
-
 <p align="center">
-  <img src="./docs/images/yitab-preview-spa-toast.png" alt="YiTab SPA 站内路由悬浮提示预览" width="560" />
+  <a href="https://github.com/coder-zhuzm/YiTab/releases"><img src="https://img.shields.io/github/v/release/coder-zhuzm/YiTab?color=4f46e5&label=Release" alt="Latest Release"></a>
+  <a href="https://developer.chrome.com/docs/extensions/develop/migrate"><img src="https://img.shields.io/badge/Manifest-V3-3b82f6" alt="Manifest V3"></a>
+  <a href="https://react.dev"><img src="https://img.shields.io/badge/React-18-61dafb" alt="React 18"></a>
+  <a href="https://wxt.dev"><img src="https://img.shields.io/badge/Framework-WXT-5a0fc8" alt="WXT"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License"></a>
 </p>
 
-### 3. 设置中心（全局与细粒度网站规则）
-> 提供 2x2 交互式匹配模式网格（智能 Smart、完整 URL、同路径 Path、同域名 Domain），带有实时代码芯片说明，支持参数忽略与域名例外规则。
+---
+
+## 概述
+
+在多任务浏览场景中，用户常因点击外部链接、打开书签或在地址栏输入而重复打开已经存在的网页，导致浏览器标签页迅速堆积。
+
+**YiTab 一签** 在浏览器底层网络与路由事件中进行非侵入式去重检测：
+- **无重复标签**：完全静默放行，零额外耗时，保持浏览器原生体验。
+- **检测到重复**：
+  - **静默切换（默认）**：自动聚焦至已存在的标签页，新开标签瞬间自动释放。
+  - **页内确认**：将重复标签转化为交互式管理面板，直观对比目标网址与已有标签，支持一键切换、全键盘快捷操作或加入标签组。
+
+---
+
+## 界面展示
+
+### 1. 拦截确认页（Committed Navigation）
+当从地址栏、书签、快捷键或外部应用打开重复网页时，自动呈现聚焦确认界面。吸顶操作栏确保操作按钮始终触手可及，配合等宽 URL 结构高亮与物理按键提示。
 
 <p align="center">
-  <img src="./docs/images/yitab-preview-options.png" alt="YiTab 设置中心预览" width="850" />
+  <img src="./docs/images/yitab-preview-confirm.png" alt="YiTab 拦截确认页" width="850" />
 </p>
 
-## 特性
+### 2. 单页应用路由浮窗（SPA In-Page Toast）
+针对 GitHub、Jira、各类控制台等现代前端单页应用（SPA）的内部无刷新路由跳转，通过隔离的 Shadow DOM 挂载浮窗提示，既避免重复进入相同内容，又绝不刷新或中断当前网页的 DOM 状态与表单输入。
 
-| 特性 | 说明 |
-|---|---|
-| 全入口与 SPA 覆盖 | 地址栏、书签、页内链接、中键新标签（`onCommitted`）以及单页应用路由跳转（`onHistoryStateUpdated`、`onReferenceFragmentUpdated`）统一检测 |
-| 智能轻量确认 | 整页导航拦截至操作页；SPA 站内跳转采用非侵入式页内 Shadow DOM 悬浮提示，不卸载当前页面 |
-| 可配置粒度 | 智能匹配（新安装默认）/ 完整地址 / 同路径 / 同域名，升级保留旧设置 |
-| 网站规则 | 按精确域名或含子域覆盖匹配模式，智能模式可额外忽略指定参数 |
-| 可解释匹配 | 确认页与悬浮提示展示目标与已有地址、匹配原因、命中的网站规则 |
-| 确认页快捷操作 | 吸顶操作条（防卡片推挤）、URL 摘要折叠、单项/批量关闭、仅留此项、全键盘操作（`↵` / `Esc` / `↑` / `↓`） |
-| Chrome 标签分组 | 支持在确认页为所选标签一键新建 Chrome 标签组（调色板配色）或加入当前窗口已有分组 |
-| 可配置交互 | 静默切换 / 页内确认，随时切换 |
-| 域名白名单 | 白名单域名永不拦截（如邮箱、协作工具） |
-| 重定向精准放行 | 「仍要打开」针对目标 URL 与匹配特征放行 8 秒，http→https 及重定向链不再误拦，无关网址不越权放行 |
-| 快 | 设置内存缓存 + 序列号防竞态 + 并行查询，检测「一闪即切」 |
+<p align="center">
+  <img src="./docs/images/yitab-preview-spa-toast.png" alt="YiTab SPA 路由轻量提示" width="560" />
+</p>
 
-## 安装（开发版）
+### 3. 规则配置中心（Options Center）
+采用 2×2 交互式矩阵呈现四种匹配粒度（智能 / 完整 URL / 同路径 / 同域名），提供精准的代码示例与直观效果说明，支持域名白名单与细粒度网站例外规则配置。
+
+<p align="center">
+  <img src="./docs/images/yitab-preview-options.png" alt="YiTab 规则配置中心" width="850" />
+</p>
+
+---
+
+## 核心特性
+
+- **双层拦截架构**：
+  - **整页导航拦截**（`webNavigation.onCommitted`）：在文档网络提交前进行拦截与重定向，避免重复下载页面资源。
+  - **单页路由监听**（`onHistoryStateUpdated` / `onReferenceFragmentUpdated`）：通过内容脚本 Shadow DOM 浮窗提示，保护现有页面上下文。
+- **可解释性匹配引擎**：
+  - 智能过滤营销追踪参数（`utm_*`、`gclid`、`fbclid` 等）。
+  - 精准识别页面内锚点与前端路由 Hash（保留 `#/path`、`#!/route`，忽略 `#comment` 锚点）。
+  - 界面实时展示匹配原因、目标地址剖析与生效规则来源。
+- **原生 Chrome 标签组联动**：
+  - 在确认页可将重复标签及当前目标直接归拢至指定调色板颜色的 Chrome 标签组，或加入当前窗口的现有分组。
+- **全键盘极速流**：
+  - 确认页完整支持键盘快捷键：`↵ Enter`（切换至所选）、`Esc`（仍要打开）、`↑` / `↓`（选择标签）、`Delete`（关闭选定标签）。
+- **精准放行机制**：
+  - 点击“仍要打开”后，系统对目标 URL 与匹配特征实施短暂放行（8 秒），平滑处理 HTTP→HTTPS 重定向链，杜绝二次拦截死循环。
+
+---
+
+## 匹配模式规范
+
+| 模式 | 比较维度 | 参数处理 | 适用场景 |
+| :--- | :--- | :--- | :--- |
+| **智能匹配 (Smart)**<br>*(默认推荐)* | 协议 + 域名 + 端口 + 路径 + 内容参数 | 自动剥离 `utm_*`、`gclid` 等追踪参数，保留内容相关参数；参数名自动排序标准化 | 绝大多数日常网页浏览与工作协作 |
+| **完整地址 (URL)** | 完整 URL 字符串 | 严格保留所有参数顺序与大小写，不忽略任何参数 | 对查询参数顺序与内容极度敏感的特定系统 |
+| **同路径 (Path)** | 协议 + 域名 + 端口 + 路径 | 忽略所有 URL 查询参数 | 需限制单一文章或功能页面多开的场景 |
+| **同域名 (Domain)** | 主机域名（Host） | 忽略协议、端口、路径及全部参数；`www` 与裸域名视为等价 | 限制同一站点仅允许保留单个活动标签 |
+
+> **规则生效优先级**：`全局白名单` > `最长匹配的具体网站规则` > `全局默认模式`。
+
+---
+
+## 快捷键指南
+
+在拦截确认页中，无需使用鼠标即可完成所有管理操作：
+
+| 快捷键 | 功能 |
+| :--- | :--- |
+| <kbd>↵ Enter</kbd> | 立即激活并切换至当前选中的已有标签页 |
+| <kbd>Esc</kbd> | 忽略拦截，登记放行并在当前标签页中继续打开新页面 |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | 在找到的多个候选已有标签页之间切换选中目标 |
+| <kbd>Delete</kbd> / <kbd>Backspace</kbd> | 关闭当前选中的已有标签页 |
+| <kbd>Space</kbd> | 开启/退出批量多选管理模式 |
+
+---
+
+## 安装与使用
+
+### 方式一：下载预构建包（推荐）
+
+1. 进入 [Releases 页面](https://github.com/coder-zhuzm/YiTab/releases) 下载最新版本的 `yitab-x.x.x-chrome.zip` 并解压。
+2. 打开 Chrome 浏览器，访问 `chrome://extensions/`。
+3. 开启右上角的 **「开发者模式」**。
+4. 点击左上角 **「加载已解压的扩展程序」**，选择刚才解压出来的目录即可。
+
+### 方式二：从源码构建
+
+开发与构建依赖 **Node.js 22.6+** 与 **pnpm / npm**：
 
 ```bash
+# 克隆仓库
 git clone https://github.com/coder-zhuzm/YiTab.git
 cd YiTab
-pnpm install
-pnpm build
-```
 
-构建产物在 `.output/chrome-mv3/`，Chrome → `chrome://extensions` → 开启「开发者模式」→「加载已解压的扩展程序」选择该目录。
+# 安装依赖
+npm ci
 
-## 重复判定（0.3.0）
+# 开发模式（支持热重载）
+npm run dev
 
-- **智能匹配**：比较协议、域名、端口、路径及内容参数。忽略 `utm_*`、`gclid`、`dclid`、`fbclid`、`msclkid`、`mc_cid`、`mc_eid`，未知参数默认保留。参数按名称排序，但同名多值顺序保留。路径大小写、尾斜杠和 www 不自动合并。
-- **完整地址**：完整 URL 一致，保留查询参数顺序与锚点，不主动忽略参数。
-- **同路径**：比较协议、域名、端口、路径，忽略所有查询参数。搜索词、视频 ID 也会被忽略，请谨慎使用。
-- **同域名**：兼容旧行为，忽略路径、参数、协议、端口，www 与裸域名等价。适合限制同站点多开，不代表相同内容。
-
-智能/同路径模式忽略简单页内锚点（如 `#comments`），保留 `#/...`、`#!/...` 和其他复杂 Hash。无法可靠识别所有 SPA 路由；例如 `#settings` 这种简单 Hash 路由，请为该网站选择完整地址模式。不同路径默认放行，不自动猜测重写路由或网页内容。
-
-规则优先级：**白名单 → 最具体的网站规则 → 全局模式**。网站规则默认仅精确域名，可显式覆盖子域名；最长域名优先，同域名精确规则优先。额外忽略参数仅适用于智能模式，参数名精确区分大小写，不支持通配符，不应填 `id`、`v`、`q` 等内容标识。白名单保持旧版精确域名行为（www 等价），不自动覆盖其他子域名。
-
-宽泛模式搭配静默切换可能误跳到不同内容，设置页会提示风险，建议搭配页内确认。现有用户的匹配和处理模式不会在升级时自动修改。「仍要新开」仍在后台登记 8 秒放行后原地导航，不关闭当前标签。
-
-## 验证
-
-使用 Node.js 22.6+（测试依赖原生 TypeScript stripping）：
-
-```bash
-npm test
-npm run compile
+# 编译打包 Chrome MV3 生产版本
 npm run build
 ```
 
-可选浏览器回归（需 `/usr/bin/chromium`）：`node tests/browser-smoke.mjs`。使用独立临时配置，不修改当前浏览器；验证设置保存、智能拦截、原因显示及「仍要新开」原地导航。
+构建生成的插件产物位于 `.output/chrome-mv3/`。
 
-## 技术栈
+---
 
-- **WXT**：基于 Vite 的现代 WebExtension 框架，MV3 优先、HMR、entrypoint 约定式开发
-- **React 18 + TypeScript**（strict）
-- **Ant Design 5**：选项页 / 确认页 UI
-- 核心逻辑独立于 UI（`src/lib/`）：`settings`（存储+缓存）、`match`（匹配规则）、`messaging`（消息协议），新功能以钩子形式接入检测管线
+## 产品演进路线 (Roadmap)
 
-## 目录结构
+YiTab 的长期目标是打造围绕 Chromium 标签页与书签的轻量、高效整理套件。
 
-```
-src/
-├── entrypoints/
-│   ├── background.ts      # 后台：导航与 SPA 监听、去重决策、标签管理
-│   ├── content.ts         # 内容脚本：SPA 路由重复页内轻量提示（Shadow DOM）
-│   ├── confirm/           # 页内确认页（吸顶栏、摘要折叠、标签分组管理）
-│   └── options/           # 设置页（React + AntD）
-├── lib/
-│   ├── settings.ts        # 设置模型、storage.sync + 内存缓存
-│   ├── match.ts           # URL/域名匹配、归一化、白名单、MatchKey 计算
-│   └── messaging.ts       # confirm/content/options ↔ background 消息协议与分组类型
-└── public/icon.png
+```mermaid
+graph LR
+    A[v0.3 智能去重拦截] --> B[v0.4 标签归拢与会话快照]
+    B --> C[v0.5 快速命令面板]
+    C --> D[v1.0 书签健康与生态]
 ```
 
-## Roadmap
+### 阶段一：智能去重与拦截增强 (v0.3.x) - [当前阶段]
+- [x] 基于网络生命周期的整页导航去重拦截（Committed Navigation）
+- [x] 现代单页应用无刷新路由去重（SPA History / Hash State Toast）
+- [x] 2×2 粒度匹配矩阵（Smart, URL, Path, Domain）与参数归一化
+- [x] 交互式拦截确认页（操作吸顶、URL 剖析、全键盘支持）
+- [x] 原生 Chrome 标签组创建与归拢集成
 
-YiTab 的目标是标签页/书签效率套件，按痛点分四条线：
+### 阶段二：标签归类与会话快照 (v0.4.x)
+- [ ] **域名智能归拢**：一键将当前窗口的杂乱标签按域名自动聚合成对应命名的 Chrome 标签组
+- [ ] **会话快照归档 (Session Snapshot)**：一键暂存当前窗口全部标签页为命名快照，支持稍后一键恢复或跨设备导出
+- [ ] **多格式导出**：支持将当前窗口/选定标签一键复制为标准 Markdown 链接列表或 JSON 结构
 
-### 1. 防堆积 ✅ 起步 / 持续增强
-- [x] 重复标签检测（静默切换 / 页内确认）
-- [ ] 标签挂起休眠：N 小时未访问自动释放内存，保留标题与 favicon
-- [ ] 定时清理：清理 N 天未动的标签，清理前可预览
+### 阶段三：快速检索与命令导航 (v0.5.x)
+- [ ] **全局命令面板 (Command Palette)**：全局快捷键唤出（如 `Alt+K`），快速模糊搜索并跳转已开标签页、书签与近期历史
+- [ ] **Omnibox 地址栏快捷指令**：在浏览器地址栏输入 `tab + 空格` 直接过滤并聚焦目标标签
 
-### 2. 快速检索与切换
-- [ ] 全局命令面板：一个框搜「已开标签 + 书签 + 历史」，回车直达
-- [ ] omnibox 增强：地址栏下拉插入自定义高亮建议
+### 阶段四：书签生态与数据维护 (v1.0.x)
+- [ ] **书签智能去重**：扫描并标记浏览器收藏夹中重复或死链的 URL，提供安全合并建议
+- [ ] **休眠与闲置清理**：标记长期未访问的不活跃标签页，提供批量清理前的安全预览与沉淀
 
-### 3. 自动整理
-- [ ] 按域名自动分组（对接 Chrome 标签组）
-- [ ] 会话快照：整窗保存为命名会话，一键恢复
-- [ ] 书签去重 / 失效链接检测
+---
 
-### 4. 效率输出
-- [ ] 一键复制所有标签为 URL / Markdown 列表
-- [ ] 选中标签生成资料收集笔记（Markdown）
+## 技术架构
 
-## License
+- **核心框架**：[WXT](https://wxt.dev/)（新一代 WebExtension 框架，MV3 原生、Vite 驱动）
+- **UI 界面**：React 18 + TypeScript (Strict Mode) + Ant Design 5 (Token 主题深度定制)
+- **隔离机制**：Shadow DOM 样式隔离（SPA 浮窗）+ 独立 Extension 页面
+- **自动化测试**：Node.js 原生测试套件（35 项核心算法用例）+ Headless Chromium 真实端到端测试（Smoke Test）+ CDP 自动截图管线
 
-[MIT](./LICENSE)
+---
+
+## 参与贡献与开源许可
+
+欢迎提交 Issue 反馈问题或建议，欢迎贡献代码。提交代码前请确保运行：
+
+```bash
+npm test          # 运行单元测试
+npm run compile   # 运行 TypeScript 类型静态检查
+```
+
+本项目基于 [MIT 许可证](./LICENSE) 开源。
