@@ -1,7 +1,6 @@
 name: Build & Release YiTab Extension
 
 on:
-  # 1. 支持在 GitHub 网页 Actions 页面手动点击一键打包
   workflow_dispatch:
     inputs:
       create_release:
@@ -12,19 +11,9 @@ on:
         description: '是否标记为 Pre-release 预览版本'
         type: boolean
         default: false
-
-  # 2. 当推送至 main 分支时自动触发（检测 package.json 版本号变化自动发布）
   push:
     branches:
       - main
-    paths:
-      - 'package.json'
-      - 'src/**'
-      - 'wxt.config.ts'
-      - '.github/workflows/**'
-
-  # 3. 推送版本标签（例如 git tag v0.3.1 && git push origin v0.3.1）时自动发布
-  push:
     tags:
       - 'v*'
 
