@@ -1,0 +1,112 @@
+name: Build & Release YiTab Extension
+
+on:
+  # 1. 支持在 GitHub 网页 Actions 页面手动点击一键打包
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: '是否发布到 GitHub Releases (否则仅生成并上传构建工件 Artifact)'
+        type: boolean
+        default: true
+      is_prerelease:
+        description: '是否标记为 Pre-release 预览版本'
+        type: boolean
+        default: false
+
+  # 2. 当推送至 main 分支时自动触发（检测 package.json 版本号变化自动发布）
+  push:
+    branches:
+      - main
+    paths:
+      - 'package.json'
+      - 'src/**'
+      - 'wxt.config.ts'
+      - '.github/workflows/**'
+
+  # 3. 推送版本标签（例如 git tag v0.3.1 && git push origin v0.3.1）时自动发布
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出仓库代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 配置 Node.js 环境 (v22)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 安装项目依赖
+        run: npm ci
+
+      - name: 执行单元测试
+        run: npm test
+
+      - name: 执行 TypeScript 静态类型检查
+        run: npm run compile
+
+      - name: 读取 package.json 版本号并检查 Tag 状态
+        id: pkg_info
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag_name=v${VERSION}" >> $GITHUB_OUTPUT
+
+          # 检查对应版本的 Tag 是否已经存在于远程或本地
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+            echo "版本 v${VERSION} 的 Tag 已存在"
+          else
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+            echo "检测到新版本 v${VERSION}，尚未发布对应 Tag"
+          fi
+
+      - name: 构建并打包 Chrome 扩展 (.zip)
+        run: npm run zip
+
+      - name: 上传构建产物至 GitHub Artifacts (随时可免登录下载)
+        uses: actions/upload-artifact@v4
+        with:
+          name: yitab-v${{ steps.pkg_info.outputs.version }}-chrome-mv3
+          path: .output/*.zip
+          retention-days: 90
+
+      - name: 判断是否需要触发 GitHub Release 发布
+        id: should_release
+        run: |
+          # 满足以下任意条件即自动发布：
+          # 1. 显式推送了 v* Git Tag
+          # 2. 手动触发 (workflow_dispatch) 且勾选了 create_release
+          # 3. push 到 main 分支时检测到 package.json 中的版本号尚未发布对应 Tag
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "release=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.create_release }}" = "true" ]; then
+            echo "release=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ steps.pkg_info.outputs.tag_exists }}" = "false" ]; then
+            echo "release=true" >> $GITHUB_OUTPUT
+          else
+            echo "release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 创建 GitHub Release 并挂载扩展安装包
+        if: steps.should_release.outputs.release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.pkg_info.outputs.tag_name }}
+          name: YiTab 一签 ${{ steps.pkg_info.outputs.tag_name }}
+          files: .output/*.zip
+          generate_release_notes: true
+          prerelease: ${{ inputs.is_prerelease || false }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
