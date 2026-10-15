@@ -201,11 +201,171 @@ try {
     client.close();
   }
 
+  // 7. Screenshot New Tab Smart Launcher (Retina 2x)
+  {
+    // Seed rich mock data into chrome.storage.local for an authentic, realistic preview
+    const { targetId: seedTargetId } = await browser.call('Target.createTarget', { url: `${origin}/options.html` });
+    const seedTarget = await until(async () => (await targets()).find(t => t.id === seedTargetId), 'seedTarget');
+    const seedClient = await connect(seedTarget.webSocketDebuggerUrl);
+    await until(() => seedClient.evaluate('Boolean(window.chrome?.storage?.sync)'), 'seed storage ready');
+    await seedClient.evaluate(`(async () => {
+      // 1. Seed AI Settings
+      await chrome.storage.sync.set({
+        yitab_ai_settings: {
+          enabled: true,
+          capsuleSummarize: true,
+          naturalLanguageJump: true,
+          taskAutoGrouping: true,
+          bookmarkSmartTagging: true,
+          morningBriefing: true,
+          pauseOnBattery: true,
+        }
+      });
+
+      // 2. Seed History URLs
+      const mockHistoryUrls = [
+        'https://github.com/coder-zhuzm/YiTab/pull/42',
+        'https://jira.corp.internal/browse/PROJ-8899',
+        'http://localhost:8080/debug/pprof',
+        'https://console.aliyun.com/ecs/detail/i-bp18',
+        'https://v2ex.com/t/1089221',
+        'https://developer.chrome.com/docs/extensions/reference/api/tabs'
+      ];
+      for (const url of mockHistoryUrls) {
+        try {
+          await chrome.history.addUrl({ url });
+        } catch {}
+      }
+
+      // 3. Seed Rich Recommendation Cards and Snapshots
+      await chrome.storage.local.set({
+        yitab_recommendations_cache: [
+          {
+            domain: 'github.com',
+            primaryUrl: 'https://github.com',
+            title: 'GitHub: Let’s build from here',
+            score: 96,
+            capsule: {
+              url: 'https://github.com/coder-zhuzm/YiTab/pull/42',
+              title: 'Pull Request #42: Optimize dual-layer navigation interception',
+              cleanTitle: 'PR #42: 优化双层拦截'
+            }
+          },
+          {
+            domain: 'jira.corp.internal',
+            primaryUrl: 'https://jira.corp.internal',
+            title: 'Jira Software · 企业敏捷看板',
+            score: 92,
+            capsule: {
+              url: 'https://jira.corp.internal/browse/PROJ-8899',
+              title: 'PROJ-8899 订单超时支付状态回滚异常排查',
+              cleanTitle: 'PROJ-8899: 超时排查'
+            }
+          },
+          {
+            domain: 'localhost:8080',
+            primaryUrl: 'http://localhost:8080',
+            title: '本地开发调试服务 :8080',
+            score: 88,
+            capsule: {
+              url: 'http://localhost:8080/debug/pprof',
+              title: 'Go Runtime pprof Performance Profile',
+              cleanTitle: 'pprof 性能分析'
+            }
+          },
+          {
+            domain: 'console.aliyun.com',
+            primaryUrl: 'https://console.aliyun.com',
+            title: '阿里云管理控制台',
+            score: 85,
+            capsule: {
+              url: 'https://console.aliyun.com/ecs/detail/i-bp18',
+              title: 'ECS 实例详情 (i-bp18...) 生产集群 Node-02',
+              cleanTitle: 'ECS 生产节点-02'
+            }
+          },
+          {
+            domain: 'v2ex.com',
+            primaryUrl: 'https://v2ex.com',
+            title: 'V2EX 技术创意社区',
+            score: 79,
+            capsule: {
+              url: 'https://v2ex.com/t/1089221',
+              title: '探讨 Chromium MV3 下端侧大模型 API 的资源回收最佳实践',
+              cleanTitle: 'Chromium MV3 端侧AI探讨'
+            }
+          },
+          {
+            domain: 'developer.chrome.com',
+            primaryUrl: 'https://developer.chrome.com',
+            title: 'Chrome for Developers',
+            score: 74,
+            capsule: {
+              url: 'https://developer.chrome.com/docs/extensions/reference/api/tabs',
+              title: 'chrome.tabs API Documentation Reference',
+              cleanTitle: 'chrome.tabs API 参考'
+            }
+          }
+        ],
+        yitab_session_snapshots: [
+          {
+            id: 'snap_yesterday',
+            name: '昨日下班工作现场 (结算排错与架构重构)',
+            createdAt: Date.now() - 3600 * 14 * 1000,
+            tabs: [
+              { id: 1, title: 'GitHub PR #42', url: 'https://github.com/coder-zhuzm/YiTab/pull/42' },
+              { id: 2, title: 'Jira PROJ-8899', url: 'https://jira.corp.internal/browse/PROJ-8899' },
+              { id: 3, title: 'Aliyun Console ECS', url: 'https://console.aliyun.com' },
+              { id: 4, title: 'Localhost Grafana :3000', url: 'http://localhost:3000' }
+            ]
+          }
+        ]
+      });
+
+      // 3. Seed Mock Bookmarks
+      try {
+        const otherFolder = await chrome.bookmarks.create({ title: '常用研发工具' });
+        await chrome.bookmarks.create({ parentId: otherFolder.id, title: 'GitHub 组织仓库', url: 'https://github.com' });
+        await chrome.bookmarks.create({ parentId: otherFolder.id, title: 'GitLab 内部代码托管', url: 'https://gitlab.corp.internal' });
+        await chrome.bookmarks.create({ parentId: otherFolder.id, title: 'Jenkins CI/CD 流水线', url: 'http://ci.oa:8080' });
+        await chrome.bookmarks.create({ parentId: otherFolder.id, title: 'Sentry 错误追踪监控', url: 'https://sentry.io' });
+
+        const docFolder = await chrome.bookmarks.create({ title: '技术文档与规范' });
+        await chrome.bookmarks.create({ parentId: docFolder.id, title: 'React 18 官方文档', url: 'https://react.dev' });
+        await chrome.bookmarks.create({ parentId: docFolder.id, title: 'WXT 扩展框架指南', url: 'https://wxt.dev' });
+        await chrome.bookmarks.create({ parentId: docFolder.id, title: 'MDN Web 开发技术', url: 'https://developer.mozilla.org' });
+        await chrome.bookmarks.create({ parentId: docFolder.id, title: 'Ant Design 5 组件库', url: 'https://ant.design' });
+
+        const opsFolder = await chrome.bookmarks.create({ title: '运维与内网环境' });
+        await chrome.bookmarks.create({ parentId: opsFolder.id, title: 'K8s 容器管理平台', url: 'http://10.20.0.15:30000' });
+        await chrome.bookmarks.create({ parentId: opsFolder.id, title: 'Grafana 链路监控看板', url: 'http://192.168.1.100:3000' });
+        await chrome.bookmarks.create({ parentId: opsFolder.id, title: '内网知识库与 Wiki', url: 'http://wiki.corp.internal' });
+      } catch (err) {
+        console.error('Failed to create mock bookmarks:', err);
+      }
+    })()`);
+    seedClient.close();
+
+    const { targetId } = await browser.call('Target.createTarget', { url: `${origin}/newtab.html` });
+    const target = await until(async () => (await targets()).find(t => t.id === targetId), 'newtab target');
+    const client = await connect(target.webSocketDebuggerUrl);
+    await client.call('Emulation.setDeviceMetricsOverride', { width: 1280, height: 1040, deviceScaleFactor: 2, mobile: false });
+    await until(() => client.evaluate(`document.body.innerText.includes('猜你想开') && document.body.innerText.includes('常用研发工具')`), 'newtab fully rendered');
+    await delay(1000);
+    const { data } = await client.call('Page.captureScreenshot', { format: 'png' });
+    await writeFile(join(outDir, 'yitab-preview-newtab.png'), Buffer.from(data, 'base64'));
+    console.log('Captured: docs/images/yitab-preview-newtab.png');
+    client.close();
+  }
+
   console.log('All screenshots successfully updated!');
 } finally {
   browser?.close();
   proc.kill('SIGTERM');
   await new Promise(r => proc.once('exit', r));
   testServer.close();
-  await rm(profile, { recursive: true, force: true });
+  await delay(300);
+  try {
+    await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+  } catch {}
 }
