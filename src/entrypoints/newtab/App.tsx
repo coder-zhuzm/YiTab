@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppstoreOutlined,
   CheckCircleFilled,
+  ClockCircleOutlined,
   DeleteOutlined,
   EditOutlined,
   GlobalOutlined,
@@ -9,6 +10,7 @@ import {
   SearchOutlined,
   SettingOutlined,
   SwapOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import {
   Button,
@@ -54,6 +56,11 @@ import {
   saveNewTabSettings,
   updatePinnedItem,
 } from '@/lib/pinned';
+import {
+  getCachedRecommendations,
+  refreshAndCacheRecommendations,
+  type RecommendedStation,
+} from '@/lib/recommendations';
 import { filterAndRankItems, type SearchItem } from '@/lib/search';
 
 const { Text, Title } = Typography;
@@ -90,6 +97,9 @@ export default function NewTabApp() {
     Array<{ id: number; url: string; title: string; windowId: number }>
   >([]);
 
+  // 猜你想开智能推选
+  const [recommendations, setRecommendations] = useState<RecommendedStation[]>([]);
+
   // 搜索框状态
   const [searchInput, setSearchInput] = useState('');
   const [activeEngine, setActiveEngine] = useState<SearchEngine>(SEARCH_ENGINES[0]);
@@ -124,19 +134,24 @@ export default function NewTabApp() {
   // 初始化加载数据
   useEffect(() => {
     async function loadInitialData() {
-      const [pData, nSettings] = await Promise.all([
+      // 1. 优先读取持久化缓存，实现首屏 <30ms 极速直出
+      const [pData, nSettings, cachedRecs] = await Promise.all([
         getPinnedData(),
         getNewTabSettings(),
+        getCachedRecommendations(),
       ]);
       setPinnedData(pData);
       setSettings(nSettings);
+      if (cachedRecs && cachedRecs.length > 0) {
+        setRecommendations(cachedRecs);
+      }
 
       const matchedEngine =
         SEARCH_ENGINES.find((e) => e.id === nSettings.defaultEngineId) ||
         SEARCH_ENGINES[0];
       setActiveEngine(matchedEngine);
 
-      // 查询已开标签
+      // 2. 查询已开标签
       if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
         try {
           const tabs = await chrome.tabs.query({});
@@ -154,6 +169,13 @@ export default function NewTabApp() {
           // ignore
         }
       }
+
+      // 3. 空闲时异步刷新历史推荐并更新缓存 (零阻塞首屏渲染)
+      refreshAndCacheRecommendations(8).then((fresh) => {
+        if (fresh && fresh.length > 0) {
+          setRecommendations(fresh);
+        }
+      });
     }
     loadInitialData();
   }, []);
@@ -479,6 +501,101 @@ export default function NewTabApp() {
             )}
           </Card>
         </div>
+
+        {/* 💡 猜你想开 (智能推选引擎 + 胶囊双态直达) */}
+        {recommendations.length > 0 && (
+          <div className="recommendations-section">
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 12,
+              }}
+            >
+              <Title level={5} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <ThunderboltOutlined style={{ color: '#f59e0b' }} /> 猜你想开
+                <span style={{ fontSize: 11, fontWeight: 'normal', color: '#94a3b8' }}>
+                  基于 RFT 衰减模型与当前时段智能推荐
+                </span>
+              </Title>
+            </div>
+
+            <div className="recommendations-grid">
+              {recommendations.map((rec) => {
+                const svgFallback = generateSvgFavicon(rec.title, rec.domain);
+                return (
+                  <div
+                    key={`rec_${rec.domain}`}
+                    className="recommendation-card"
+                    onClick={() => {
+                      if (rec.isOpen && rec.openTabId && typeof chrome !== 'undefined') {
+                        chrome.tabs.update(rec.openTabId, { active: true });
+                        if (rec.openWindowId && chrome.windows?.update) {
+                          chrome.windows.update(rec.openWindowId, { focused: true });
+                        }
+                      } else {
+                        handleOpenUrl(rec.primaryUrl);
+                      }
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <img
+                        className="pinned-icon"
+                        src={`https://www.google.com/s2/favicons?domain=${rec.domain}&sz=64`}
+                        alt={rec.title}
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = svgFallback;
+                        }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="pinned-title">{rec.title}</div>
+                        <div className="pinned-url">{rec.domain}</div>
+                      </div>
+
+                      {rec.isOpen && (
+                        <Tooltip title="该站点已在后台窗口打开，点击直接切换">
+                          <Tag
+                            color="success"
+                            icon={<CheckCircleFilled />}
+                            style={{ margin: 0, padding: '0 4px', fontSize: 10 }}
+                          >
+                            已打开
+                          </Tag>
+                        </Tooltip>
+                      )}
+
+                      {rec.isIntranet && !rec.isOpen && (
+                        <Tag color="geekblue" style={{ margin: 0, padding: '0 4px', fontSize: 10 }}>
+                          内网
+                        </Tag>
+                      )}
+                    </div>
+
+                    {/* 深层路由恢复上下文微胶囊 */}
+                    {rec.capsule && (
+                      <div
+                        className="resume-capsule"
+                        title={`上次访问: ${rec.capsule.title}\n地址: ${rec.capsule.url}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenUrl(rec.capsule!.url);
+                        }}
+                      >
+                        <ClockCircleOutlined style={{ fontSize: 11 }} />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          继续上次: {rec.capsule.cleanTitle}
+                        </span>
+                        <span style={{ fontSize: 10, opacity: 0.8 }}>↗</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* 固钉工作台 (Pinned Matrix) */}
         <div>
