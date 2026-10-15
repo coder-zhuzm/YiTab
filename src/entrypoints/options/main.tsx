@@ -9,10 +9,12 @@ import {
   ConfigProvider,
   Empty,
   Input,
+  message,
   Popconfirm,
   Radio,
   Select,
   Space,
+  Switch,
   Tabs,
   Tag,
   Tooltip,
@@ -40,7 +42,17 @@ import {
   type MatchMode,
   type Settings,
   type SiteRule,
+  type AiSettings,
+  DEFAULT_AI_SETTINGS,
+  getAiSettings,
+  saveAiSettings,
 } from '../../lib/settings';
+import {
+  checkAiCapabilities,
+  getAiCacheStats,
+  clearAiCache,
+  type AiCapabilities,
+} from '../../lib/ai-assistant';
 import { MODE_LABELS } from '../../lib/match';
 import { sendToBackground } from '../../lib/messaging';
 import type {
@@ -111,6 +123,15 @@ function OptionsPage() {
   const [discardLoading, setDiscardLoading] = useState(false);
   const [archiveLoading, setArchiveLoading] = useState(false);
 
+  // 阶段五：端侧 AI 智能引擎与资源管控
+  const [aiSettings, setAiSettingsState] = useState<AiSettings>(DEFAULT_AI_SETTINGS);
+  const [aiCapabilities, setAiCapabilities] = useState<AiCapabilities>({
+    supported: false,
+    modelReady: false,
+    status: 'no',
+  });
+  const [aiCacheCount, setAiCacheCount] = useState(0);
+
   useEffect(() => {
     getSettings()
       .then(update)
@@ -118,7 +139,22 @@ function OptionsPage() {
       .finally(() => setLoading(false));
 
     fetchTabHealth();
+    getAiSettings().then(setAiSettingsState);
+    checkAiCapabilities().then(setAiCapabilities);
+    getAiCacheStats().then((s) => setAiCacheCount(s.count));
   }, []);
+
+  const handleSaveAiSettings = async (patch: Partial<AiSettings>) => {
+    const next = await saveAiSettings(patch);
+    setAiSettingsState(next);
+    message.success('端侧 AI 配置已保存');
+  };
+
+  const handleClearAiCache = async () => {
+    await clearAiCache();
+    setAiCacheCount(0);
+    message.success('已成功清空本地端侧 AI 推理缓存');
+  };
 
   const fetchTabHealth = async () => {
     setHealthLoading(true);
@@ -1487,6 +1523,203 @@ function OptionsPage() {
                             一键沉淀归档并安全关闭闲置标签
                           </Button>
                         </Tooltip>
+                      </div>
+                    </Card>
+                  </div>
+                ),
+              },
+              {
+                key: 'ai',
+                label: (
+                  <span>
+                    <ThunderboltOutlined />
+                    端侧智能与资源管控 (AI)
+                  </span>
+                ),
+                children: (
+                  <div>
+                    {/* 全局总开关与环境探测卡片 */}
+                    <Card
+                      title={
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>
+                              🤖 Chrome Built-in AI 端侧模型引擎
+                            </span>
+                            {aiCapabilities.modelReady ? (
+                              <Tag color="success">Gemini Nano 端侧模型就绪</Tag>
+                            ) : aiCapabilities.supported ? (
+                              <Tag color="warning">端侧模型准备中 ({aiCapabilities.status})</Tag>
+                            ) : (
+                              <Tag color="default">未检测到本地模型 (已优雅降级为启发式规则)</Tag>
+                            )}
+                          </div>
+                          <Switch
+                            checked={aiSettings.enabled}
+                            onChange={(checked) => handleSaveAiSettings({ enabled: checked })}
+                          />
+                        </div>
+                      }
+                      style={{
+                        marginBottom: 20,
+                        borderRadius: 12,
+                        borderColor: '#e2e8f0',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                      }}
+                    >
+                      <Paragraph style={{ color: '#64748b', fontSize: 13, marginBottom: 16 }}>
+                        基于谷歌 Gemini Nano 本地模型，数据 100% 留存在浏览器本地沙箱，绝不上云、绝不出网，保障内网与敏感工单的绝对隐私安全。
+                        若硬件未开启端侧 AI 或处于省电状态，系统将自动平滑降级为确定性规则。
+                      </Paragraph>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 14,
+                          padding: 16,
+                          background: '#f8fafc',
+                          borderRadius: 8,
+                          border: '1px solid #e2e8f0',
+                          opacity: aiSettings.enabled ? 1 : 0.6,
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: '#0f172a' }}>
+                              深层工单与文档胶囊智能浓缩 (Capsule Summarization)
+                            </div>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>
+                              自动将内网复杂网址与工单浓缩为 4~8 字精炼任务标签（如 [继续: PROJ-1024 结算重构] ↗）
+                            </div>
+                          </div>
+                          <Switch
+                            disabled={!aiSettings.enabled}
+                            checked={aiSettings.capsuleSummarize}
+                            onChange={(checked) => handleSaveAiSettings({ capsuleSummarize: checked })}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: '#0f172a' }}>
+                              搜索框自然语言意图起跳 (Natural Language Jump)
+                            </div>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>
+                              支持输入“昨天看的权限修改PR”直接定位深层历史与书签。内置 400ms 输入防抖保护。
+                            </div>
+                          </div>
+                          <Switch
+                            disabled={!aiSettings.enabled}
+                            checked={aiSettings.naturalLanguageJump}
+                            onChange={(checked) => handleSaveAiSettings({ naturalLanguageJump: checked })}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: '#0f172a' }}>
+                              跨域名任务语义聚类与智能命名 (Cross-Domain Auto-Grouping)
+                            </div>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>
+                              将跨站点的同一任务页面（Jira工单、GitLab代码、本地开发端口）自动归并为统一工作流标签组
+                            </div>
+                          </div>
+                          <Switch
+                            disabled={!aiSettings.enabled}
+                            checked={aiSettings.taskAutoGrouping}
+                            onChange={(checked) => handleSaveAiSettings({ taskAutoGrouping: checked })}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: '#0f172a' }}>
+                              晨间工作现场智能简报 (Morning Standup Briefing)
+                            </div>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>
+                              每日早晨在新标签页生成一行未完任务与待审 PR 概览，支持一键断点续传
+                            </div>
+                          </div>
+                          <Switch
+                            disabled={!aiSettings.enabled}
+                            checked={aiSettings.morningBriefing}
+                            onChange={(checked) => handleSaveAiSettings({ morningBriefing: checked })}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: '#0f172a' }}>
+                              书签空闲时智能语义打标 (Smart Bookmarks Tagging)
+                            </div>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>
+                              在浏览器空闲时自动分析根目录书签并打标；涉及遍历扫描，默认保持关闭以节约算力
+                            </div>
+                          </div>
+                          <Switch
+                            disabled={!aiSettings.enabled}
+                            checked={aiSettings.bookmarkSmartTagging}
+                            onChange={(checked) => handleSaveAiSettings({ bookmarkSmartTagging: checked })}
+                          />
+                        </div>
+                      </div>
+                    </Card>
+
+                    {/* 资源管控与性能治理防线卡片 */}
+                    <Card
+                      title={
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <SafetyCertificateOutlined style={{ color: '#10b981' }} />
+                          <span style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>
+                            🛡️ 端侧 AI 资源开销治理防线
+                          </span>
+                        </div>
+                      }
+                      style={{
+                        marginBottom: 20,
+                        borderRadius: 12,
+                        borderColor: '#e2e8f0',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: '#0f172a' }}>
+                              电池供电与省电感知 (Battery & Power Mode Awareness)
+                            </div>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>
+                              当检测到设备处于未连接电源且电池电量低于 25% 或省电模式时，自动挂起非关键后台 AI 推理，守护笔记本续航
+                            </div>
+                          </div>
+                          <Switch
+                            checked={aiSettings.pauseOnBattery}
+                            onChange={(checked) => handleSaveAiSettings({ pauseOnBattery: checked })}
+                          />
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            paddingTop: 12,
+                            borderTop: '1px solid #e2e8f0',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: '#0f172a' }}>
+                              本地持久化 LRU 结果缓存
+                            </div>
+                            <div style={{ fontSize: 12, color: '#64748b' }}>
+                              当前已缓存 <Text strong>{aiCacheCount}</Text> 条本地推理结果（二次访问享受 0 算力、0 显存占用、0 延迟直出）
+                            </div>
+                          </div>
+                          <Button size="small" onClick={handleClearAiCache}>
+                            清空 AI 缓存
+                          </Button>
+                        </div>
                       </div>
                     </Card>
                   </div>

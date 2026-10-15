@@ -75,6 +75,16 @@ import {
 } from '@/lib/recommendations';
 import { filterAndRankItems, type SearchItem } from '@/lib/search';
 import { getSnapshots, type SessionSnapshot } from '@/lib/snapshots';
+import {
+  summarizeDeepRouteTitle,
+  generateMorningBriefing,
+  naturalLanguageSearchMatch,
+} from '@/lib/ai-assistant';
+import {
+  getAiSettings,
+  type AiSettings,
+  DEFAULT_AI_SETTINGS,
+} from '@/lib/settings';
 
 const { Text, Title } = Typography;
 
@@ -119,6 +129,10 @@ export default function NewTabApp() {
 
   // 会话现场恢复
   const [recentSnapshot, setRecentSnapshot] = useState<SessionSnapshot | null>(null);
+
+  // 端侧 AI 设置与智能晨报
+  const [aiSettings, setAiSettings] = useState<AiSettings>(DEFAULT_AI_SETTINGS);
+  const [morningBriefing, setMorningBriefing] = useState<string>('');
 
   // 搜索框状态
   const [searchInput, setSearchInput] = useState('');
@@ -209,9 +223,29 @@ export default function NewTabApp() {
       }
 
       // 3. 空闲时异步刷新历史推荐并更新缓存 (零阻塞首屏渲染)
-      refreshAndCacheRecommendations(8).then((fresh) => {
+      refreshAndCacheRecommendations(8).then(async (fresh) => {
         if (fresh && fresh.length > 0) {
           setRecommendations(fresh);
+
+          // 渐进增强：若启用了端侧 AI 且胶囊浓缩开启，异步微调标题
+          const aiSet = await getAiSettings();
+          if (aiSet.enabled && aiSet.capsuleSummarize) {
+            for (const rec of fresh) {
+              if (rec.capsule) {
+                summarizeDeepRouteTitle(rec.capsule.title, rec.capsule.url, aiSet).then((aiTitle) => {
+                  if (aiTitle) {
+                    setRecommendations((prev) =>
+                      prev.map((item) =>
+                        item.domain === rec.domain && item.capsule
+                          ? { ...item, capsule: { ...item.capsule, cleanTitle: aiTitle } }
+                          : item,
+                      ),
+                    );
+                  }
+                });
+              }
+            }
+          }
         }
       });
 
@@ -220,6 +254,25 @@ export default function NewTabApp() {
       getSnapshots().then((snaps) => {
         if (snaps && snaps.length > 0) {
           setRecentSnapshot(snaps[0]);
+        }
+      });
+
+      // 5. 探测端侧 AI 配置并生成晨间简报
+      getAiSettings().then(async (aiSet) => {
+        setAiSettings(aiSet);
+        if (aiSet.enabled && aiSet.morningBriefing) {
+          let openCount = 0;
+          if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+            try {
+              const allTabs = await chrome.tabs.query({});
+              openCount = allTabs.length;
+            } catch {
+              // ignore
+            }
+          }
+          const snaps = await getSnapshots();
+          const briefing = await generateMorningBriefing(openCount, snaps.length, aiSet);
+          setMorningBriefing(briefing);
         }
       });
     }
@@ -231,26 +284,68 @@ export default function NewTabApp() {
     return parseSearchQuery(searchInput, activeEngine.id);
   }, [searchInput, activeEngine]);
 
-  // 搜索建议防抖计算
+  // 搜索建议与自然语言智能意图起跳 (严格内置 400ms 防抖)
   useEffect(() => {
     if (!searchInput.trim()) {
       setSearchSuggestions([]);
       return;
     }
 
-    const items: SearchItem[] = openTabs.map((t) => ({
-      id: `tab_${t.id}`,
-      kind: 'tab',
-      title: t.title,
-      url: t.url,
-      tabId: t.id,
-      windowId: t.windowId,
-      domain: new URL(t.url || 'https://example.com').hostname,
-    }));
+    const timer = setTimeout(async () => {
+      const items: SearchItem[] = openTabs.map((t) => ({
+        id: `tab_${t.id}`,
+        kind: 'tab',
+        title: t.title,
+        url: t.url,
+        tabId: t.id,
+        windowId: t.windowId,
+        domain: new URL(t.url || 'https://example.com').hostname,
+      }));
 
-    const ranked = filterAndRankItems(items, searchInput.trim(), 'all', 6);
-    setSearchSuggestions(ranked);
-  }, [searchInput, openTabs]);
+      const ranked = filterAndRankItems(items, searchInput.trim(), 'all', 6);
+
+      // 若启用了端侧 AI 自然语言意图起跳，且输入长度 >= 3，异步意图补全
+      if (aiSettings.enabled && aiSettings.naturalLanguageJump && searchInput.trim().length >= 3) {
+        try {
+          const validCandidates = items.filter(
+            (it): it is SearchItem & { url: string } => Boolean(it.url),
+          );
+          const matched = await naturalLanguageSearchMatch(
+            searchInput.trim(),
+            validCandidates,
+            aiSettings,
+          );
+          if (matched.length > 0) {
+            const aiItems: SearchItem[] = matched.map((m) => {
+              const original = items.find((it) => it.url === m.url);
+              return original || {
+                id: `ai_${m.url}`,
+                kind: 'tab',
+                title: m.title,
+                url: m.url,
+                domain: new URL(m.url).hostname,
+              };
+            });
+            // 归并去重
+            const merged = [...aiItems];
+            for (const r of ranked) {
+              if (!merged.some((m) => m.url === r.url)) {
+                merged.push(r);
+              }
+            }
+            setSearchSuggestions(merged.slice(0, 6));
+            return;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      setSearchSuggestions(ranked);
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [searchInput, openTabs, aiSettings]);
 
   // 导航打开链接逻辑
   const handleOpenUrl = (targetUrl: string, inNewTab = false) => {
@@ -454,6 +549,39 @@ export default function NewTabApp() {
             </Tooltip>
           </Space>
         </header>
+
+        {/* ☀️ 晨间工作现场智能简报 */}
+        {morningBriefing && (
+          <div
+            style={{
+              maxWidth: 760,
+              width: '100%',
+              margin: '-12px auto 0',
+              padding: '8px 14px',
+              borderRadius: 8,
+              background: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.06)',
+              border: '1px solid rgba(59, 130, 246, 0.2)',
+              color: isDark ? '#93c5fd' : '#2563eb',
+              fontSize: 12.5,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+            }}
+          >
+            <span>{morningBriefing}</span>
+            {recentSnapshot && (
+              <Button
+                type="link"
+                size="small"
+                style={{ fontSize: 11, padding: 0, height: 'auto', fontWeight: 600 }}
+                onClick={() => handleRestoreSnapshot(recentSnapshot)}
+              >
+                一键唤醒工作现场 ↗
+              </Button>
+            )}
+          </div>
+        )}
 
         {/* 极简全能聚合搜索条 */}
         <div className="search-section">

@@ -62,3 +62,61 @@ export function watchSettings(): void {
     if (area === 'sync' && SETTINGS_KEYS.some(k => k in changes)) cache = null;
   });
 }
+
+/**
+ * Chrome Built-in AI (端侧模型) 资源管控与功能开关配置
+ */
+export interface AiSettings {
+  /** 全局总开关：一票否决权。关闭时完全不加载任何 AI 模块，100% 走启发式规则 */
+  enabled: boolean;
+  /** 子功能 1：深层路由继续胶囊智能提炼 */
+  capsuleSummarize: boolean;
+  /** 子功能 2：搜索框自然语言意图起跳 */
+  naturalLanguageJump: boolean;
+  /** 子功能 3：跨域名任务语义聚类与智能标签组命名 */
+  taskAutoGrouping: boolean;
+  /** 子功能 4：书签空闲时自动打标分类（默认关闭，避免轻薄本频繁唤醒） */
+  bookmarkSmartTagging: boolean;
+  /** 子功能 5：晨间工作现场智能简报 */
+  morningBriefing: boolean;
+  /** 节电策略：电池供电或低电量时暂停后台推理（默认开启） */
+  pauseOnBattery: boolean;
+}
+
+export const DEFAULT_AI_SETTINGS: AiSettings = {
+  enabled: false,
+  capsuleSummarize: true,
+  naturalLanguageJump: true,
+  taskAutoGrouping: true,
+  bookmarkSmartTagging: false,
+  morningBriefing: true,
+  pauseOnBattery: true,
+};
+
+export const AI_SETTINGS_STORAGE_KEY = 'yitab_ai_settings';
+
+export async function getAiSettings(): Promise<AiSettings> {
+  if (typeof chrome === 'undefined' || !chrome.storage?.sync) {
+    return { ...DEFAULT_AI_SETTINGS };
+  }
+  try {
+    const res = await chrome.storage.sync.get(AI_SETTINGS_STORAGE_KEY);
+    const saved = res[AI_SETTINGS_STORAGE_KEY];
+    if (saved && typeof saved === 'object') {
+      return { ...DEFAULT_AI_SETTINGS, ...saved };
+    }
+  } catch {
+    // fallback
+  }
+  return { ...DEFAULT_AI_SETTINGS };
+}
+
+export async function saveAiSettings(patch: Partial<AiSettings>): Promise<AiSettings> {
+  const current = await getAiSettings();
+  const next: AiSettings = { ...current, ...patch };
+  if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
+    await chrome.storage.sync.set({ [AI_SETTINGS_STORAGE_KEY]: next });
+  }
+  return next;
+}
+
