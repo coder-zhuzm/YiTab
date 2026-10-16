@@ -4,4 +4,4 @@ node_modules/
 stats.html
 *.zip
 .DS_Store
-.claude/
+.claude/worktrees/
