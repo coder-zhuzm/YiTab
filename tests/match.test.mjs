@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchDuplicate, resolveRule, inWhitelist, computeMatchKey } from '../src/lib/match.ts';
+import {
+  matchDuplicate,
+  resolveRule,
+  inWhitelist,
+  computeMatchKey,
+  shouldSkipNavigation,
+} from '../src/lib/match.ts';
 import { sanitizeSettings, DEFAULTS, getSettings, setSettings } from '../src/lib/settings.ts';
 const base = 'https://example.com';
 const config = (mode = 'smart', siteRules = [], whitelist = []) => ({ ...DEFAULTS, matchMode: mode, siteRules, whitelist });
@@ -61,6 +67,8 @@ test('whitelist takes priority even with site rule', () => {
 });
 test('fresh defaults versus migration', () => {
   assert.equal(sanitizeSettings({}).matchMode, 'smart');
+  assert.equal(sanitizeSettings({}).ignoreReload, true);
+  assert.equal(sanitizeSettings({ ignoreReload: false }).ignoreReload, false);
   for (const mode of ['url', 'domain']) assert.equal(sanitizeSettings({ matchMode: mode }).matchMode, mode);
   assert.deepEqual(sanitizeSettings({ matchMode: 'domain' }).siteRules, []);
 });
@@ -70,16 +78,21 @@ test('rule sanitization and domain normalization', () => {
   assert.deepEqual(s.whitelist, ['example.com']);
 });
 test('settings save roundtrip and storage invalidation', async () => {
-  let stored = { matchMode: 'domain', interceptMode: 'ask', whitelist: [] };
+  let stored = { matchMode: 'domain', interceptMode: 'ask', whitelist: [], ignoreReload: true };
   const listeners = [];
   globalThis.chrome = { storage: { sync: { get: async () => structuredClone(stored), set: async value => { stored = structuredClone(value); } }, onChanged: { addListener: cb => listeners.push(cb) } } };
   assert.equal((await getSettings()).matchMode, 'domain');
+  assert.equal((await getSettings()).ignoreReload, true);
   await setSettings({ matchMode: 'smart' });
   await setSettings({ interceptMode: 'auto' });
+  await setSettings({ ignoreReload: false });
   assert.equal(stored.matchMode, 'smart');
+  assert.equal(stored.ignoreReload, false);
   stored.matchMode = 'path';
-  listeners[0]({ matchMode: {} }, 'sync');
+  stored.ignoreReload = true;
+  listeners[0]({ matchMode: {}, ignoreReload: {} }, 'sync');
   assert.equal((await getSettings()).matchMode, 'path');
+  assert.equal((await getSettings()).ignoreReload, true);
 });
 
 test('computeMatchKey handles anchors and SPA route hashes appropriately', () => {
@@ -104,4 +117,203 @@ test('computeMatchKey handles anchors and SPA route hashes appropriately', () =>
   // Content param difference -> different match key
   const contentDiff = computeMatchKey('https://example.com/p?id=2', smartCfg);
   assert.notEqual(track1, contentDiff);
+});
+
+test('shouldSkipNavigation correctly filters reloads, history, and temporary allowed entries', () => {
+  const settings = { ...DEFAULTS, ignoreReload: true };
+  const target = 'https://example.com/article';
+
+  // 1. Reload by transitionType
+  const reloadRes = shouldSkipNavigation({
+    url: target,
+    eventType: 'committed',
+    transitionType: 'reload',
+    settings,
+  });
+  assert.equal(reloadRes.skip, true);
+  assert.equal(reloadRes.reason, 'reload_or_history');
+
+  // 2. Same URL in committed event (in-place reload)
+  const inPlaceRes = shouldSkipNavigation({
+    url: target,
+    eventType: 'committed',
+    lastUrl: target,
+    settings,
+  });
+  assert.equal(inPlaceRes.skip, true);
+  assert.equal(inPlaceRes.reason, 'reload_or_history');
+
+  // 3. Forward/Back history navigation
+  const historyRes = shouldSkipNavigation({
+    url: target,
+    eventType: 'committed',
+    transitionQualifiers: ['forward_back'],
+    settings,
+  });
+  assert.equal(historyRes.skip, true);
+  assert.equal(historyRes.reason, 'reload_or_history');
+
+  // 4. Temporary allowed within expiration
+  const now = 1000;
+  const allowedRes = shouldSkipNavigation({
+    url: target,
+    eventType: 'committed',
+    settings,
+    allowedEntry: { targetUrl: target, matchKey: null, expiresAt: 2000 },
+    now,
+  });
+  assert.equal(allowedRes.skip, true);
+  assert.equal(allowedRes.reason, 'allowed_temporary');
+
+  // 5. Expired allowed entry should not skip
+  const expiredRes = shouldSkipNavigation({
+    url: target,
+    eventType: 'committed',
+    settings,
+    allowedEntry: { targetUrl: target, matchKey: null, expiresAt: 500 },
+    now,
+  });
+  assert.equal(expiredRes.skip, false);
+
+  // 6. Normal new navigation to different URL should not skip
+  const normalNav = shouldSkipNavigation({
+    url: target,
+    eventType: 'committed',
+    lastUrl: 'https://example.com/other',
+    settings,
+  });
+  assert.equal(normalNav.skip, false);
+});
+
+test('shouldSkipNavigation: ignores reload when ignoreReload is enabled (default)', () => {
+  const settings = config('smart');
+  const res = shouldSkipNavigation({
+    url: 'https://www.baidu.com/',
+    eventType: 'committed',
+    transitionType: 'reload',
+    lastUrl: 'https://www.baidu.com/',
+    currentMatchKey: computeMatchKey('https://www.baidu.com/', settings),
+    settings,
+  });
+  assert.equal(res.skip, true);
+  assert.equal(res.reason, 'reload_or_history');
+});
+
+test('shouldSkipNavigation: intercepts reload when ignoreReload is explicitly disabled', () => {
+  const settings = { ...config('smart'), ignoreReload: false };
+  const res = shouldSkipNavigation({
+    url: 'https://www.baidu.com/',
+    eventType: 'committed',
+    transitionType: 'reload',
+    lastUrl: 'https://www.baidu.com/',
+    currentMatchKey: computeMatchKey('https://www.baidu.com/', settings),
+    settings,
+  });
+  assert.equal(res.skip, false);
+});
+
+test('shouldSkipNavigation: ignores in-place re-submit on same URL in committed event', () => {
+  const settings = config('smart');
+  const res = shouldSkipNavigation({
+    url: 'https://www.baidu.com/',
+    eventType: 'committed',
+    transitionType: 'typed', // user pressed Enter in address bar on same URL
+    lastUrl: 'https://www.baidu.com/',
+    currentMatchKey: computeMatchKey('https://www.baidu.com/', settings),
+    settings,
+  });
+  assert.equal(res.skip, true);
+  assert.equal(res.reason, 'reload_or_history');
+});
+
+test('shouldSkipNavigation: ignores history forward_back navigation', () => {
+  const settings = config('smart');
+  const res = shouldSkipNavigation({
+    url: 'https://www.baidu.com/article/1',
+    eventType: 'committed',
+    transitionType: 'link',
+    transitionQualifiers: ['forward_back'],
+    lastUrl: 'https://www.baidu.com/article/2',
+    currentMatchKey: computeMatchKey('https://www.baidu.com/article/1', settings),
+    settings,
+  });
+  assert.equal(res.skip, true);
+  assert.equal(res.reason, 'reload_or_history');
+});
+
+test('shouldSkipNavigation: does NOT skip when opening a brand new tab to matching URL', () => {
+  const settings = config('smart');
+  const res = shouldSkipNavigation({
+    url: 'https://www.baidu.com/',
+    eventType: 'committed',
+    transitionType: 'typed',
+    transitionQualifiers: ['from_address_bar'],
+    lastUrl: '', // brand new tab
+    currentMatchKey: computeMatchKey('https://www.baidu.com/', settings),
+    settings,
+  });
+  assert.equal(res.skip, false);
+});
+
+test('shouldSkipNavigation: does NOT skip when navigating to a different URL in existing tab', () => {
+  const settings = config('smart');
+  const res = shouldSkipNavigation({
+    url: 'https://www.baidu.com/',
+    eventType: 'committed',
+    transitionType: 'typed',
+    lastUrl: 'https://www.google.com/',
+    currentMatchKey: computeMatchKey('https://www.baidu.com/', settings),
+    settings,
+  });
+  assert.equal(res.skip, false);
+});
+
+test('shouldSkipNavigation: respects whitelist and temporary allowed entry', () => {
+  const settings = { ...config('smart'), whitelist: ['baidu.com'] };
+  const resWhite = shouldSkipNavigation({
+    url: 'https://www.baidu.com/new-page',
+    eventType: 'committed',
+    transitionType: 'link',
+    lastUrl: 'https://www.google.com/',
+    currentMatchKey: computeMatchKey('https://www.baidu.com/new-page', settings),
+    settings,
+  });
+  assert.equal(resWhite.skip, true);
+  assert.equal(resWhite.reason, 'whitelist');
+
+  const now = 1000000;
+  const normalSettings = config('smart');
+  const resAllowed = shouldSkipNavigation({
+    url: 'https://example.com/p',
+    eventType: 'committed',
+    transitionType: 'link',
+    lastUrl: '',
+    currentMatchKey: computeMatchKey('https://example.com/p', normalSettings),
+    settings: normalSettings,
+    allowedEntry: {
+      targetUrl: 'https://example.com/p',
+      matchKey: computeMatchKey('https://example.com/p', normalSettings),
+      expiresAt: now + 5000,
+    },
+    now,
+  });
+  assert.equal(resAllowed.skip, true);
+  assert.equal(resAllowed.reason, 'allowed_temporary');
+
+  // Expired allowed entry
+  const resExpired = shouldSkipNavigation({
+    url: 'https://example.com/p',
+    eventType: 'committed',
+    transitionType: 'link',
+    lastUrl: '',
+    currentMatchKey: computeMatchKey('https://example.com/p', normalSettings),
+    settings: normalSettings,
+    allowedEntry: {
+      targetUrl: 'https://example.com/p',
+      matchKey: computeMatchKey('https://example.com/p', normalSettings),
+      expiresAt: now - 100,
+    },
+    now,
+  });
+  assert.equal(resExpired.skip, false);
 });

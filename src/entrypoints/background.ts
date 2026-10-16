@@ -8,6 +8,7 @@ import {
   computeMatchKey,
   resolveRule,
   hostOf,
+  shouldSkipNavigation,
   type TabInfo,
 } from '@/lib/match';
 import { analyzeTabsByDomain, getDeterministicColor, saveSnapshot } from '@/lib/snapshots';
@@ -56,26 +57,51 @@ export default defineBackground(() => {
   // 1. 整页导航（地址栏、书签、新标签等真实提交的整页加载）
   chrome.webNavigation.onCommitted.addListener((details) => {
     if (details.frameId !== 0 || details.tabId < 0) return;
-    handleNavigation(details.tabId, details.url, 'committed');
+    handleNavigation(
+      details.tabId,
+      details.url,
+      'committed',
+      details.transitionType,
+      details.transitionQualifiers,
+    );
   });
 
   // 2. SPA History API 路由变化（pushState / replaceState）
   chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
     if (details.frameId !== 0 || details.tabId < 0) return;
-    handleNavigation(details.tabId, details.url, 'history');
+    handleNavigation(
+      details.tabId,
+      details.url,
+      'history',
+      details.transitionType,
+      details.transitionQualifiers,
+    );
   });
 
   // 3. Hash 路由变化
   chrome.webNavigation.onReferenceFragmentUpdated.addListener((details) => {
     if (details.frameId !== 0 || details.tabId < 0) return;
-    handleNavigation(details.tabId, details.url, 'fragment');
+    handleNavigation(
+      details.tabId,
+      details.url,
+      'fragment',
+      details.transitionType,
+      details.transitionQualifiers,
+    );
   });
 
-  // 标签关闭时清理状态表
+  // 标签关闭或被预渲染替换时清理状态表
   chrome.tabs.onRemoved.addListener((tabId) => {
     allowed.delete(tabId);
     tabStates.delete(tabId);
   });
+
+  if (chrome.tabs.onReplaced) {
+    chrome.tabs.onReplaced.addListener((_addedTabId, removedTabId) => {
+      allowed.delete(removedTabId);
+      tabStates.delete(removedTabId);
+    });
+  }
 
   chrome.runtime.onMessage.addListener((msg: BackgroundRequest, sender, sendResponse) => {
     (async () => {
@@ -500,6 +526,8 @@ async function handleNavigation(
   tabId: number,
   url?: string,
   eventType: 'committed' | 'history' | 'fragment' = 'committed',
+  transitionType?: string,
+  transitionQualifiers?: string[],
 ): Promise<void> {
   if (!url || INTERNAL_URL_RE.test(url)) return;
 
@@ -514,43 +542,26 @@ async function handleNavigation(
 
   const currentMatchKey = computeMatchKey(url, settings);
 
-  // 1. 普通锚点变化过滤（如 #intro -> #comments，两者 matchKey 相同则不触发重复提示）
-  if (eventType === 'fragment') {
-    if (state.lastMatchKey != null && state.lastMatchKey === currentMatchKey) {
-      state.lastUrl = url;
-      return;
-    }
-  }
-
-  // 2. 同域名模式防过度骚扰：已在站内正常浏览的 SPA 站内路由跳转，不应在每个链接都弹提示
-  if (eventType !== 'committed') {
-    const { mode } = resolveRule(url, settings);
-    if (mode === 'domain' && state.lastUrl && hostOf(state.lastUrl) === hostOf(url)) {
-      state.lastUrl = url;
-      state.lastMatchKey = currentMatchKey;
-      return;
-    }
-  }
-
-  // 3. 「仍要打开」放行：时限内仅对目标地址及等价 matchKey 的导航链放行
+  // 检查放行表并清理过期项
   const allowEntry = allowed.get(tabId);
-  if (allowEntry) {
-    if (Date.now() > allowEntry.expiresAt) {
-      allowed.delete(tabId);
-    } else {
-      if (
-        allowEntry.targetUrl === url ||
-        (allowEntry.matchKey != null && allowEntry.matchKey === currentMatchKey)
-      ) {
-        state.lastUrl = url;
-        state.lastMatchKey = currentMatchKey;
-        return;
-      }
-    }
+  if (allowEntry && Date.now() > allowEntry.expiresAt) {
+    allowed.delete(tabId);
   }
 
-  // 4. 白名单检查
-  if (inWhitelist(url, settings.whitelist)) {
+  // 集中判断是否跳过拦截（刷新页面、历史回退、同锚点变化、SPA同域名保护、临时放行、白名单等）
+  const skipCheck = shouldSkipNavigation({
+    url,
+    eventType,
+    transitionType,
+    transitionQualifiers,
+    lastUrl: state.lastUrl,
+    lastMatchKey: state.lastMatchKey,
+    currentMatchKey,
+    settings,
+    allowedEntry: allowEntry ?? null,
+  });
+
+  if (skipCheck.skip) {
     state.lastUrl = url;
     state.lastMatchKey = currentMatchKey;
     return;

@@ -698,7 +698,59 @@ function OptionsPage() {
                       )}
                     </Card>
 
-                    {/* 3. 网站例外规则 */}
+                    {/* 3. 拦截触发场景与刷新控制 */}
+                    <Card
+                      title={
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>
+                            拦截触发场景与刷新控制
+                          </span>
+                          <span style={{ fontSize: 12, color: '#64748b', fontWeight: 'normal' }}>
+                            决定在已有标签页刷新或重复加载时是否触发拦截
+                          </span>
+                        </div>
+                      }
+                      style={{
+                        marginBottom: 20,
+                        borderRadius: 12,
+                        borderColor: '#e2e8f0',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: '16px',
+                          borderRadius: 10,
+                          border: '1px solid #e2e8f0',
+                          background: settings.ignoreReload !== false ? '#f8fafc' : '#ffffff',
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          justifyContent: 'space-between',
+                          gap: 16,
+                        }}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                            <span style={{ fontWeight: 600, fontSize: 15, color: '#0f172a' }}>
+                              刷新页面时忽略拦截（推荐 · 仅在新开时拦截）
+                            </span>
+                            <Tag color={settings.ignoreReload !== false ? 'green' : 'default'} style={{ margin: 0 }}>
+                              {settings.ignoreReload !== false ? '默认开启' : '已关闭'}
+                            </Tag>
+                          </div>
+                          <div style={{ fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
+                            开启后，当你在已有标签页按 F5、点击刷新按钮、执行重新加载或原地提交相同网页时，直接保留并刷新当前标签页，绝不触发拦截或误跳。仅在真正新开标签页、从地址栏输入新网页或点击新链接时，才进行去重检测。
+                          </div>
+                        </div>
+                        <Switch
+                          checked={settings.ignoreReload !== false}
+                          disabled={disabled}
+                          onChange={(checked) => void save({ ignoreReload: checked })}
+                        />
+                      </div>
+                    </Card>
+
+                    {/* 4. 网站例外规则 */}
                     <Card
                       title={
                         <div
@@ -890,7 +942,7 @@ function OptionsPage() {
                       </div>
                     </Card>
 
-                    {/* 4. 域名白名单 */}
+                    {/* 5. 域名白名单 */}
                     <Card
                       title={
                         <div

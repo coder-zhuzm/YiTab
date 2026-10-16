@@ -52,7 +52,8 @@ try {
   const text = await until(() => options.evaluate(`document.body.innerText.includes('智能匹配') && document.body.innerText`), 'options UI');
   assert.ok(text.includes('网站例外规则'));
   assert.ok(text.includes('同路径'));
-  await options.evaluate(`chrome.storage.sync.set({matchMode:'smart',interceptMode:'ask',whitelist:[],siteRules:[]})`);
+  assert.ok(text.includes('刷新页面时忽略拦截') || text.includes('刷新控制'));
+  await options.evaluate(`chrome.storage.sync.set({matchMode:'smart',interceptMode:'ask',whitelist:[],siteRules:[],ignoreReload:true})`);
 
   // Assert real Radio updates storage, then preserve changed value on next update.
   await options.call('Page.reload');
@@ -88,6 +89,24 @@ try {
   await confirm.evaluate(`[...document.querySelectorAll('button')].find(b=>b.innerText.includes('仍要打开')).click()`);
   await until(async () => (await targets()).find(t => t.id === duplicateId && t.url.includes('utm_source=second')), 'open anyway preserves target');
   assert.ok((await targets()).find(t => t.url.includes('utm_source=first')), 'first document remains open');
+
+  // Verify reload does NOT trigger interception when ignoreReload is enabled (default)
+  const doc2Target = (await targets()).find(t => t.id === duplicateId);
+  const doc2 = await connect(doc2Target.webSocketDebuggerUrl);
+  await doc2.call('Page.reload');
+  await delay(500);
+  const doc2AfterReload = (await targets()).find(t => t.id === duplicateId);
+  assert.ok(doc2AfterReload.url.includes('utm_source=second'), 'reload preserves doc2 without intercept');
+  assert.ok(!doc2AfterReload.url.includes('/confirm.html'), 'reload does not bounce to confirm.html');
+
+  // Verify reload DOES trigger interception when ignoreReload is explicitly turned off
+  await options.evaluate(`chrome.storage.sync.set({ ignoreReload: false })`);
+  await delay(200);
+  await doc2.call('Page.reload');
+  await until(async () => (await targets()).find(t => t.id === duplicateId && t.url.includes('/confirm.html')), 'reload intercepted when ignoreReload is false');
+  // Re-enable ignoreReload
+  await options.evaluate(`chrome.storage.sync.set({ ignoreReload: true })`);
+  await delay(200);
 
   // --- Part 3: SPA Navigation & Non-intrusive in-page Toast ---
   const { targetId: spaTabId } = await browser.call('Target.createTarget', { url: `${serverBase}/spa?page=home` });

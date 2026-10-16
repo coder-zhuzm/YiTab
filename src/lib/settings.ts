@@ -12,12 +12,24 @@ export interface Settings {
   interceptMode: InterceptMode;
   whitelist: string[];
   siteRules: SiteRule[];
+  /** 刷新页面或原地重复提交时不触发拦截（仅在新开/新导航时判断），默认开启 */
+  ignoreReload: boolean;
 }
 export const DEFAULTS: Settings = {
-  matchMode: 'smart', interceptMode: 'auto', whitelist: [], siteRules: [],
+  matchMode: 'smart',
+  interceptMode: 'auto',
+  whitelist: [],
+  siteRules: [],
+  ignoreReload: true,
 };
 const MODES: MatchMode[] = ['url', 'smart', 'path', 'domain'];
-const SETTINGS_KEYS: (keyof Settings)[] = ['matchMode', 'interceptMode', 'whitelist', 'siteRules'];
+const SETTINGS_KEYS: (keyof Settings)[] = [
+  'matchMode',
+  'interceptMode',
+  'whitelist',
+  'siteRules',
+  'ignoreReload',
+];
 export function normalizeDomain(value: string): string | null {
   if (typeof value !== 'string' || !value.trim()) return null;
   try {
@@ -38,6 +50,7 @@ export function sanitizeSettings(value: Partial<Settings>): Settings {
       return [{ domain, mode: r.mode, includeSubdomains: r.includeSubdomains === true,
         ignoredParams: Array.isArray(r.ignoredParams) ? [...new Set(r.ignoredParams.filter((p): p is string => typeof p === 'string' && !!p.trim()).map(p => p.trim()))] : [] }];
     }) : [],
+    ignoreReload: typeof value.ignoreReload === 'boolean' ? value.ignoreReload : DEFAULTS.ignoreReload,
   };
 }
 let cache: Settings | null = null;
