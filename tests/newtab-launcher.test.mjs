@@ -217,6 +217,83 @@ test('invalid ports are rejected by both the direct-jump and the save path', () 
   assert.deepEqual(resolveTargetUrl('localhost:1'), { isAddress: true, url: 'http://localhost:1' });
 });
 
+test('every successful candidate goes through the same final validation', () => {
+  // 反例：localhost / IPv4 / 端口简写分支曾提前 return，绕过最终校验。
+  // `192.168.001.009` 因此出现「直达判为地址、保存判为无效」的分裂。
+  for (const bad of ['192.168.001.009', '192.168.001.009:8080', '10.0.00.1', '010.1.1.1']) {
+    assert.equal(resolveTargetUrl(bad).isAddress, false, `${bad} is not a usable address`);
+    assert.deepEqual(resolveShortcutUrl(bad), { ok: false, url: '' }, `${bad} must be rejected on save too`);
+  }
+
+  // 全量一致性：直达与保存对同一输入的结论必须永远相同
+  const inputs = [
+    'https://example.com/a?b=1#c',
+    'example.design',
+    'github.com',
+    'localhost:5173',
+    ':3000',
+    '192.168.1.1:8080',
+    '192.168.001.009',
+    'localhost:99999',
+    '1.2',
+    'package.json',
+    'javascript:alert(1)',
+    '',
+  ];
+  for (const input of inputs) {
+    const direct = resolveTargetUrl(input);
+    const save = resolveShortcutUrl(input);
+    assert.equal(
+      direct.isAddress,
+      save.ok,
+      `${input}: direct-jump and save must agree (${direct.isAddress} vs ${save.ok})`,
+    );
+  }
+});
+
+test('address detection does not depend on a finite TLD allowlist', () => {
+  // 反例：多段域名曾要求命中 TLD 白名单，导致 `.design`、`.museum` 这类
+  // 真实后缀在无协议时被当作搜索词（带协议却能通过），行为自相矛盾。
+  for (const input of [
+    'example.design',
+    'example.design/projects',
+    'example.museum',
+    'example.museum/visit',
+    'example.photography',
+    'example.engineering',
+  ]) {
+    assert.equal(resolveTargetUrl(input).isAddress, true, `${input} must be a usable address`);
+  }
+
+  // 但不能因此把普通文件名/搜索词也放行
+  for (const word of [
+    'package.json',
+    'notes.txt',
+    'main.py',
+    'index.html',
+    'config.yml',
+    'README.md',
+    'data.csv',
+    'script.sh',
+    '1.2',
+    'v1.2',
+    '3.14',
+    '1.2.3',
+    'hello',
+    'release 1.2',
+  ]) {
+    assert.equal(resolveTargetUrl(word).isAddress, false, `${word} must stay a search term`);
+  }
+
+  // 已知残留：不在扩展名表内、又不是真实 TLD 的末段仍会被当作地址。
+  // 这是为让未收录的真实 TLD 可用而付出的代价，在此显式记录而非假装不存在。
+  assert.equal(
+    resolveTargetUrl('lodash.debounce').isAddress,
+    true,
+    'known limitation: an unknown suffix is treated as a TLD',
+  );
+});
+
 test('canonicalUrlKey keeps metadata matching consistent with address parsing', () => {
   // 元数据精确匹配用的归一 key：只消除表示差异，不合并语义差异
   assert.equal(canonicalUrlKey('https://example.com'), canonicalUrlKey('https://example.com/'));

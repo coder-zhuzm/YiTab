@@ -115,7 +115,7 @@
     <h2>3. 零第三方追踪 (Zero Third-Party Tracking)</h2>
     <p>YiTab 不包含任何数据埋点、外部分析统计代码、广告 SDK 或任何远程动态执行代码，可在断网离线环境下正常运作。</p>
     <p>新标签页的快捷方式<strong>名称补全只查询浏览器本地数据</strong>（已打开的标签页与浏览历史），<strong>图标读取 Chrome 本地图标库</strong>。两者均不主动请求目标站点或第三方，也不会通过隐藏标签页、网页抓取或请求 <code>/favicon.ico</code> 来补齐图标缓存。</p>
-    <p><strong>尚未统一处理：</strong>弹出面板、页内确认条与命令面板展示标签图标时，使用的是 Chrome 为该标签页上报的 <code>favIconUrl</code>。当对应标签页已打开时，浏览器可能向该站点加载图标。这是浏览器对已打开标签页的常规行为，并非 YiTab 主动发起的请求，但不在上述「纯本地」保证范围内。</p>
+    <p><strong>尚未统一处理：</strong>弹出面板、页内确认条与命令面板仍直接使用 Chrome 提供的 <code>favIconUrl</code>。展示图标时可能触发对该 URL 的资源请求，是否访问网络取决于缓存等因素，因此不属于上述本地图标保证范围。</p>
 
     <h2>4. 遵守 Chrome Web Store 政策 (Limited Use Compliance)</h2>
     <p>YiTab 严格遵守 Google Chrome 应用商店开发者政策中的“有限使用”（Limited Use）规范，仅将权限用于提供用户明确知情且可见的效率功能。</p>

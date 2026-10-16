@@ -39,7 +39,7 @@ Specifically:
 - **Shortcut icons are never backfilled** by hidden tabs, page scraping, or requesting `/favicon.ico`.
 - **No network host permissions such as `<all_urls>` are requested.**
 - Browsing history used by the New Tab "recommended" and "continue where you left off" features is **processed in memory on your device only**, and is never uploaded.
-- **Not yet unified:** in the popup, the in-page confirmation banner and the command palette, a tab's icon is shown using the `favIconUrl` that Chrome reports for that tab. When such a tab is open, your browser may load that icon from the site itself. This is a normal browser behaviour for an already-open tab, not a YiTab-initiated request, but it is **not** covered by the local-only guarantee above and has not yet been migrated to the local favicon store.
+- **Not yet unified:** the popup, the in-page confirmation banner and the command palette still use the `favIconUrl` that Chrome reports for a tab. Displaying such an icon can trigger a resource request to that URL; whether it reaches the network depends on factors such as caching. It is therefore **not** covered by the local-icon guarantee above.
 
 ### 5. Open Source Transparency
 YiTab is open source. You can audit the complete source code and build instructions at our official GitHub repository:
@@ -83,7 +83,7 @@ YiTab 在日常使用过程中**不包含任何远程第三方分析代码、不
 - **不通过隐藏标签页、网页抓取或请求 `/favicon.ico` 来补齐快捷方式图标缓存。**
 - **不请求 `<all_urls>` 等网络权限。**
 - 新标签页「猜你想开」推荐与「继续上次」胶囊所依据的浏览历史，**仅在本机内存中用于排序与展示**，不会上传。
-- **尚未统一处理**：弹出面板、页内确认条与命令面板展示标签图标时，使用的是 Chrome 为该标签页上报的 `favIconUrl`。当对应标签页已打开时，浏览器可能向该站点加载图标。这是浏览器对已打开标签页的常规行为，并非 YiTab 主动发起的请求，但**不在上述「纯本地」保证范围内**，目前尚未迁移到本地图标库。
+- **尚未统一处理**：弹出面板、页内确认条与命令面板仍直接使用 Chrome 提供的 `favIconUrl`。展示图标时可能触发对该 URL 的资源请求，是否访问网络取决于缓存等因素，因此**不属于上述本地图标保证范围**。
 
 ### 5. 开源与透明度
 YiTab 为开源软件，所有源代码公开透明，接受社区审查：
