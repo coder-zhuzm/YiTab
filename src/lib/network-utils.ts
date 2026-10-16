@@ -1,4 +1,5 @@
 import type { SearchEngine } from './newtab-types.ts';
+import { PUBLIC_TLDS } from './public-tlds.ts';
 
 /** 内置主流及技术搜索引擎 */
 export const SEARCH_ENGINES: SearchEngine[] = [
@@ -108,38 +109,38 @@ export function isIntranetHost(rawHost: string): boolean {
 const WEB_PROTOCOLS = new Set(['http:', 'https:']);
 
 /**
- * 常见文件扩展名。末段命中这些就不当作域名，避免 `package.json`、`notes.txt`
- * 这类输入被补成 `https://package.json` 而把搜索变成导航。
+ * 常见文件扩展名，用于「无协议且末段不是真实 TLD」时排除文件名式输入
+ * （`package.json`、`notes.txt`），避免把搜索变成导航。
  *
- * 为什么是「扩展名黑名单 + 通用 DNS 标签规则」而不是「TLD 白名单」：
- * TLD 白名单必然漏掉真实后缀（`.design`、`.museum` 等），只能靠不断补名单，
- * 每补一次都可能引入新回归；扩展名是一个封闭且稳定的集合，漏判代价也小得多。
+ * 这只是一层**启发式**，不是判定域名的依据，也不与域名后缀互斥 ——
+ * 扩展名集合并不封闭，且大量扩展名同时是真实 TLD（`.ai`、`.cc`、`.sh`、`.rs`、`.md`…）。
+ * 因此判定顺序必须是：**真实 TLD 优先**（见 looksLikeAddressHost），
+ * 只有末段不在 IANA 快照里时才轮到这张表。
  *
- * 已知残留：不在本表内、又不是真实 TLD 的末段（如 `lodash.debounce`）会被当作地址。
- * 这是为了让未收录的真实 TLD 可用而必须付出的代价，已在测试中显式记录。
+ * 已知残留：既不在 IANA 快照、也不在本表的末段（如 `lodash.debounce`）
+ * 仍会被当作地址。这是启发式的固有取舍，已在测试中显式记录。
  */
 const FILE_EXTENSIONS = new Set([
   // 文本 / 文档
-  'txt', 'md', 'markdown', 'rst', 'log', 'csv', 'tsv', 'pdf', 'doc', 'docx', 'xls', 'xlsx',
+  'txt', 'markdown', 'rst', 'log', 'csv', 'tsv', 'pdf', 'doc', 'docx', 'xls', 'xlsx',
   'ppt', 'pptx', 'odt', 'rtf', 'tex',
   // 代码
   'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'json', 'json5', 'jsonc', 'map', 'py', 'pyi', 'rb',
-  'php', 'java', 'kt', 'kts', 'go', 'rs', 'c', 'h', 'cc', 'cpp', 'hpp', 'cs', 'swift', 'm',
+  'php', 'java', 'kt', 'kts', 'go', 'c', 'h', 'cpp', 'hpp', 'cs', 'swift', 'm',
   'mm', 'scala', 'clj', 'ex', 'exs', 'erl', 'hs', 'lua', 'pl', 'r', 'jl', 'dart', 'vue',
-  'svelte', 'sql', 'sh', 'bash', 'zsh', 'fish', 'ps1', 'bat', 'cmd', 'css', 'scss', 'sass',
+  'svelte', 'sql', 'bash', 'zsh', 'fish', 'ps1', 'bat', 'cmd', 'css', 'scss', 'sass',
   'less', 'styl', 'html', 'htm', 'xhtml', 'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf',
   'env', 'lock', 'gradle', 'properties', 'proto', 'graphql', 'gql',
   // 资源 / 二进制 / 归档
   'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico', 'svg', 'tif', 'tiff', 'psd',
-  'ai', 'sketch', 'fig', 'mp3', 'wav', 'flac', 'aac', 'ogg', 'mp4', 'mov', 'avi', 'mkv',
+  'sketch', 'fig', 'mp3', 'wav', 'flac', 'aac', 'ogg', 'mp4', 'mov', 'avi', 'mkv',
   'webm', 'zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'rar', '7z', 'dmg', 'iso', 'exe', 'msi',
-  'deb', 'rpm', 'apk', 'jar', 'war', 'class', 'o', 'a', 'so', 'dylib', 'dll', 'wasm', 'ttf',
+  'deb', 'rpm', 'apk', 'jar', 'war', 'class', 'o', 'so', 'dylib', 'dll', 'wasm', 'ttf',
   'otf', 'woff', 'woff2', 'eot',
   // 工程 / 配置
   'gitignore', 'npmrc', 'nvmrc', 'editorconfig', 'eslintrc', 'prettierrc', 'babelrc',
   'dockerfile', 'makefile', 'cmake', 'patch', 'diff', 'bak', 'tmp', 'swp',
 ]);
-
 
 /** 端口号必须是 1–65535 的十进制整数（0 与超界端口都不是可用地址） */
 function isValidPort(raw: string): boolean {
@@ -181,12 +182,15 @@ function defaultsToHttp(hostname: string): boolean {
  * 判定依据是**结构**而非 TLD 白名单：任何 TLD 白名单都必然漏掉真实存在的后缀
  * （`.design`、`.museum` 等），靠补名单只会不断回归。
  *
- * 接受：
- * - 本机名（localhost / 环回 / 0.0.0.0）
- * - 严格 IPv4 字面量（必须四段且无前导零，因此 `1.2` 不算）
- * - 多段主机名，末段是字母开头的合法 DNS 标签且不是已知文件扩展名
- *   （因此 `.design`、`.museum` 可用，而 `1.2`、`3.14`、`package.json` 不算）
- * - 单段企业内网短名，但必须有显式端口或路径（否则 `hello` 这类搜索词会被吞掉）
+ * 判定优先级（自上而下，命中即返回）：
+ * 1. 本机名（localhost / 环回 / 0.0.0.0）
+ * 2. 严格 IPv4 字面量（必须四段且无前导零，因此 `1.2` 不算）
+ * 3. **真实 TLD**（IANA 快照）→ 直接按域名处理。
+ *    这一步必须排在文件名启发式之前：`.ai`、`.cc`、`.sh`、`.rs`、`.md` 等
+ *    既在扩展名表里、又是真实存在的顶级域名，真实 TLD 优先才不会被误伤。
+ * 4. 内网 TLD（`.corp`、`.local` 等）→ 按域名处理
+ * 5. 其余后缀：末段是合法 DNS 标签且不是已知文件扩展名才认
+ * 6. 单段企业内网短名：需要端口或路径这类显式信号（否则 `hello` 会被吞掉）
  */
 function looksLikeAddressHost(hostname: string, hasPort: boolean, hasPath: boolean): boolean {
   const host = hostname.toLowerCase();
@@ -198,13 +202,16 @@ function looksLikeAddressHost(hostname: string, hasPort: boolean, hasPath: boole
   if (labels.length > 1) {
     if (labels.some((l) => l === '')) return false; // 空标签，如 "a..b" / ".com"
     const tld = labels[labels.length - 1];
-    // 末段必须是字母开头的合法 DNS 标签，形如 ".design" / ".museum" / ".corp"
-    if (!/^[a-z][a-z0-9-]*$/.test(tld)) return false;
-    // 但不是已知文件扩展名，否则 package.json / notes.txt 会被当成域名
+    if (!/^[a-z][a-z0-9-]*$/.test(tld)) return false; // 必须是合法 DNS 标签
+
+    // 3/4. 真实 TLD 与内网 TLD 优先，不受文件名启发式影响
+    if (PUBLIC_TLDS.has(tld) || INTRANET_TLDS.has(tld)) return true;
+
+    // 5. 其余后缀才走文件名启发式（package.json / notes.txt 在此被挡下）
     return !FILE_EXTENSIONS.has(tld);
   }
 
-  // 单段主机名：需要端口或路径这类显式信号才认，避免吞掉普通搜索词
+  // 6. 单段主机名：需要端口或路径这类显式信号才认，避免吞掉普通搜索词
   return hasPort || hasPath;
 }
 

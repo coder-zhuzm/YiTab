@@ -11,6 +11,7 @@ import {
   formatTimeGreeting,
   SEARCH_ENGINES,
 } from '../src/lib/network-utils.ts';
+import { PUBLIC_TLDS } from '../src/lib/public-tlds.ts';
 import {
   DEFAULT_PINNED_GROUPS,
   DEFAULT_PINNED_ITEMS,
@@ -265,16 +266,15 @@ test('address detection does not depend on a finite TLD allowlist', () => {
     assert.equal(resolveTargetUrl(input).isAddress, true, `${input} must be a usable address`);
   }
 
-  // 但不能因此把普通文件名/搜索词也放行
+  // 但不能因此把普通文件名/搜索词也放行。
+  // 这里只列末段**不是**真实 TLD 的输入：`.py` / `.sh` / `.md` / `.rs` / `.ai` / `.cc`
+  // 等都是真实 TLD，按「真实 TLD 优先」会走地址分支，其取舍见下面的专项用例。
   for (const word of [
     'package.json',
     'notes.txt',
-    'main.py',
     'index.html',
     'config.yml',
-    'README.md',
     'data.csv',
-    'script.sh',
     '1.2',
     'v1.2',
     '3.14',
@@ -285,13 +285,85 @@ test('address detection does not depend on a finite TLD allowlist', () => {
     assert.equal(resolveTargetUrl(word).isAddress, false, `${word} must stay a search term`);
   }
 
-  // 已知残留：不在扩展名表内、又不是真实 TLD 的末段仍会被当作地址。
-  // 这是为让未收录的真实 TLD 可用而付出的代价，在此显式记录而非假装不存在。
+  // 已知残留：既不在 IANA 快照、也不在扩展名表的末段仍会被当作地址。
+  // 这是启发式的固有取舍，在此显式记录而非假装不存在。
   assert.equal(
     resolveTargetUrl('lodash.debounce').isAddress,
     true,
     'known limitation: an unknown suffix is treated as a TLD',
   );
+});
+
+test('a real TLD is never vetoed by the file-extension heuristic', () => {
+  // 反例：扩展名启发式曾否决真实 TLD —— `.ai` / `.cc` / `.sh` / `.rs` / `.md`
+  // 同时出现在扩展名表里，导致 example.ai 等在无协议时被判为搜索词。
+  // 判定顺序必须是「真实 TLD 优先」，文件名启发式只能用于其余后缀。
+  for (const tld of ['ai', 'cc', 'sh', 'rs', 'md']) {
+    // 裸域名
+    assert.deepEqual(
+      resolveTargetUrl(`example.${tld}`),
+      { isAddress: true, url: `https://example.${tld}` },
+      `example.${tld} must be a usable address`,
+    );
+    // 带路径
+    assert.deepEqual(
+      resolveTargetUrl(`example.${tld}/docs`),
+      { isAddress: true, url: `https://example.${tld}/docs` },
+      `example.${tld}/docs must be a usable address`,
+    );
+    // 保存路径与直达一致
+    assert.deepEqual(resolveShortcutUrl(`example.${tld}`), {
+      ok: true,
+      url: `https://example.${tld}`,
+    });
+  }
+
+  // 取舍：末段是真实 TLD 时一律按域名处理，无法再逐例猜测「这是文件名还是域名」。
+  // 因此 `README.md`、`main.py`、`script.sh` 这类输入会被当作地址 ——
+  // `.md`(摩尔多瓦)、`.py`(巴拉圭)、`.sh`(圣赫勒拿)、`.rs`(塞尔维亚)、`.ai`(安圭拉)
+  // 都是真实存在的顶级域名。这是让它们可用的必然代价，相对 HEAD 是行为变化，
+  // 在此显式记录而非假装不存在。
+  for (const ambiguous of ['README.md', 'main.py', 'script.sh', 'notes.rs', 'example.ai']) {
+    assert.equal(
+      resolveTargetUrl(ambiguous).isAddress,
+      true,
+      `${ambiguous}: a real TLD wins over the filename heuristic (accepted tradeoff)`,
+    );
+  }
+});
+
+test('the generated TLD snapshot is a plausible IANA dataset', () => {
+  // 防止生成的快照被截断或写坏后悄悄改变地址判定行为
+  assert.ok(PUBLIC_TLDS.size > 1000, `expected a full IANA snapshot, got ${PUBLIC_TLDS.size}`);
+  assert.ok(PUBLIC_TLDS.has('com') && PUBLIC_TLDS.has('cn') && PUBLIC_TLDS.has('dev'));
+  // 本轮修复所依赖的几个「既是扩展名又是真实 TLD」的后缀
+  for (const tld of ['ai', 'cc', 'sh', 'rs', 'md', 'design', 'museum']) {
+    assert.ok(PUBLIC_TLDS.has(tld), `.${tld} must be present in the snapshot`);
+  }
+  // 只应包含小写字母数字与连字符
+  for (const tld of PUBLIC_TLDS) {
+    assert.match(tld, /^[a-z0-9-]+$/, `unexpected entry: ${tld}`);
+  }
+});
+
+test('the real-TLD table eliminates ambiguity without rejecting unknown suffixes', () => {
+  // 该表用于消歧，**不是**拒绝未知后缀的白名单：
+  // 不在 IANA 快照里的后缀仍走结构判定，因此新增/未收录的 TLD 不会让地址失效。
+  for (const input of [
+    'example.design',
+    'example.museum',
+    'example.engineering',
+    'example.photography',
+    'example.notarealtld',
+  ]) {
+    assert.equal(resolveTargetUrl(input).isAddress, true, `${input} must still be usable`);
+  }
+
+  // 而末段既非真实 TLD、又命中扩展名表的输入必须继续被挡下
+  // （注意：`main.py` / `script.sh` 因 .py / .sh 是真实 TLD 而不在此列）
+  for (const word of ['package.json', 'notes.txt', 'app.tsx', 'config.yml', 'index.html', 'data.csv']) {
+    assert.equal(resolveTargetUrl(word).isAddress, false, `${word} must stay a search term`);
+  }
 });
 
 test('canonicalUrlKey keeps metadata matching consistent with address parsing', () => {
