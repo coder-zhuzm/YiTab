@@ -59,6 +59,13 @@ const INTRANET_TLDS = new Set([
   'priv',
 ]);
 
+/** 常见公共顶级域名：用于判断无协议输入是否更像域名而非搜索词 */
+const PUBLIC_TLDS = new Set([
+  'com', 'cn', 'net', 'org', 'io', 'dev', 'me', 'icu', 'cc', 'info', 'edu', 'gov',
+  'co', 'app', 'ai', 'sh', 'tv', 'xyz', 'top', 'site', 'online', 'tech', 'cloud',
+  'uk', 'de', 'jp', 'fr', 'ru', 'au', 'ca', 'in', 'hk', 'tw', 'sg', 'kr',
+]);
+
 /**
  * 判定主机名是否属于私有内网/局域网/本机地址
  */
@@ -104,27 +111,53 @@ export function isIntranetHost(rawHost: string): boolean {
   return false;
 }
 
+/** 快捷方式表单等「必须给出有效地址」的场景要求的协议白名单 */
+const WEB_PROTOCOLS = new Set(['http:', 'https:']);
+
+/** 无协议输入补全协议时，走 http 的内网/本机主机（与既有直达行为保持一致） */
+function defaultsToHttp(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') {
+    return true;
+  }
+  // 私有/保留 IPv4 字面量
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) return true;
+  return false;
+}
+
 /**
- * 判定用户输入的字符串是否可作为有效网络地址直接直达
- * 支持:
- * - 完整协议 URL: http://... / https://...
- * - 本地端口简写: :3000, :8080, :5173 -> http://localhost:3000
- * - IP 或 IP:端口: 192.168.1.1:8080
- * - 本地开发地址: localhost:3000, localhost/api
- * - 含合法内网后缀或标准域名的网络路径: gitlab.corp/issues, www.github.com
+ * 地址解析的**唯一入口**：补全、预览、保存、打开都必须消费这一份结果，
+ * 不得各自另做 URL 猜测（例如用去重的 smart/domain 规则代替地址解析）。
+ *
+ * 规则：
+ * 1. 显式 http/https：原样保留协议、端口、路径、查询参数与 Hash，绝不擅自替换。
+ * 2. 无协议时补全协议，且**只补协议**，其余部分保持用户输入不变：
+ *    - 内网/本机主机 -> http（保持既有内网直达行为）
+ *    - 公共域名 -> https
+ * 3. 非 http/https 协议（如 javascript:、data:）一律拒绝，避免把可执行内容当成地址。
+ * 4. 其余情况视为搜索词，不当作地址。
  */
-export function isDirectAddress(input: string): { isAddress: boolean; url: string } {
+export function resolveTargetUrl(input: string): { isAddress: boolean; url: string } {
   const trimmed = input.trim();
   if (!trimmed) return { isAddress: false, url: '' };
 
-  // 1. 如果已携带协议
-  if (/^https?:\/\//i.test(trimmed)) {
+  // 1. 已带协议
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
     try {
-      new URL(trimmed);
+      const parsed = new URL(trimmed);
+      if (!WEB_PROTOCOLS.has(parsed.protocol)) return { isAddress: false, url: '' };
+      // 原样返回用户输入，避免规范化改写其路径/查询/锚点
       return { isAddress: true, url: trimmed };
     } catch {
       return { isAddress: false, url: '' };
     }
+  }
+
+  // 1b. 形如 "scheme:payload" 的非 web 协议（javascript:、data:、mailto: 等）一律拒绝。
+  //     注意与 "localhost:5173" 这类 host:port 区分：冒号后若是纯端口（可带路径）则不是协议。
+  const schemeMatch = trimmed.match(/^([a-z][a-z0-9+.-]*):(.*)$/i);
+  if (schemeMatch && !/^\d+([/?#].*)?$/.test(schemeMatch[2])) {
+    return { isAddress: false, url: '' };
   }
 
   // 2. 端口快捷输入 (如 ":3000" 或 ":8080/dashboard")
@@ -135,41 +168,67 @@ export function isDirectAddress(input: string): { isAddress: boolean; url: strin
       const rest = portMatch[2] || '';
       return { isAddress: true, url: `http://localhost:${port}${rest}` };
     }
+    return { isAddress: false, url: '' };
   }
 
   // 3. localhost 开头 (如 "localhost:5173", "localhost/app")
-  if (/^localhost(:\d+)?(\/.*)?$/i.test(trimmed)) {
+  if (/^localhost(:\d+)?([/?#].*)?$/i.test(trimmed)) {
     return { isAddress: true, url: `http://${trimmed}` };
   }
 
   // 4. IPv4 格式 (如 "192.168.1.254", "10.0.0.1:8080/portal")
-  if (/^(\d{1,3}\.){3}\d{1,3}(:\d+)?(\/.*)?$/.test(trimmed)) {
+  if (/^(\d{1,3}\.){3}\d{1,3}(:\d+)?([/?#].*)?$/.test(trimmed)) {
     return { isAddress: true, url: `http://${trimmed}` };
   }
 
-  // 5. 带有斜杠的域名路径 (如 "github.com/foo", "gitlab.corp/login")
-  if (trimmed.includes('/') && !trimmed.includes(' ')) {
-    const hostPart = trimmed.split('/')[0];
-    if (hostPart.includes('.') || isIntranetHost(hostPart)) {
-      return { isAddress: true, url: `http://${trimmed}` };
+  // 5. 无协议的 主机[:端口][/路径]：必须有**显式**地址信号（带点、带端口、带路径），
+  //    否则视为搜索词。注意不能用 isIntranetHost 单独判定 —— 它对任意单节字符串都返回 true，
+  //    会把「普通搜索内容」「hello」这类搜索词误当成内网主机名。
+  if (!trimmed.includes(' ')) {
+    const hostPart = trimmed.split(/[/?#]/)[0];
+    const hostname = hostPart.split(':')[0];
+    const hasDot = hostname.includes('.');
+    const hasPort = hostPart.includes(':');
+    const hasPath = /[/?#]/.test(trimmed);
+    if (hasDot || hasPort || hasPath) {
+      const protocol = defaultsToHttp(hostname) ? 'http' : 'https';
+      return { isAddress: true, url: `${protocol}://${trimmed}` };
     }
   }
 
-  // 6. 内网已知后缀或纯域名 (如 "nas.local", "router.corp", "github.com")
+  // 6. 纯域名（含已知公共 TLD 或内网 TLD，如 "nas.local"、"github.com"）
   if (!trimmed.includes(' ') && trimmed.includes('.')) {
     const parts = trimmed.split('.');
     const tld = parts[parts.length - 1].toLowerCase().split(':')[0];
-    if (
-      INTRANET_TLDS.has(tld) ||
-      ['com', 'cn', 'net', 'org', 'io', 'dev', 'me', 'icu', 'cc', 'info', 'edu', 'gov'].includes(
-        tld,
-      )
-    ) {
-      return { isAddress: true, url: `https://${trimmed}` };
+    if (INTRANET_TLDS.has(tld) || PUBLIC_TLDS.has(tld)) {
+      const hostname = trimmed.split(':')[0];
+      const protocol = defaultsToHttp(hostname) ? 'http' : 'https';
+      return { isAddress: true, url: `${protocol}://${trimmed}` };
     }
   }
 
   return { isAddress: false, url: '' };
+}
+
+/**
+ * 判定用户输入是否可作为网络地址直达。
+ * 与 resolveTargetUrl 共用同一份规则，保证「能否直达」与「解析成什么 URL」永不脱节。
+ */
+export function isDirectAddress(input: string): { isAddress: boolean; url: string } {
+  return resolveTargetUrl(input);
+}
+
+/** 快捷方式表单专用：要求解析结果必须是 http/https 地址 */
+export function resolveShortcutUrl(input: string): { ok: boolean; url: string } {
+  const resolved = resolveTargetUrl(input);
+  if (!resolved.isAddress) return { ok: false, url: '' };
+  try {
+    const parsed = new URL(resolved.url);
+    if (!WEB_PROTOCOLS.has(parsed.protocol)) return { ok: false, url: '' };
+    return { ok: true, url: resolved.url };
+  } catch {
+    return { ok: false, url: '' };
+  }
 }
 
 /**
@@ -227,6 +286,28 @@ export function parseSearchQuery(
     cleanQuery: trimmed,
     isAddress: false,
   };
+}
+
+/**
+ * 构造浏览器本地图标 URL（Chrome `_favicon` API，需 manifest `favicon` 权限）。
+ *
+ * 特点：读取 Chrome 本地图标库，**不发起网络请求**。
+ * 注意：未访问过的站点会返回浏览器默认占位图，且该图同样触发 `onload` ——
+ * 无法用 `onError` 区分真假图标，因此本模块**不做占位检测**，调用方也不应
+ * 据此宣称「已获得真实网站图标」。拿不到真图标时由调用方回退到首字母 SVG。
+ *
+ * 必须传入完整 pageUrl（含协议、端口、路径），不要只传主机名。
+ */
+export function browserFaviconUrl(pageUrl: string, size = 32): string {
+  if (typeof chrome === 'undefined' || !chrome.runtime?.getURL) return '';
+  try {
+    const url = new URL(chrome.runtime.getURL('/_favicon/'));
+    url.searchParams.set('pageUrl', pageUrl);
+    url.searchParams.set('size', String(size));
+    return url.toString();
+  } catch {
+    return '';
+  }
 }
 
 /** 优雅生成高辨识度双色渐变 SVG Favicon */

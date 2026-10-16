@@ -109,10 +109,12 @@
       <li><code>storage</code>: 在本地保存您的匹配偏好、域名白名单与设置（通过 Google Sync 或本地持久化）。</li>
       <li><code>tabGroups</code>: 允许按域名自动归类管理标签页。</li>
       <li><code>clipboardWrite</code>: 仅在您主动点击导出标签列表时，将 Markdown 链接写入系统剪贴板。</li>
+      <li><code>favicon</code>: 读取 Chrome <strong>本地</strong>图标库（<code>_favicon</code>）以展示站点图标，不发起网络请求。</li>
     </ul>
 
     <h2>3. 零第三方追踪 (Zero Third-Party Tracking)</h2>
     <p>YiTab 不包含任何数据埋点、外部分析统计代码、广告 SDK 或任何远程动态执行代码，可在断网离线环境下正常运作。</p>
+    <p>快捷方式的<strong>名称补全只查询浏览器本地数据</strong>（已打开的标签页与浏览历史），<strong>图标读取 Chrome 本地图标库</strong>。两者均不主动请求目标站点或第三方，也不会通过隐藏标签页、网页抓取或请求 <code>/favicon.ico</code> 来补齐缓存。</p>
 
     <h2>4. 遵守 Chrome Web Store 政策 (Limited Use Compliance)</h2>
     <p>YiTab 严格遵守 Google Chrome 应用商店开发者政策中的“有限使用”（Limited Use）规范，仅将权限用于提供用户明确知情且可见的效率功能。</p>

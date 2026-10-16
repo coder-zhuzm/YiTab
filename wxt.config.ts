@@ -15,6 +15,9 @@ export default defineConfig({
       'clipboardWrite',
       'bookmarks',
       'history',
+      // 读取 Chrome 本地图标库（_favicon），零网络请求。
+      // 权限警告已被已有的 tabs 权限覆盖，不新增用户可见警告。
+      'favicon',
     ],
     omnibox: {
       keyword: 'tab',

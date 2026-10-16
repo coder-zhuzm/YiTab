@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppstoreOutlined,
   BookOutlined,
@@ -43,20 +43,29 @@ import {
   type BookmarkFolderCard,
 } from '@/lib/bookmarks-matrix';
 import {
+  browserFaviconUrl,
   formatTimeGreeting,
   generateSvgFavicon,
-  isDirectAddress,
   isIntranetHost,
   parseSearchQuery,
+  resolveShortcutUrl,
   SEARCH_ENGINES,
 } from '@/lib/network-utils';
-import type {
-  NewTabSettings,
-  PinnedData,
-  PinnedGroup,
-  PinnedItem,
-  ProfileMode,
-  SearchEngine,
+import {
+  lookupLocalTitle,
+  shouldApplyAutoTitle,
+  type TitleCandidate,
+  type TitleSource,
+} from '@/lib/shortcut-meta';
+import {
+  DEFAULT_NEWTAB_SETTINGS,
+  type NewTabSettings,
+  type PinnedData,
+  type PinnedGroup,
+  type PinnedItem,
+  type IconMode,
+  type ProfileMode,
+  type SearchEngine,
 } from '@/lib/newtab-types';
 import {
   addPinnedGroup,
@@ -108,12 +117,14 @@ export default function NewTabApp() {
   const [activeGroupId, setActiveGroupId] = useState<string>('all');
 
   // 新标签页设置
-  const [settings, setSettings] = useState<NewTabSettings>({
-    profile: 'work',
-    defaultEngineId: 'google',
-    openInNewTab: false,
-    showGreeting: true,
-  });
+  const [settings, setSettings] = useState<NewTabSettings>(DEFAULT_NEWTAB_SETTINGS);
+
+  // 快捷方式表单：URL 解析结果 + 名称来源 + 异步请求编号（防旧请求串写）
+  const [shortcutPreview, setShortcutPreview] = useState('');
+  const [shortcutHint, setShortcutHint] = useState('');
+  const [titleSource, setTitleSource] = useState<TitleSource>('empty');
+  const [suggestedTitle, setSuggestedTitle] = useState<TitleCandidate | null>(null);
+  const titleRequestId = useRef(0);
 
   // 当前已开标签页映射 (用于已开检测)
   const [openTabs, setOpenTabs] = useState<
@@ -284,6 +295,20 @@ export default function NewTabApp() {
     return parseSearchQuery(searchInput, activeEngine.id);
   }, [searchInput, activeEngine]);
 
+  /**
+   * 图标来源解析。默认首字母 SVG（本地、零请求）；
+   * browser 模式用 Chrome 本地图标库，失败时回退到首字母 SVG。
+   * 不做占位图检测 —— 未访问过的站点显示浏览器默认图属正常结果。
+   */
+  const iconFor = useCallback(
+    (pageUrl: string, title: string, size: number): { src: string; fallback: string } => {
+      const fallback = generateSvgFavicon(title, pageUrl);
+      if (settings.iconMode !== 'browser') return { src: fallback, fallback };
+      return { src: browserFaviconUrl(pageUrl, size) || fallback, fallback };
+    },
+    [settings.iconMode],
+  );
+
   // 搜索建议与自然语言智能意图起跳 (严格内置 400ms 防抖)
   useEffect(() => {
     if (!searchInput.trim()) {
@@ -396,6 +421,12 @@ export default function NewTabApp() {
     setSettings(updated);
   };
 
+  // 切换图标来源：首字母 SVG（默认）/ 浏览器本地图标库
+  const handleToggleIconMode = async (iconMode: IconMode) => {
+    const updated = await saveNewTabSettings({ iconMode });
+    setSettings(updated);
+  };
+
   // 过滤当前分组卡片
   const filteredItems = useMemo(() => {
     if (activeGroupId === 'all') return pinnedData.items;
@@ -404,11 +435,20 @@ export default function NewTabApp() {
 
   // 打开添加/编辑模态框
   const handleOpenItemModal = (item?: PinnedItem) => {
+    // 每次打开都重置表单会话状态，避免上一条的自动结果/建议串到这一条
+    titleRequestId.current += 1;
+    setShortcutPreview('');
+    setShortcutHint('');
+    setSuggestedTitle(null);
+
     if (item) {
       setEditingItem(item);
+      // 编辑已有条目：名称归用户所有，自动结果只作建议，不自动写入
+      setTitleSource('user');
       form.setFieldsValue(item);
     } else {
       setEditingItem(null);
+      setTitleSource('empty');
       form.resetFields();
       form.setFieldsValue({
         groupId:
@@ -420,26 +460,88 @@ export default function NewTabApp() {
     setItemModalVisible(true);
   };
 
+  /** URL 失焦：先规范化地址，再异步查本地名称候选。查询失败不阻塞手填。 */
+  const handleUrlBlur = useCallback(async () => {
+    const raw = String(form.getFieldValue('url') ?? '').trim();
+    const resolved = resolveShortcutUrl(raw);
+    setShortcutPreview(resolved.ok ? resolved.url : '');
+    setSuggestedTitle(null);
+    if (!resolved.ok) {
+      setShortcutHint(raw ? '不是有效网址，可继续手动填写' : '');
+      return;
+    }
+
+    const requestId = ++titleRequestId.current;
+    setShortcutHint('正在查找本地名称…');
+
+    const candidate = await lookupLocalTitle(
+      {
+        queryTabs: () => chrome.tabs.query({}).then((ts) => ts.map((t) => ({ url: t.url, title: t.title }))),
+        searchHistory: (url, startTime, maxResults) =>
+          chrome.history.search({ text: url, startTime, maxResults }),
+      },
+      resolved.url,
+    );
+
+    // 返回时重新核对：请求编号、当前 URL、名称来源，任一不符即放弃
+    const currentUrl = resolveShortcutUrl(String(form.getFieldValue('url') ?? '').trim()).url;
+    const apply = candidate
+      ? shouldApplyAutoTitle({
+          requestId,
+          latestRequestId: titleRequestId.current,
+          requestUrl: resolved.url,
+          currentUrl,
+          titleSource,
+          currentTitle: String(form.getFieldValue('title') ?? ''),
+          candidateSource: candidate.source,
+          isEditing: editingItem != null,
+        })
+      : false;
+
+    if (candidate && apply) {
+      form.setFieldsValue({ title: candidate.title });
+      setTitleSource('auto');
+    }
+    // 编辑已有条目时把自动结果作为「建议」呈现，由用户点击后替换
+    if (candidate && editingItem) setSuggestedTitle(candidate);
+
+    setShortcutHint(
+      candidate
+        ? candidate.source === 'tab'
+          ? '已从当前标签填充名称'
+          : '已从历史记录找到名称'
+        : '未找到本地名称，可手动填写',
+    );
+  }, [form, titleSource, editingItem]);
+
+  /** 用户真实输入标题 -> 名称归用户所有，后续自动结果不得覆盖 */
+  const handleTitleChange = useCallback(() => {
+    setTitleSource('user');
+  }, []);
+
   // 保存固钉卡片
   const handleSaveItem = async () => {
     try {
       const values = await form.validateFields();
-      let formattedUrl = values.url.trim();
-      if (!/^https?:\/\//i.test(formattedUrl)) {
-        formattedUrl = `https://${formattedUrl}`;
+      // 保存、预览、补全共用同一个解析结果；不再各自补协议
+      const resolved = resolveShortcutUrl(String(values.url ?? ''));
+      if (!resolved.ok) {
+        setShortcutHint('请填写有效的网址（http/https）');
+        return;
       }
 
       if (editingItem) {
+        // 保留既有 customIcon 等未在表单中暴露的字段，避免保存时意外清空
         await updatePinnedItem({
           ...editingItem,
-          title: values.title.trim(),
-          url: formattedUrl,
+          title: String(values.title ?? '').trim(),
+          url: resolved.url,
           groupId: values.groupId,
         });
       } else {
         await addPinnedItem({
-          title: values.title.trim(),
-          url: formattedUrl,
+          title: String(values.title ?? '').trim(),
+          url: resolved.url,
           groupId: values.groupId,
         });
       }
@@ -532,6 +634,24 @@ export default function NewTabApp() {
               <Radio.Button value="work">🏢 办公内网</Radio.Button>
               <Radio.Button value="home">🏠 个人模式</Radio.Button>
             </Radio.Group>
+
+            <Tooltip
+              title={
+                settings.iconMode === 'browser'
+                  ? '当前：浏览器图标（来自 Chrome 本地图标库）。未访问过的站点会显示浏览器默认图标。'
+                  : '当前：首字母图标（本地生成，零网络请求）'
+              }
+            >
+              <Radio.Group
+                value={settings.iconMode}
+                onChange={(e) => void handleToggleIconMode(e.target.value)}
+                buttonStyle="solid"
+                size="small"
+              >
+                <Radio.Button value="initials">首字母</Radio.Button>
+                <Radio.Button value="browser">浏览器图标</Radio.Button>
+              </Radio.Group>
+            </Tooltip>
 
             <Tooltip title="打开 YiTab 控制中心">
               <Button
@@ -737,7 +857,6 @@ export default function NewTabApp() {
 
             <div className="recommendations-grid">
               {recommendations.map((rec) => {
-                const svgFallback = generateSvgFavicon(rec.title, rec.domain);
                 return (
                   <div
                     key={`rec_${rec.domain}`}
@@ -756,11 +875,11 @@ export default function NewTabApp() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <img
                         className="pinned-icon"
-                        src={`https://www.google.com/s2/favicons?domain=${rec.domain}&sz=64`}
+                        src={iconFor(rec.primaryUrl, rec.title, 64).src}
                         alt={rec.title}
                         onError={(e) => {
                           e.currentTarget.onerror = null;
-                          e.currentTarget.src = svgFallback;
+                          e.currentTarget.src = iconFor(rec.primaryUrl, rec.title, 64).fallback;
                         }}
                       />
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -882,7 +1001,6 @@ export default function NewTabApp() {
 
                 const isIntranet = isIntranetHost(hostname);
                 const isOpen = openTabs.some((t) => t.url === item.url);
-                const svgFallback = generateSvgFavicon(item.title, hostname);
 
                 return (
                   <div
@@ -892,12 +1010,12 @@ export default function NewTabApp() {
                   >
                     <img
                       className="pinned-icon"
-                      src={`https://www.google.com/s2/favicons?domain=${hostname}&sz=64`}
+                      src={iconFor(item.url, item.title, 64).src}
                       alt={item.title}
                       onError={(e) => {
                         // 失败时自愈为优雅的矢量 SVG Favicon
                         e.currentTarget.onerror = null;
-                        e.currentTarget.src = svgFallback;
+                        e.currentTarget.src = iconFor(item.url, item.title, 64).fallback;
                       }}
                     />
 
@@ -1006,7 +1124,6 @@ export default function NewTabApp() {
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       {card.items.map((item) => {
-                        const fallback = generateSvgFavicon(item.title, item.domain || 'bm');
                         return (
                           <div
                             key={item.id}
@@ -1016,12 +1133,12 @@ export default function NewTabApp() {
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
                               <img
-                                src={`https://www.google.com/s2/favicons?domain=${item.domain || 'chrome'}&sz=32`}
+                                src={iconFor(item.url, item.title, 32).src}
                                 alt=""
                                 style={{ width: 14, height: 14, borderRadius: 2, flexShrink: 0 }}
                                 onError={(e) => {
                                   e.currentTarget.onerror = null;
-                                  e.currentTarget.src = fallback;
+                                  e.currentTarget.src = iconFor(item.url, item.title, 32).fallback;
                                 }}
                               />
                               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1094,20 +1211,54 @@ export default function NewTabApp() {
           destroyOnClose
         >
           <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+            {/* URL 前置：先填地址，名称才可自动补全 */}
+            <Form.Item
+              name="url"
+              label="网络网址 (支持内网 IP 与端口)"
+              rules={[{ required: true, message: '请输入网址' }]}
+              extra={
+                shortcutHint ? (
+                  <span style={{ fontSize: 12, color: '#64748b' }}>{shortcutHint}</span>
+                ) : shortcutPreview ? (
+                  <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                    将保存为 {shortcutPreview}
+                  </span>
+                ) : null
+              }
+            >
+              <Input
+                placeholder="例如: https://github.com 或 192.168.1.100:8080"
+                onBlur={() => void handleUrlBlur()}
+              />
+            </Form.Item>
             <Form.Item
               name="title"
               label="网站/系统名称"
               rules={[{ required: true, message: '请输入名称' }]}
             >
-              <Input placeholder="例如: GitLab 公司代码仓、Jira 看板" />
+              <Input
+                placeholder="例如: GitLab 公司代码仓、Jira 看板"
+                onChange={handleTitleChange}
+              />
             </Form.Item>
-            <Form.Item
-              name="url"
-              label="网络网址 (支持内网 IP 与端口)"
-              rules={[{ required: true, message: '请输入网址' }]}
-            >
-              <Input placeholder="例如: https://github.com 或 192.168.1.100:8080" />
-            </Form.Item>
+            {suggestedTitle && (
+              <div style={{ marginTop: -8, marginBottom: 16, fontSize: 12, color: '#64748b' }}>
+                建议名称（来自
+                {suggestedTitle.source === 'tab' ? '当前标签' : '历史记录'}）：
+                <Button
+                  type="link"
+                  size="small"
+                  style={{ padding: '0 4px', height: 'auto', fontSize: 12 }}
+                  onClick={() => {
+                    form.setFieldsValue({ title: suggestedTitle.title });
+                    setTitleSource('user');
+                    setSuggestedTitle(null);
+                  }}
+                >
+                  {suggestedTitle.title}
+                </Button>
+              </div>
+            )}
             <Form.Item
               name="groupId"
               label="所属分组"

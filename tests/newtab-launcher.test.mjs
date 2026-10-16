@@ -4,6 +4,8 @@ import {
   isIntranetHost,
   isDirectAddress,
   parseSearchQuery,
+  resolveTargetUrl,
+  resolveShortcutUrl,
   generateSvgFavicon,
   formatTimeGreeting,
   SEARCH_ENGINES,
@@ -89,20 +91,92 @@ test('isDirectAddress recognizes network addresses and port shortcuts', () => {
     url: 'http://10.20.30.40/metrics',
   });
 
-  // 内部与公共域名路径
+  // 内部与公共域名路径。
+  // ⚠️ 行为变更（有意，逐项说明）：
+  //   旧实现里带路径的域名路径走的是 `http://`，而同一主机不带路径时走 `https://` ——
+  //   同一主机因是否带路径而得到不同协议，这是既有缺陷。
+  //   现统一由 defaultsToHttp() 决定：内网/本机 -> http，公共域名 -> https。
   assert.deepEqual(isDirectAddress('gitlab.corp/projects'), {
     isAddress: true,
-    url: 'http://gitlab.corp/projects',
+    url: 'https://gitlab.corp/projects',
   });
   assert.deepEqual(isDirectAddress('github.com/coder-zhuzm/YiTab'), {
     isAddress: true,
-    url: 'http://github.com/coder-zhuzm/YiTab',
+    url: 'https://github.com/coder-zhuzm/YiTab',
   });
 
   // 普通搜索词绝不误判为地址
   assert.equal(isDirectAddress('react 19 教程').isAddress, false);
   assert.equal(isDirectAddress('hello world').isAddress, false);
   assert.equal(isDirectAddress('how to use yitab').isAddress, false);
+  // isIntranetHost 对任意单节字符串都返回 true，不能单独用它判定地址
+  assert.equal(isDirectAddress('普通搜索内容').isAddress, false);
+  assert.equal(isDirectAddress('hello').isAddress, false);
+});
+
+test('resolveTargetUrl preserves explicit protocol, port, path, query and hash', () => {
+  // 边界 1：显式协议优先，其余部分不得被擅自替换或丢弃
+  for (const input of [
+    'http://example.com',
+    'https://example.com:8443/login?next=%2Fdash#section',
+    'http://192.168.1.100:8080/portal?tab=1#top',
+    'https://gitlab.corp/a/b/c?x=1&y=2#frag',
+    'http://localhost:3000/api/v1?debug=1',
+  ]) {
+    assert.deepEqual(resolveTargetUrl(input), { isAddress: true, url: input }, `must keep ${input} verbatim`);
+  }
+
+  // 非 http/https 协议一律拒绝，避免把可执行内容当成地址
+  for (const bad of ['javascript:alert(1)', 'data:text/html,<h1>x', 'file:///etc/passwd', 'ftp://example.com']) {
+    assert.equal(resolveTargetUrl(bad).isAddress, false, `${bad} must not be treated as a web address`);
+  }
+});
+
+test('resolveTargetUrl keeps intranet direct-jump behaviour', () => {
+  // 边界 2：既有内网直达规则保持不变
+  assert.deepEqual(resolveTargetUrl(':3000'), { isAddress: true, url: 'http://localhost:3000' });
+  assert.deepEqual(resolveTargetUrl(':8080/dashboard'), { isAddress: true, url: 'http://localhost:8080/dashboard' });
+  assert.deepEqual(resolveTargetUrl('localhost:5173'), { isAddress: true, url: 'http://localhost:5173' });
+  assert.deepEqual(resolveTargetUrl('192.168.1.1:8080'), { isAddress: true, url: 'http://192.168.1.1:8080' });
+  assert.deepEqual(resolveTargetUrl('10.20.30.40/metrics'), { isAddress: true, url: 'http://10.20.30.40/metrics' });
+  // 无协议时的默认协议：内网/本机 -> http，公共域名 -> https
+  assert.equal(resolveTargetUrl('nas.local').url, 'https://nas.local');
+  assert.equal(resolveTargetUrl('127.0.0.1:9000').url, 'http://127.0.0.1:9000');
+});
+
+test('resolveTargetUrl: one input yields one URL for every consumer', () => {
+  // 边界 4：补全、预览、保存、打开必须消费同一份解析结果。
+  // 这里锁定「同一输入重复解析结果稳定」，防止各处各自另猜。
+  const inputs = [
+    'github.com/coder-zhuzm/YiTab',
+    'https://example.com:8443/a?b=1#c',
+    ':5173',
+    'gitlab.corp/login',
+    '192.168.1.100:8080/x',
+  ];
+  for (const input of inputs) {
+    const first = resolveTargetUrl(input);
+    for (let i = 0; i < 5; i++) {
+      assert.deepEqual(resolveTargetUrl(input), first, `${input} must resolve deterministically`);
+    }
+    // 保存路径与直达路径共用同一解析结果
+    assert.deepEqual(resolveShortcutUrl(input), { ok: first.isAddress, url: first.url });
+  }
+});
+
+test('resolveShortcutUrl requires a valid web address but never invents one', () => {
+  // 边界 3：快捷方式表单要求有效地址，且不得把普通搜索词变成网址
+  assert.deepEqual(resolveShortcutUrl('github.com'), { ok: true, url: 'https://github.com' });
+  assert.deepEqual(resolveShortcutUrl('https://example.com/a?b=1#c'), {
+    ok: true,
+    url: 'https://example.com/a?b=1#c',
+  });
+  assert.deepEqual(resolveShortcutUrl('localhost:3000'), { ok: true, url: 'http://localhost:3000' });
+
+  for (const word of ['react 19 教程', 'hello world', '普通搜索内容', 'how to use yitab']) {
+    assert.deepEqual(resolveShortcutUrl(word), { ok: false, url: '' }, `${word} must not become a URL`);
+  }
+  assert.deepEqual(resolveShortcutUrl('javascript:alert(1)'), { ok: false, url: '' });
 });
 
 test('parseSearchQuery parses engine prefixes and direct jump routes', () => {
