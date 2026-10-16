@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YiTab 一签 - 隐私权政策 / Privacy Policy</title>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --card-bg: #1e293b;
+        --text: #f8fafc;
+        --text-muted: #94a3b8;
+        --border: #334155;
+      }
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.6;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      padding: 48px;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      border: 1px solid var(--border);
+    }
+    h1 {
+      font-size: 28px;
+      margin-top: 0;
+      color: var(--primary);
+    }
+    h2 {
+      font-size: 20px;
+      margin-top: 32px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 8px;
+    }
+    h3 {
+      font-size: 16px;
+      margin-top: 24px;
+    }
+    p, li {
+      color: var(--text);
+      font-size: 15px;
+    }
+    .badge {
+      display: inline-block;
+      background: #ecfdf5;
+      color: #059669;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    code {
+      background: rgba(99, 102, 241, 0.1);
+      color: var(--primary);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .footer {
+      margin-top: 48px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 14px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="badge">100% Local &amp; Privacy First</div>
+    <h1>YiTab 一签 - 隐私权政策 (Privacy Policy)</h1>
+    <p><strong>生效日期：</strong> 2026 年 10 月 16 日</p>
+
+    <h2>1. 核心承诺 (Core Commitment)</h2>
+    <p><strong>YiTab 坚守 100% 本地运算原则。</strong> 我们不收集、不存储、不向任何外部服务器上传、不出售您的任何浏览记录、标签页地址或书签内容。所有数据比对与管理均在您的浏览器本地完成。</p>
+
+    <h2>2. 数据使用与权限说明 (Data Processing &amp; Permissions)</h2>
+    <ul>
+      <li><code>tabs</code> &amp; <code>webNavigation</code>: 实时比对已打开标签页的 URL，防止重复开启，并在确认后聚焦已有标签。所有比对逻辑均在本地内存中运行。</li>
+      <li><code>bookmarks</code>: 在 Alt+K 命令面板中快速检索书签，以及在新标签页中展示常用书签网格与健康去重。</li>
+      <li><code>history</code>: 仅用于新标签页恢复胶囊，提供最近工作流会话的本地离线恢复。</li>
+      <li><code>storage</code>: 在本地保存您的匹配偏好、域名白名单与设置（通过 Google Sync 或本地持久化）。</li>
+      <li><code>tabGroups</code>: 允许按域名自动归类管理标签页。</li>
+      <li><code>clipboardWrite</code>: 仅在您主动点击导出标签列表时，将 Markdown 链接写入系统剪贴板。</li>
+    </ul>
+
+    <h2>3. 零第三方追踪 (Zero Third-Party Tracking)</h2>
+    <p>YiTab 不包含任何数据埋点、外部分析统计代码、广告 SDK 或任何远程动态执行代码，可在断网离线环境下正常运作。</p>
+
+    <h2>4. 遵守 Chrome Web Store 政策 (Limited Use Compliance)</h2>
+    <p>YiTab 严格遵守 Google Chrome 应用商店开发者政策中的“有限使用”（Limited Use）规范，仅将权限用于提供用户明确知情且可见的效率功能。</p>
+
+    <h2>5. 开源地址与联系方式 (Open Source &amp; Contact)</h2>
+    <p>本插件完全开源，代码托管于 GitHub：</p>
+    <p><a href="https://github.com/coder-zhuzm/YiTab" target="_blank" rel="noopener noreferrer">https://github.com/coder-zhuzm/YiTab</a></p>
+    <p>如对隐私政策有任何疑问，请提交 Issue 反馈：<a href="https://github.com/coder-zhuzm/YiTab/issues" target="_blank" rel="noopener noreferrer">GitHub Issues</a></p>
+
+    <div class="footer">
+      &copy; 2026 YiTab Project. Built for productivity and privacy.
+    </div>
+  </div>
+</body>
+</html>

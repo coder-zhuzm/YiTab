@@ -148,7 +148,16 @@ npm run build     # 编译打包 Chrome MV3 产物（输出至 .output/chrome-mv
 - **核心框架**：[WXT](https://wxt.dev/)（新一代 Chrome MV3 原生 Vite 扩展框架）
 - **UI 界面**：React 18 + TypeScript (Strict Mode) + Ant Design 5 (Token 风格定制)
 - **隔离机制**：Shadow DOM 样式强隔离（SPA 浮窗 & 全局命令面板）
-- **测试保障**：74 项原生单元测试（100% 通过）+ Headless Chromium 自动化端到端截屏管线
+- **测试保障**：85 项原生单元测试（100% 通过）+ Headless Chromium 自动化端到端截屏管线
+
+---
+
+## 隐私与合规
+
+YiTab 严格遵守 Google Chrome Web Store 开发者计划政策及最小权限原则：
+- **100% 本地运行**：绝不上报、收集、传输或出售任何用户的浏览历史、书签及敏感数据。
+- **隐私权政策**：详见 [PRIVACY.md](./PRIVACY.md) 或在线访问 [privacy.html](./docs/privacy.html)。
+- **Chrome 网上应用店资料指南**：详见 [CHROME_STORE_LISTING.md](./docs/CHROME_STORE_LISTING.md)。
 
 ---
 

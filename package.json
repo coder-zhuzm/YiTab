@@ -12,6 +12,7 @@
     "compile": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "screenshot": "node scripts/capture-previews.mjs",
+    "store-assets": "node scripts/generate-store-assets.mjs",
     "postinstall": "wxt prepare"
   },
   "dependencies": {
