@@ -1,0 +1,84 @@
+{
+  "date": "2026-10-17",
+  "baselineCommit": "852c9225306dab7bd2a212914581c876440ac8e9",
+  "method": "Real TypeScript source functions via Node24; pure calls and injected live in-memory Chrome API mocks; no new browser reproduction",
+  "results": {
+    "simpleHash": {
+      "candidate": "https://example.com/#dashboard",
+      "existing": "https://example.com/#settings",
+      "mode": "smart",
+      "matched": true,
+      "interpretation": "Whether these hashes are routes is site dependent"
+    },
+    "differentLocalApps": {
+      "candidate": "http://localhost:3000",
+      "existing": "http://localhost:5173",
+      "mode": "domain",
+      "matched": true
+    },
+    "asymmetricRule": {
+      "siteRules": [
+        {
+          "domain": "example.com",
+          "mode": "domain",
+          "includeSubdomains": false,
+          "ignoredParams": []
+        }
+      ],
+      "globalMode": "smart",
+      "baseToWww": true,
+      "wwwToBase": false,
+      "baseKey": "example.com",
+      "wwwKey": "[\"https://www.example.com\",\"/b\",[],\"\"]"
+    },
+    "domainNavigation": {
+      "from": "https://example.com/a",
+      "to": "https://example.com/b",
+      "committed": {
+        "skip": false
+      },
+      "history": {
+        "skip": true,
+        "reason": "spa_same_domain"
+      }
+    },
+    "formSubmit": {
+      "transitionType": "form_submit",
+      "eventType": "committed",
+      "from": "https://example.com/edit",
+      "to": "https://example.com/save",
+      "skip": false
+    },
+    "temporaryAllow": {
+      "domainModeAllowsDifferentPage": true,
+      "smartLoginDoesNotAllowDifferentDashboardKey": true
+    },
+    "targetPending": {
+      "sourceId": 1,
+      "sourceUrl": "https://example.com/a",
+      "targetId": 2,
+      "targetUrl": "https://example.com/a",
+      "targetPendingUrl": "https://example.com/different",
+      "removed": [
+        1
+      ],
+      "remaining": [
+        2,
+        3
+      ]
+    },
+    "sourceChangesAfterDecision": {
+      "sourceId": 1,
+      "initialUrl": "https://example.com/a",
+      "newUrlDuringTargetActivation": "https://example.com/unrelated",
+      "secondGetObservedNewUrl": true,
+      "removed": [
+        1
+      ],
+      "remaining": [
+        2,
+        3
+      ]
+    }
+  }
+}

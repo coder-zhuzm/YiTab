@@ -1,0 +1,171 @@
+{
+  "reviewDate": "2026-10-17 Asia/Shanghai",
+  "commit": "852c9225306dab7bd2a212914581c876440ac8e9",
+  "node": "v24.22.0",
+  "checks": {
+    "compile": "passed after npm ci",
+    "unitTests": "85 passed, 0 failed",
+    "build": "passed; 568.38kB minified shared chunk warning",
+    "smokeAdaptation": "temporary copy: macOS browser executable + correct background.js worker selection",
+    "smoke": "PASS: options render, controlled Radio sequential saves, broad-mode warning, smart interception, match reason, open-anyway keeps both tabs, SPA in-page toast detection and dismiss, popup UI tabs, in-page Command Palette Alt+K spotlight search, and background command execution.",
+    "allDependencyAudit": {
+      "info": 0,
+      "low": 1,
+      "moderate": 2,
+      "high": 6,
+      "critical": 3,
+      "total": 12
+    },
+    "productionDependencyAudit": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    }
+  },
+  "browser": {
+    "errors": [],
+    "screenshots": [
+      "newtab-desktop.png",
+      "confirm.png",
+      "options.png",
+      "popup.png",
+      "newtab-narrow.png",
+      "search-suggestions.png",
+      "palette.png"
+    ],
+    "requests": [
+      "https://www.google.com/s2/favicons?domain=github.com&sz=64",
+      "https://www.google.com/s2/favicons?domain=localhost&sz=64",
+      "https://www.google.com/s2/favicons?domain=www.v2ex.com&sz=64",
+      "https://www.google.com/s2/favicons?domain=jira.audit.corp&sz=32",
+      "https://www.google.com/s2/favicons?domain=jira.audit.corp&sz=32",
+      "https://www.google.com/s2/favicons?domain=github.com&sz=64",
+      "https://www.google.com/s2/favicons?domain=localhost&sz=64",
+      "https://www.google.com/s2/favicons?domain=www.v2ex.com&sz=64",
+      "https://www.google.com/s2/favicons?domain=jira.audit.corp&sz=32",
+      "https://www.google.com/s2/favicons?domain=127.0.0.1&sz=64",
+      "https://www.google.com/search?q=YiTab%20Synthetic%20Target"
+    ],
+    "checks": {
+      "bookmarkVisible": 0,
+      "bookmarkSearchVisible": 0,
+      "bookmarkSearchText": "01:04\n夜深了 · 10月17日 · 周六\n🏢 办公内网\n🏠 个人模式\n🌐 Google\n/ 聚焦\n固钉工作台\n全部 (3)\n常用研发工具 (2)\n内网与环境 (0)\n日常工作台 (1)\n新建分组\n添加快捷方式\nGitHub\ngithub.com\n本地开发服务\nlocalhost\n内网\nV2EX 技术社区\nwww.v2ex.com\n书签直展矩阵\n按目录平铺聚合\n未找到匹配的书签项",
+      "cardSemantics": [
+        {
+          "tag": "DIV",
+          "role": null,
+          "tabindex": null
+        },
+        {
+          "tag": "DIV",
+          "role": null,
+          "tabindex": null
+        },
+        {
+          "tag": "DIV",
+          "role": null,
+          "tabindex": null
+        }
+      ],
+      "askInterception": true,
+      "openAnyway": true,
+      "narrowOverflow": {
+        "innerWidth": 600,
+        "scrollWidth": 600
+      },
+      "suggestions": 1,
+      "enterResult": {
+        "url": "chrome-error://chromewebdata/",
+        "googleRequests": [
+          "https://www.google.com/search?q=YiTab%20Synthetic%20Target"
+        ]
+      },
+      "palette": 1,
+      "domainRestore": []
+    },
+    "origin": "chrome-extension://cibadnlfpdnmmkmbgepmdeojnenfmfne",
+    "browser": "148.0.7778.96"
+  },
+  "functionReproductions": {
+    "simultaneousAuto": {
+      "removed": [
+        1,
+        2
+      ],
+      "remaining": [
+        3
+      ]
+    },
+    "concurrentSnapshots": [
+      "B"
+    ],
+    "bookmarkMerge": [
+      [
+        "https://example.com/#route/a",
+        "https://example.com/"
+      ],
+      [
+        "https://example.com/#route/b",
+        "https://example.com/"
+      ],
+      [
+        "https://example.com/path",
+        "https://example.com/path"
+      ],
+      [
+        "https://example.com/path/",
+        "https://example.com/path"
+      ]
+    ],
+    "directAddress": [
+      [
+        "[::1]",
+        {
+          "isAddress": false,
+          "url": ""
+        }
+      ],
+      [
+        "[::1]:8080",
+        {
+          "isAddress": false,
+          "url": ""
+        }
+      ],
+      [
+        "jira:8080",
+        {
+          "isAddress": false,
+          "url": ""
+        }
+      ]
+    ],
+    "bookmarkSearch": {
+      "total": 7,
+      "displayed": 6,
+      "found": 0
+    },
+    "whitelist": {
+      "matcher": null,
+      "command": "已扫描并清理 1 个重复标签",
+      "removed": [
+        2
+      ]
+    },
+    "exportCommand": "指令已就绪",
+    "aiDestroyedAfterError": 0,
+    "modernAiDetection": {
+      "supported": false,
+      "modelReady": false,
+      "status": "no"
+    }
+  },
+  "limits": [
+    "Browser request interception records attempted favicon requests before abort; no real internal domain transmitted",
+    "Function reproductions use real source functions with synthetic in-memory browser API mocks",
+    "No actual Gemini Nano download/inference, memory profiling, Firefox, or Chrome 116 compatibility test"
+  ]
+}
