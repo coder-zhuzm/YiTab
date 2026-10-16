@@ -1,6 +1,19 @@
 /** 设置模型与存储。未知参数不猜测，旧 matchMode 原样保留。 */
 export type MatchMode = 'url' | 'smart' | 'path' | 'domain';
 export type InterceptMode = 'auto' | 'ask';
+/**
+ * Hash 参与判定的策略。
+ * - keep（默认）：保留 Hash。`#inbox` / `#sent` 这类单段 Hash 路由必须区分，否则不同页面会被误判为重复。
+ * - ignore：丢弃 Hash，把 `#intro` / `#comments` 视作页内锚点（适合纯文档站）。
+ */
+export type HashPolicy = 'keep' | 'ignore';
+/**
+ * 单页应用站内路由变化的处理策略。
+ * - toast（默认）：仅弹出页内轻提示，绝不抢焦点、不关闭当前标签。
+ * - auto：静默切换到已有匹配标签。
+ * - off：完全不处理 SPA 路由变化。
+ */
+export type SpaPolicy = 'toast' | 'auto' | 'off';
 export interface SiteRule {
   domain: string;
   mode: MatchMode;
@@ -14,6 +27,10 @@ export interface Settings {
   siteRules: SiteRule[];
   /** 刷新页面或原地重复提交时不触发拦截（仅在新开/新导航时判断），默认开启 */
   ignoreReload: boolean;
+  /** Hash 是否参与判重，默认 keep（保守，避免把 Hash 路由误判成锚点） */
+  hashPolicy: HashPolicy;
+  /** SPA 站内路由变化的处理策略，默认 toast（不抢焦点） */
+  spaPolicy: SpaPolicy;
 }
 export const DEFAULTS: Settings = {
   matchMode: 'smart',
@@ -21,14 +38,20 @@ export const DEFAULTS: Settings = {
   whitelist: [],
   siteRules: [],
   ignoreReload: true,
+  hashPolicy: 'keep',
+  spaPolicy: 'toast',
 };
 const MODES: MatchMode[] = ['url', 'smart', 'path', 'domain'];
+const HASH_POLICIES: HashPolicy[] = ['keep', 'ignore'];
+const SPA_POLICIES: SpaPolicy[] = ['toast', 'auto', 'off'];
 const SETTINGS_KEYS: (keyof Settings)[] = [
   'matchMode',
   'interceptMode',
   'whitelist',
   'siteRules',
   'ignoreReload',
+  'hashPolicy',
+  'spaPolicy',
 ];
 export function normalizeDomain(value: string): string | null {
   if (typeof value !== 'string' || !value.trim()) return null;
@@ -51,6 +74,8 @@ export function sanitizeSettings(value: Partial<Settings>): Settings {
         ignoredParams: Array.isArray(r.ignoredParams) ? [...new Set(r.ignoredParams.filter((p): p is string => typeof p === 'string' && !!p.trim()).map(p => p.trim()))] : [] }];
     }) : [],
     ignoreReload: typeof value.ignoreReload === 'boolean' ? value.ignoreReload : DEFAULTS.ignoreReload,
+    hashPolicy: HASH_POLICIES.includes(value.hashPolicy!) ? value.hashPolicy! : DEFAULTS.hashPolicy,
+    spaPolicy: SPA_POLICIES.includes(value.spaPolicy!) ? value.spaPolicy! : DEFAULTS.spaPolicy,
   };
 }
 let cache: Settings | null = null;

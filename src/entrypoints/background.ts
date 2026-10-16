@@ -1,17 +1,16 @@
 import { browser } from 'wxt/browser';
-import { getSettings, watchSettings } from '@/lib/settings';
+import { getSettings, watchSettings, type Settings } from '@/lib/settings';
 import {
   INTERNAL_URL_RE,
   matchDuplicate,
-  inWhitelist,
   queryWebTabs,
   computeMatchKey,
-  resolveRule,
-  hostOf,
   shouldSkipNavigation,
+  type MatchResult,
   type TabInfo,
 } from '@/lib/match';
 import { analyzeTabsByDomain, getDeterministicColor, saveSnapshot } from '@/lib/snapshots';
+import { closeTabAfterSwitch, switchToTab, type SwitchApi, type TabCloseApi } from '@/lib/tab-close';
 import {
   ACTION_COMMANDS,
   extractHostname,
@@ -122,7 +121,7 @@ export default defineBackground(() => {
           }
           sendResponse({ ok: true });
         } else if (msg.type === 'switchTab') {
-          await switchTab(msg, sender.tab?.id, sender.tab?.windowId);
+          await switchTab(msg, sender.tab?.id);
           sendResponse({ ok: true });
         } else if (msg.type === 'closeTabs') {
           if (Array.isArray(msg.tabIds) && msg.tabIds.length) {
@@ -475,22 +474,24 @@ async function findDuplicates(url: string): Promise<{ ok: true; tabs: TabInfo[] 
     }
   }
 
-  const matched = tabs
-    .filter((t) => !!t.url && !!matchDuplicate(url, t.url, settings))
-    .map((t) => {
-      const g = t.groupId && t.groupId > 0 ? groupMap.get(t.groupId) : undefined;
-      return {
-        id: t.id!,
-        windowId: t.windowId,
-        title: t.title ?? t.url ?? '',
-        url: t.url ?? '',
-        favicon: t.favIconUrl || '',
-        groupId: t.groupId && t.groupId > 0 ? t.groupId : undefined,
-        groupTitle: g?.title,
-        groupColor: g?.color,
-        match: matchDuplicate(url, t.url!, settings) ?? undefined,
-      };
+  const matched: TabInfo[] = [];
+  for (const t of tabs) {
+    if (!t.url || t.id == null) continue;
+    const match = matchDuplicate(url, t.url, settings);
+    if (!match) continue;
+    const g = t.groupId && t.groupId > 0 ? groupMap.get(t.groupId) : undefined;
+    matched.push({
+      id: t.id,
+      windowId: t.windowId,
+      title: t.title ?? t.url,
+      url: t.url,
+      favicon: t.favIconUrl || '',
+      groupId: t.groupId && t.groupId > 0 ? t.groupId : undefined,
+      groupTitle: g?.title,
+      groupColor: g?.color,
+      match,
     });
+  }
 
   return {
     ok: true,
@@ -501,24 +502,53 @@ async function findDuplicates(url: string): Promise<{ ok: true; tabs: TabInfo[] 
 async function switchTab(
   msg: { tabId: number; windowId: number; closeSelf: boolean },
   senderTabId?: number,
-  senderWindowId?: number,
 ): Promise<void> {
   try {
-    await browser.tabs.update(msg.tabId, { active: true });
-    await browser.windows.update(msg.windowId, { focused: true });
-    if (msg.closeSelf && senderTabId != null) {
-      const sibs = await browser.tabs.query({ windowId: senderWindowId });
-      if (sibs.length > 1) {
-        await browser.tabs.remove(senderTabId).catch(() => {});
-      } else {
-        await browser.tabs
-          .update(senderTabId, { url: 'chrome://newtab' })
-          .catch(() => {});
-      }
-    }
-  } catch {
-    /* 标签可能已被关闭 */
+    await switchToTab(switchApi(), msg, senderTabId);
+  } catch (err) {
+    console.warn('[YiTab] 切换标签失败:', err);
   }
+}
+
+/**
+ * 在当前窗口内为 URL 挑选最合适的匹配标签。
+ * 优先同窗口命中：跨窗口静默切换会把焦点抢到另一个窗口，用户看不到自己点的那个窗口发生了什么。
+ */
+function pickDuplicateTarget(
+  tabs: chrome.tabs.Tab[],
+  selfTabId: number,
+  selfWindowId: number | undefined,
+  url: string,
+  settings: Settings,
+): { tab: chrome.tabs.Tab; match: MatchResult } | null {
+  let crossWindow: { tab: chrome.tabs.Tab; match: MatchResult } | null = null;
+  for (const t of tabs) {
+    if (t.id == null || t.id === selfTabId || !t.url) continue;
+    const match = matchDuplicate(url, t.url, settings);
+    if (!match) continue;
+    if (t.windowId === selfWindowId) return { tab: t, match };
+    crossWindow ??= { tab: t, match };
+  }
+  return crossWindow;
+}
+
+/** 供 lib/tab-close 使用的浏览器 tabs 适配器 */
+function tabCloseApi(): TabCloseApi {
+  return {
+    get: (tabId) => browser.tabs.get(tabId),
+    query: (queryInfo) => browser.tabs.query(queryInfo),
+    remove: async (tabId) => {
+      await browser.tabs.remove(tabId);
+    },
+    update: (tabId, props) => browser.tabs.update(tabId, props),
+  };
+}
+
+function switchApi(): SwitchApi {
+  return {
+    ...tabCloseApi(),
+    focusWindow: (windowId) => browser.windows.update(windowId, { focused: true }),
+  };
 }
 
 /** 核心检测：导航事件后检查重复 */
@@ -548,7 +578,7 @@ async function handleNavigation(
     allowed.delete(tabId);
   }
 
-  // 集中判断是否跳过拦截（刷新页面、历史回退、同锚点变化、SPA同域名保护、临时放行、白名单等）
+  // 集中判断是否跳过拦截（放行策略链见 lib/match.ts POLICIES）
   const skipCheck = shouldSkipNavigation({
     url,
     eventType,
@@ -567,31 +597,26 @@ async function handleNavigation(
     return;
   }
 
-  // 5. 查询其他所有网页标签
+  // 查询其他所有网页标签，并在同一轮里完成匹配（避免重复计算 matchDuplicate）
   const allTabs = await queryWebTabs();
   if (state.seq !== currentSeq) return;
 
   // 校验当前标签依然存在且 URL 未变
+  let self: chrome.tabs.Tab;
   try {
-    const cur = await browser.tabs.get(tabId);
-    if (cur.url && cur.url !== url) return;
+    self = await browser.tabs.get(tabId);
+    if (self.url && self.url !== url) return;
   } catch {
     return; // 标签已关闭
   }
+  if (state.seq !== currentSeq) return; // tabs.get 期间又发生了新导航
 
-  const target =
-    allTabs.find(
-      (t) => t.id !== tabId && !!t.url && !!matchDuplicate(url, t.url, settings),
-    ) ?? null;
-  if (!target || target.id == null) {
-    state.lastUrl = url;
-    state.lastMatchKey = currentMatchKey;
-    return;
-  }
-
-  const match = matchDuplicate(url, target.url!, settings);
+  const hit = pickDuplicateTarget(allTabs, tabId, self.windowId, url, settings);
   state.lastUrl = url;
   state.lastMatchKey = currentMatchKey;
+  if (!hit) return;
+  const { tab: target, match } = hit;
+  const targetId = target.id!;
 
   // 6. 执行交互策略
   if (eventType === 'committed') {
@@ -601,48 +626,48 @@ async function handleNavigation(
       return;
     }
 
-    // 静默切换式
+    // 静默切换式：聚焦已有标签后，关闭本标签。
+    // 这里不再跳确认页——用户选的正是「别问我」，与 switchTab 的处理保持一致。
     try {
-      await browser.tabs.update(target.id, { active: true });
+      await browser.tabs.update(targetId, { active: true });
       await browser.windows.update(target.windowId, { focused: true });
-      const cur = await browser.tabs.get(tabId);
-      const sibs = await browser.tabs.query({ windowId: cur.windowId });
-      if (sibs.length > 1) {
-        await browser.tabs.remove(tabId);
-      } else {
-        browser.tabs.update(tabId, { url: confirmURL(url) }).catch(() => {});
-      }
-    } catch {}
-  } else {
-    // SPA 内部路由切换（history / fragment）
-    if (settings.interceptMode === 'auto') {
-      // 自动静默切换（不关闭正在浏览的当前标签页）
-      try {
-        await browser.tabs.update(target.id, { active: true });
-        await browser.windows.update(target.windowId, { focused: true });
-      } catch {}
-      return;
+      await closeTabAfterSwitch(tabCloseApi(), tabId, url, () => state.seq !== currentSeq);
+    } catch (err) {
+      console.warn('[YiTab] 静默切换失败:', err);
     }
+    return;
+  }
 
-    // 页内确认式：发送轻量页内提示给 Content Script，避免跳出确认页卸载单页应用
-    const tabInfo: TabInfo = {
-      id: target.id,
-      windowId: target.windowId,
-      title: target.title ?? target.url ?? '',
-      url: target.url ?? '',
-      favicon: target.favIconUrl || '',
-      match: match ?? undefined,
-    };
-
+  // SPA 内部路由切换（history / fragment）
+  // 默认 toast：绝不抢焦点，只弹页内轻提示，避免正在输入的页面被夺走。
+  if (settings.spaPolicy === 'auto') {
     try {
-      await chrome.tabs.sendMessage(tabId, {
-        type: 'yitab_spa_duplicate',
-        candidateUrl: url,
-        targetTab: tabInfo,
-      });
-    } catch {
-      // 受限页面或 Content Script 尚未就绪，安全静默放行，避免破坏运行中的页面
-    }
+      await browser.tabs.update(targetId, { active: true });
+      await browser.windows.update(target.windowId, { focused: true });
+    } catch {}
+    return;
+  }
+  if (settings.spaPolicy === 'off') return;
+
+  // 页内确认式：发送轻量页内提示给 Content Script，避免跳出确认页卸载单页应用
+  const tabInfo: TabInfo = {
+    id: targetId,
+    windowId: target.windowId,
+    title: target.title ?? target.url ?? '',
+    url: target.url ?? '',
+    favicon: target.favIconUrl || '',
+    match,
+  };
+
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      type: 'yitab_spa_duplicate',
+      candidateUrl: url,
+      targetTab: tabInfo,
+    });
+  } catch (err) {
+    // 受限页面或 Content Script 尚未就绪（SPA 站内不跳确认页，避免卸载运行中的页面）
+    console.debug('[YiTab] SPA 提示未能送达当前页面:', err);
   }
 }
 

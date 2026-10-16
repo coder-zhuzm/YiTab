@@ -1,65 +1,107 @@
 /** 唯一匹配入口：后台拦截和确认页查询使用同一判定。 */
-import type { MatchMode, Settings, SiteRule } from './settings';
+import type { HashPolicy, MatchMode, Settings, SiteRule } from './settings';
 export const INTERNAL_URL_RE = /^(chrome|about|edge|devtools|chrome-extension|view-source):/i;
 export const MODE_LABELS: Record<MatchMode, string> = { url: '完整地址', smart: '智能匹配', path: '同路径', domain: '同域名' };
 const TRACKING = new Set(['gclid', 'dclid', 'fbclid', 'msclkid', 'mc_cid', 'mc_eid']);
+
+/**
+ * 主机名归一化（仅用于白名单与 domain 模式的站点合并语义）。
+ *
+ * ⚠️ 不要用它构造 smart / path 的判定键：`example.com` 与 `www.example.com` 是两个不同 host，
+ * 自动合并会扩大判定范围（原本放行的两个页面会被判为重复）。需要合并必须由用户显式声明。
+ */
+export function stripWww(host: string): string {
+  return host.replace(/^www\./i, '');
+}
 export function hostOf(url: string): string | null {
-  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return null; }
+  try { return stripWww(new URL(url).hostname); } catch { return null; }
 }
 function webUrl(value: string): URL | null {
   try { const u = new URL(value); return /^https?:$/.test(u.protocol) ? u : null; } catch { return null; }
 }
-// #/、#!/ 和 #route/... 作为路由保留。其他复杂 Hash 无法自动猜测，保守保留。
-function routeHash(hash: string): string {
-  if (!hash || /^#[\p{L}\p{N}_-]+$/u.test(hash)) return '';
-  return hash;
+function hashPolicyOf(settings: Settings): HashPolicy {
+  return settings.hashPolicy === 'ignore' ? 'ignore' : 'keep';
 }
-export function normalizeUrl(url: string): string {
-  // 完整地址模式保留参数顺序、斜杠和锚点，避免改变潜在语义。
-  return webUrl(url)?.href ?? url;
+/**
+ * Hash 判定：
+ * - keep（默认）：完整保留 Hash。`#inbox` / `#sent` 这类单段 Hash 路由必须区分，否则不同页面会被误判为重复。
+ * - ignore：丢弃 Hash，把 `#intro` / `#comments` 一律视作页内锚点（适合纯文档站）。
+ * 无法自动区分「单段路由」与「页内锚点」，因此默认取保守侧（漏判优于误判）。
+ */
+function routeHash(hash: string, policy: HashPolicy): string {
+  return policy === 'ignore' ? '' : hash;
 }
+/**
+ * 站点规则匹配。分层命中，层级越小越具体：
+ *   0 原始 host 精确命中 —— 用户就是为这个 host 写的规则，任何规则都不得覆盖它
+ *   1 别名精确命中     —— 裸域与 `www.` 互通，仅在用户显式写出对应域名时成立
+ *   2 子域覆盖         —— 需 includeSubdomains，取域名最长者
+ * 结果是确定性的，不依赖 siteRules 数组顺序。
+ */
 export function resolveRule(url: string, settings: Settings): { mode: MatchMode; rule?: SiteRule } {
-  const host = webUrl(url)?.hostname;
-  if (!host) return { mode: settings.matchMode };
-  const rule = settings.siteRules.filter(r => host === r.domain || (r.includeSubdomains && host.endsWith(`.${r.domain}`)))
-    .sort((a, b) => b.domain.length - a.domain.length || Number(a.includeSubdomains) - Number(b.includeSubdomains))[0];
-  return { mode: rule?.mode ?? settings.matchMode, rule };
+  const raw = webUrl(url)?.hostname;
+  if (!raw) return { mode: settings.matchMode };
+  const host = stripWww(raw);
+
+  let best: { rule: SiteRule; tier: number; specificity: number } | null = null;
+  for (const rule of settings.siteRules) {
+    const domain = stripWww(rule.domain);
+    const exactRaw = rule.domain === raw;
+    // 别名是**单向**的：`www.example.com` 是 `example.com` 的别名，反之不成立。
+    // 只认用户为裸域显式写下的规则，不做双向推断 —— 否则为 www 写的规则会反过来吞掉裸域。
+    const exactAlias = !exactRaw && raw.startsWith('www.') && rule.domain === host;
+    const subdomain = !exactRaw && !exactAlias && rule.includeSubdomains && host.endsWith(`.${domain}`);
+    if (!exactRaw && !exactAlias && !subdomain) continue;
+
+    const tier = exactRaw ? 0 : exactAlias ? 1 : 2;
+    const specificity = tier === 2 ? domain.length : 0;
+    const better =
+      !best ||
+      tier < best.tier ||
+      (tier === best.tier &&
+        (specificity > best.specificity ||
+          (specificity === best.specificity && !rule.includeSubdomains && best.rule.includeSubdomains)));
+    if (better) best = { rule, tier, specificity };
+  }
+
+  return { mode: best?.rule.mode ?? settings.matchMode, rule: best?.rule };
 }
-function key(u: URL, mode: MatchMode, ignored: string[]): string {
+function key(u: URL, mode: MatchMode, ignored: string[], hashPolicy: HashPolicy): string {
+  // 完整地址模式保留参数顺序、斜杠和锚点，避免改变潜在语义。
   if (mode === 'url') return u.href;
-  if (mode === 'domain') return u.hostname.replace(/^www\./, ''); // 兼容旧同域名设置
+  // 同域名模式保留其「整站合并」语义，裸域与 www 视为同一站点
+  if (mode === 'domain') return stripWww(u.hostname);
   const pairs = [...u.searchParams.entries()].filter(([name]) => !ignored.includes(name) && !(mode === 'smart' && (name.toLowerCase().startsWith('utm_') || TRACKING.has(name.toLowerCase()))));
   // 不同参数名排序；同名多值的顺序保留，因为可能影响服务端含义。
   pairs.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
-  return JSON.stringify([u.origin, u.pathname, mode === 'path' ? [] : pairs, routeHash(u.hash)]);
+  // 用原始 hostname：不把裸域与 www 自动合并，需要合并请由用户显式声明站点规则
+  return JSON.stringify([u.protocol, u.hostname, u.port, u.pathname, mode === 'path' ? [] : pairs, routeHash(u.hash, hashPolicy)]);
 }
 export interface MatchResult { mode: MatchMode; reason: string; ruleDomain?: string }
 export function matchDuplicate(candidate: string, existing: string, settings: Settings): MatchResult | null {
   const a = webUrl(candidate), b = webUrl(existing);
   if (!a || !b || inWhitelist(candidate, settings.whitelist)) return null;
   const { mode, rule } = resolveRule(candidate, settings);
-  if (key(a, mode, rule?.ignoredParams ?? []) !== key(b, mode, rule?.ignoredParams ?? [])) return null;
-  const reason = mode === 'url' ? '完整地址相同' : mode === 'domain' ? '同域名规则：路径或参数可能不同' : mode === 'path' ? '同路径规则：查询参数不参与比较，Hash 路由保留' : '智能匹配：路径与内容参数相同，忽略追踪参数及普通锚点';
+  const ignored = rule?.ignoredParams ?? [];
+  const hashPolicy = hashPolicyOf(settings);
+  if (key(a, mode, ignored, hashPolicy) !== key(b, mode, ignored, hashPolicy)) return null;
+  const hashNote = mode === 'url' ? '' : hashPolicy === 'ignore' ? '，Hash 已忽略' : '，Hash 保留';
+  const reason =
+    mode === 'url' ? '完整地址相同'
+    : mode === 'domain' ? '同域名规则：路径或参数可能不同'
+    : mode === 'path' ? `同路径规则：查询参数不参与比较${hashNote}`
+    : `智能匹配：路径与内容参数相同，忽略追踪参数${hashNote}`;
   return { mode, reason: reason + (rule?.ignoredParams.length && mode === 'smart' ? `；本站另忽略 ${rule.ignoredParams.join('、')}` : ''), ruleDomain: rule?.domain };
-}
-export function isDuplicate(candidate: string, existing: string, mode: MatchMode): boolean {
-  return !!matchDuplicate(candidate, existing, {
-    matchMode: mode,
-    interceptMode: 'auto',
-    whitelist: [],
-    siteRules: [],
-    ignoreReload: true,
-  });
 }
 export function inWhitelist(url: string, whitelist: string[]): boolean {
   const h = hostOf(url);
-  return !!h && whitelist.some(w => h === w.replace(/^www\./, ''));
+  return !!h && whitelist.some(w => h === stripWww(w));
 }
 export function computeMatchKey(url: string, settings: Settings): string | null {
   const u = webUrl(url);
   if (!u) return null;
   const { mode, rule } = resolveRule(url, settings);
-  return key(u, mode, rule?.ignoredParams ?? []);
+  return key(u, mode, rule?.ignoredParams ?? [], hashPolicyOf(settings));
 }
 export interface TabInfo {
   id: number;
@@ -88,86 +130,60 @@ export interface NavigationCheckParams {
 
 export type SkipReason =
   | 'internal_url'
-  | 'reload_or_history'
-  | 'fragment_anchor'
-  | 'spa_same_domain'
   | 'allowed_temporary'
-  | 'whitelist';
+  | 'whitelist'
+  | 'reload_or_history'
+  | 'spa_ignored'
+  | 'fragment_anchor'
+  | 'same_match_key';
+
+interface NavigationContext extends NavigationCheckParams {
+  now: number;
+}
+
+/** 同一 matchKey 表示「对去重而言没有变化」，无需重复扫描全量标签。 */
+function sameMatchKey(c: NavigationContext): boolean {
+  return c.lastMatchKey != null && c.currentMatchKey != null && c.lastMatchKey === c.currentMatchKey;
+}
+function isReloadOrHistory(c: NavigationContext): boolean {
+  return (
+    c.transitionType === 'reload' ||
+    (c.eventType === 'committed' && Boolean(c.lastUrl) && c.lastUrl === c.url) ||
+    Boolean(c.transitionQualifiers?.includes('forward_back'))
+  );
+}
+function isAllowedTemporary(c: NavigationContext): boolean {
+  const e = c.allowedEntry;
+  if (!e || c.now > e.expiresAt) return false;
+  return e.targetUrl === c.url || (e.matchKey != null && c.currentMatchKey != null && e.matchKey === c.currentMatchKey);
+}
 
 /**
- * 集中判断当前导航是否应当跳过去重拦截
+ * 放行策略链，自上而下短路求值。顺序即优先级，改动前请先读这里：
+ * 1. internal_url      内部协议 / 非法地址
+ * 2. allowed_temporary 用户显式点了「仍要打开」——显式意图优先级最高
+ * 3. whitelist         站点白名单
+ * 4. reload_or_history 刷新、原地重复提交、前进后退（受 ignoreReload 控制）
+ * 5. spa_ignored       spaPolicy=off 时完全不管 SPA 路由变化
+ * 6. fragment_anchor   纯锚点跳转（matchKey 未变）
+ * 7. same_match_key    history 事件重复提交同一路由（SPA 高频 pushState 防抖）
  */
-export function shouldSkipNavigation(
-  params: NavigationCheckParams,
-): { skip: boolean; reason?: SkipReason } {
-  const {
-    url,
-    eventType,
-    transitionType,
-    transitionQualifiers,
-    lastUrl,
-    lastMatchKey,
-    currentMatchKey,
-    settings,
-    allowedEntry,
-    now = Date.now(),
-  } = params;
+const POLICIES: ReadonlyArray<{ reason: SkipReason; test: (c: NavigationContext) => boolean }> = [
+  { reason: 'internal_url', test: c => !c.url || INTERNAL_URL_RE.test(c.url) },
+  { reason: 'allowed_temporary', test: isAllowedTemporary },
+  { reason: 'whitelist', test: c => inWhitelist(c.url, c.settings.whitelist) },
+  { reason: 'reload_or_history', test: c => c.settings.ignoreReload !== false && isReloadOrHistory(c) },
+  { reason: 'spa_ignored', test: c => c.eventType !== 'committed' && c.settings.spaPolicy === 'off' },
+  { reason: 'fragment_anchor', test: c => c.eventType === 'fragment' && sameMatchKey(c) },
+  { reason: 'same_match_key', test: c => c.eventType === 'history' && sameMatchKey(c) },
+];
 
-  // 内部保留与特殊协议直接放行
-  if (!url || INTERNAL_URL_RE.test(url)) {
-    return { skip: true, reason: 'internal_url' };
+/** 集中判断当前导航是否应当跳过去重拦截。 */
+export function shouldSkipNavigation(params: NavigationCheckParams): { skip: boolean; reason?: SkipReason } {
+  const c: NavigationContext = { ...params, now: params.now ?? Date.now() };
+  for (const policy of POLICIES) {
+    if (policy.test(c)) return { skip: true, reason: policy.reason };
   }
-
-  // 0. 刷新与历史导航过滤：
-  // 当开启 ignoreReload（默认开启）时：
-  // a. transitionType 为 'reload'（F5、Ctrl+R、重新加载按钮、location.reload() 等）
-  // b. 在 committed 整页导航中，当前标签已在相同 URL 上（原地提交相同网址）
-  // c. transitionQualifiers 包含 'forward_back'（浏览器前进/后退历史导航，属于本标签的浏览轨迹，非新开）
-  if (settings.ignoreReload !== false) {
-    const isReloadOrHistory =
-      transitionType === 'reload' ||
-      (eventType === 'committed' && Boolean(lastUrl) && lastUrl === url) ||
-      Boolean(transitionQualifiers?.includes('forward_back'));
-
-    if (isReloadOrHistory) {
-      return { skip: true, reason: 'reload_or_history' };
-    }
-  }
-
-  // 1. 普通锚点变化过滤（如 #intro -> #comments，两者 matchKey 相同则不触发重复提示）
-  if (eventType === 'fragment') {
-    if (lastMatchKey != null && currentMatchKey != null && lastMatchKey === currentMatchKey) {
-      return { skip: true, reason: 'fragment_anchor' };
-    }
-  }
-
-  // 2. 同域名模式防过度骚扰：已在站内正常浏览的 SPA 站内路由跳转，不应在每个链接都弹提示
-  if (eventType !== 'committed') {
-    const { mode } = resolveRule(url, settings);
-    if (mode === 'domain' && lastUrl && hostOf(lastUrl) === hostOf(url)) {
-      return { skip: true, reason: 'spa_same_domain' };
-    }
-  }
-
-  // 3. 「仍要打开」放行：时限内仅对目标地址及等价 matchKey 的导航链放行
-  if (allowedEntry) {
-    if (now <= allowedEntry.expiresAt) {
-      if (
-        allowedEntry.targetUrl === url ||
-        (allowedEntry.matchKey != null &&
-          currentMatchKey != null &&
-          allowedEntry.matchKey === currentMatchKey)
-      ) {
-        return { skip: true, reason: 'allowed_temporary' };
-      }
-    }
-  }
-
-  // 4. 白名单检查
-  if (inWhitelist(url, settings.whitelist)) {
-    return { skip: true, reason: 'whitelist' };
-  }
-
   return { skip: false };
 }
 

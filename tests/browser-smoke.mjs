@@ -18,11 +18,13 @@ const serverBase = `http://127.0.0.1:${serverPort}`;
 const profile = await mkdtemp(join(tmpdir(), 'yitab-test-'));
 const extension = resolve(new URL('../.output/chrome-mv3', import.meta.url).pathname);
 const port = 9337;
-const proc = spawn('/usr/bin/chromium', ['--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, `--disable-extensions-except=${extension}`, `--load-extension=${extension}`, 'about:blank'], { stdio: 'ignore' });
+// 允许通过 CHROMIUM_BIN 指定浏览器（本地 macOS 通常没有 /usr/bin/chromium）
+const chromeBin = process.env.CHROMIUM_BIN || '/usr/bin/chromium';
+const proc = spawn(chromeBin, ['--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, `--disable-extensions-except=${extension}`, `--load-extension=${extension}`, 'about:blank'], { stdio: 'ignore' });
 const delay = ms => new Promise(r => setTimeout(r, ms));
 async function targets() { return (await fetch(`http://127.0.0.1:${port}/json/list`)).json(); }
 async function until(fn, label) {
-  for (let i = 0; i < 100; i++) { try { const value = await fn(); if (value) return value; } catch {} await delay(100); }
+  for (let i = 0; i < 200; i++) { try { const value = await fn(); if (value) return value; } catch {} await delay(100); }
   throw new Error(`Timeout: ${label}`);
 }
 async function connect(wsUrl) {
@@ -40,7 +42,8 @@ async function connect(wsUrl) {
 
 let browser, options, doc1, confirm, clientSpa;
 try {
-  const worker = await until(async () => (await targets()).find(t => t.type === 'service_worker' && t.url.startsWith('chrome-extension://')), 'extension worker');
+  // 部分 Chromium 构建会额外加载内置组件扩展的 worker，必须按 background.js 精确匹配本扩展
+  const worker = await until(async () => (await targets()).find(t => t.type === 'service_worker' && t.url.endsWith('/background.js')), 'extension worker');
   const origin = `chrome-extension://${new URL(worker.url).hostname}`;
   const browserInfo = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
   browser = await connect(browserInfo.webSocketDebuggerUrl);
@@ -53,7 +56,9 @@ try {
   assert.ok(text.includes('网站例外规则'));
   assert.ok(text.includes('同路径'));
   assert.ok(text.includes('刷新页面时忽略拦截') || text.includes('刷新控制'));
-  await options.evaluate(`chrome.storage.sync.set({matchMode:'smart',interceptMode:'ask',whitelist:[],siteRules:[],ignoreReload:true})`);
+  assert.ok(text.includes('Hash）路由是否参与判重'), 'hash policy control rendered');
+  assert.ok(text.includes('单页应用站内路由变化的处理方式'), 'SPA policy control rendered');
+  await options.evaluate(`chrome.storage.sync.set({matchMode:'smart',interceptMode:'ask',whitelist:[],siteRules:[],ignoreReload:true,hashPolicy:'keep',spaPolicy:'toast'})`);
 
   // Assert real Radio updates storage, then preserve changed value on next update.
   await options.call('Page.reload');
@@ -107,13 +112,16 @@ try {
   await delay(300);
 
   // --- Part 3: SPA Navigation & Non-intrusive in-page Toast ---
+  // 用 auto + toast 组合验证：即使拦截模式是「静默切换」，站内路由也只弹提示、不抢焦点
+  await options.evaluate(`chrome.storage.sync.set({ interceptMode: 'auto', spaPolicy: 'toast' })`);
+  await delay(300);
   const { targetId: spaTabId } = await browser.call('Target.createTarget', { url: `${serverBase}/spa?page=home` });
   const spaTarget = await until(async () => (await targets()).find(t => t.id === spaTabId && t.url.includes('page=home')), 'SPA target tab');
   clientSpa = await connect(spaTarget.webSocketDebuggerUrl);
   await until(() => clientSpa.evaluate('document.readyState === "complete"'), 'SPA doc loaded');
   await delay(500);
 
-  // Trigger SPA pushState to match docA
+  // Trigger SPA pushState to match docA (distinct path -> distinct match key)
   await clientSpa.evaluate(`history.pushState(null, '', '/docA?utm_source=spa_nav')`);
   await until(async () => clientSpa.evaluate(`Boolean(document.getElementById('yitab-spa-toast-root'))`), 'SPA toast mounted');
   const toastCardText = await clientSpa.evaluate(`document.getElementById('yitab-spa-toast-root').shadowRoot.querySelector('.card').innerText`);
@@ -122,9 +130,71 @@ try {
   assert.ok(toastCardText.includes('切换到该标签'), 'switch button');
   assert.ok(toastCardText.includes('留在本页'), 'stay button');
 
+  // The SPA tab must still be the active tab within its own window: toast never steals focus
+  const activeInSpaWindow = await options.evaluate(`
+    new Promise(resolve => chrome.tabs.query({}, ts => {
+      const spa = ts.find(t => t.url.includes('spa_nav'));
+      if (!spa) return resolve(null);
+      chrome.tabs.query({ active: true, windowId: spa.windowId }, active => resolve(active.map(t => t.url)));
+    }))
+  `);
+  assert.ok(
+    activeInSpaWindow && activeInSpaWindow.some(u => u.includes('spa_nav')),
+    'toast policy must not steal focus to the matching tab',
+  );
+
   // Click '留在本页'
   await clientSpa.evaluate(`document.getElementById('yitab-spa-toast-root').shadowRoot.getElementById('yitab-dismiss').click()`);
   await until(async () => !(await clientSpa.evaluate(`Boolean(document.getElementById('yitab-spa-toast-root'))`)), 'SPA toast dismissed');
+  await options.evaluate(`chrome.storage.sync.set({ interceptMode: 'ask' })`);
+  await delay(200);
+
+  // --- Part 3c: distinct single-segment hash routes must not be treated as duplicates ---
+  const { targetId: hashInboxId } = await browser.call('Target.createTarget', { url: `${serverBase}/app#inbox` });
+  await until(async () => {
+    const t = (await targets()).find(x => x.id === hashInboxId);
+    return t && t.url.endsWith('/app#inbox');
+  }, 'hash inbox settled');
+
+  const { targetId: hashSentId } = await browser.call('Target.createTarget', { url: `${serverBase}/app#sent` });
+  // 明确等待「已稳定在 #sent」，不用固定延时作为主要正确性保证
+  await until(async () => {
+    const t = (await targets()).find(x => x.id === hashSentId);
+    return t && t.url.endsWith('/app#sent');
+  }, 'hash sent settled');
+  const hashSent = (await targets()).find(t => t.id === hashSentId);
+  assert.ok(hashSent.url.endsWith('/app#sent'), '#sent must NOT be deduped against #inbox');
+
+  // 此时浏览器里已经存在前面刷新测试留下的旧 confirm.html；
+  // 断言必须绑定到本次新建的那个标签，否则任意旧确认页都会让测试假通过。
+  const staleConfirms = (await targets()).filter(t => t.url.includes('/confirm.html'));
+  assert.ok(
+    staleConfirms.length > 0,
+    'precondition: a stale confirmation page from the reload test must still be open',
+  );
+  const { targetId: hashDupId } = await browser.call('Target.createTarget', { url: `${serverBase}/app#inbox` });
+  const dupTarget = await until(async () => {
+    const t = (await targets()).find(x => x.id === hashDupId);
+    return t && t.url.includes('/confirm.html') ? t : null;
+  }, 'same hash route intercepted on THIS tab');
+
+  // 解析确认页的 u 参数，确认它对应的正是本次的完整目标地址
+  const dupClient = await connect(dupTarget.webSocketDebuggerUrl);
+  const confirmedUrl = await until(
+    () => dupClient.evaluate(`new URLSearchParams(location.search).get('u')`),
+    'confirm page target url',
+  );
+  assert.equal(confirmedUrl, `${serverBase}/app#inbox`, 'confirmation must target this navigation');
+  dupClient.close();
+
+  // 旧确认页仍然存在，且它们并不满足上面的断言 —— 证明断言绑定的是本次标签
+  assert.ok(
+    (await targets()).filter(t => t.url.includes('/confirm.html')).length > staleConfirms.length,
+    'a NEW confirmation page appeared, not just the stale one',
+  );
+
+  await options.evaluate(`chrome.storage.sync.set({ hashPolicy: 'ignore' })`);
+  await delay(300);
 
   // --- Part 4: Popup UI (Organize, Search, Snapshots, Export) ---
   const { targetId: popupId } = await browser.call('Target.createTarget', { url: `${origin}/popup.html` });

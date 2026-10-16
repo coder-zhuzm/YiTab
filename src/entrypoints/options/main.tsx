@@ -42,6 +42,7 @@ import {
   type MatchMode,
   type Settings,
   type SiteRule,
+  type SpaPolicy,
   type AiSettings,
   DEFAULT_AI_SETTINGS,
   getAiSettings,
@@ -747,6 +748,88 @@ function OptionsPage() {
                           checked={settings.ignoreReload !== false}
                           disabled={disabled}
                           onChange={(checked) => void save({ ignoreReload: checked })}
+                        />
+                      </div>
+
+                      {/* Hash 路由判定 */}
+                      <div
+                        style={{
+                          marginTop: 12,
+                          padding: '16px',
+                          borderRadius: 10,
+                          border: '1px solid #e2e8f0',
+                          background: '#ffffff',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                          <span style={{ fontWeight: 600, fontSize: 15, color: '#0f172a' }}>
+                            井号（Hash）路由是否参与判重
+                          </span>
+                          <Tag color={settings.hashPolicy === 'ignore' ? 'default' : 'green'} style={{ margin: 0 }}>
+                            {settings.hashPolicy === 'ignore' ? '忽略 Hash' : '默认保留'}
+                          </Tag>
+                        </div>
+                        <div style={{ fontSize: 13, color: '#64748b', lineHeight: 1.6, marginBottom: 12 }}>
+                          大量单页应用用 <code>#inbox</code>、<code>#settings</code> 这类单段 Hash 表示不同页面。
+                          保留 Hash 可避免把两个不同页面误判为重复。
+                        </div>
+                        {settings.hashPolicy === 'ignore' && (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            style={{ marginBottom: 12, borderRadius: 8 }}
+                            message="当前是全局设置：所有网站的 Hash 都会被忽略"
+                            description="这会同时影响其它单页应用。例如 #/inbox 与 #/sent 将被视为同一页面并被判为重复。如需按站点区分，请改用「网站例外规则」调整该站点的匹配粒度。"
+                          />
+                        )}
+                        <Radio.Group
+                          value={settings.hashPolicy === 'ignore' ? 'ignore' : 'keep'}
+                          disabled={disabled}
+                          onChange={(e) => void save({ hashPolicy: e.target.value })}
+                        >
+                          <Space direction="vertical" size={6}>
+                            <Radio value="keep">
+                              保留 Hash（推荐）— <code>#inbox</code> 与 <code>#sent</code> 视为不同页面
+                            </Radio>
+                            <Radio value="ignore">
+                              忽略 Hash — <strong>全局</strong>生效，所有网站都按「Hash 不参与判重」处理
+                            </Radio>
+                          </Space>
+                        </Radio.Group>
+                      </div>
+
+                      {/* SPA 站内路由处理策略 */}
+                      <div
+                        style={{
+                          marginTop: 12,
+                          padding: '16px',
+                          borderRadius: 10,
+                          border: '1px solid #e2e8f0',
+                          background: '#ffffff',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                          <span style={{ fontWeight: 600, fontSize: 15, color: '#0f172a' }}>
+                            单页应用站内路由变化的处理方式
+                          </span>
+                          <Tag color={settings.spaPolicy === 'auto' ? 'orange' : 'green'} style={{ margin: 0 }}>
+                            {settings.spaPolicy === 'auto' ? '静默切换' : settings.spaPolicy === 'off' ? '不处理' : '页内提示'}
+                          </Tag>
+                        </div>
+                        <div style={{ fontSize: 13, color: '#64748b', lineHeight: 1.6, marginBottom: 12 }}>
+                          在单页应用内点击站内链接时（不产生整页加载），若别处已有相同路由的标签页，如何处理。
+                          默认只在页内弹出轻提示，不会抢走你正在输入的页面。
+                        </div>
+                        <Select
+                          style={{ width: '100%', maxWidth: 520 }}
+                          value={settings.spaPolicy === 'auto' ? 'auto' : settings.spaPolicy === 'off' ? 'off' : 'toast'}
+                          disabled={disabled}
+                          onChange={(value: SpaPolicy) => void save({ spaPolicy: value })}
+                          options={[
+                            { value: 'toast', label: '页内轻提示（推荐）— 弹出浮窗询问，绝不抢焦点' },
+                            { value: 'auto', label: '静默切换 — 直接跳转到已有标签页' },
+                            { value: 'off', label: '不处理 — 完全忽略站内路由变化' },
+                          ]}
                         />
                       </div>
                     </Card>
