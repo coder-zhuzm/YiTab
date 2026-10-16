@@ -18,10 +18,11 @@ To provide its functionality, YiTab accesses certain browser APIs provided by Ch
 
 - **Tabs and URLs (`tabs`, `webNavigation`)**: Used in real-time to detect duplicate URLs, switch to existing tabs, or present in-page confirmation dialogs. URLs are evaluated on-device and are never transmitted to external servers.
 - **Bookmarks (`bookmarks`)**: Used to search bookmarks in the Alt+K Global Command Palette, display the Smart Launcher matrix on the New Tab page, and detect duplicate bookmarks.
-- **Browsing History (`history`)**: Used strictly to populate the "Recently Visited" recovery capsule and quick jump recommendations on the New Tab page.
+- **Browsing History (`history`)**: Used strictly to populate the "Recently Visited" recovery capsule and quick jump recommendations on the New Tab page. It is also queried locally to suggest a name when you add a shortcut.
 - **Extension Settings (`storage`)**: Preferences such as match granularity (Strict, Smart, Path, Domain), whitelist rules, and interface customizations are stored locally via `chrome.storage.sync` (synced securely across your own signed-in Chrome devices via Google Sync) or `chrome.storage.local`.
 - **Tab Groups (`tabGroups`)**: Used to organize tabs by domain into color-coded browser tab groups when initiated by the user.
 - **Clipboard (`clipboardWrite`)**: Used only when the user explicitly clicks the "Export Tabs as Markdown" or "Copy Links" action.
+- **Favicon (`favicon`)**: Used to display site icons by reading Chrome's **local** favicon store (the `_favicon` interface). This makes no network requests.
 
 ### 3. Chrome Web Store Limited Use Disclosure
 YiTab complies fully with the [Chrome Web Store User Data Policy](https://developer.chrome.com/docs/webstore/user-data-policy/), including the **Limited Use** requirements:
@@ -31,7 +32,14 @@ YiTab complies fully with the [Chrome Web Store User Data Policy](https://develo
 4. YiTab does **not** use user data to determine creditworthiness or for lending purposes.
 
 ### 4. Third-Party Services & Network Requests
-YiTab makes **zero external network requests** during normal operation. There are no analytics trackers, advertising SDKs, telemetry beacons, or remote code execution.
+YiTab contains no analytics trackers, advertising SDKs, telemetry beacons, or remote code execution. The extension's own code makes no telemetry network requests, and every feature works fully offline.
+
+Specifically:
+- **New Tab shortcut name suggestions and icons do not contact the target site or any third party.** Name suggestions query only local browser data (open tabs and browsing history); shortcut icons are read from Chrome's local favicon store (the `favicon` permission, i.e. the `_favicon` interface). Neither makes a network request.
+- **Shortcut icons are never backfilled** by hidden tabs, page scraping, or requesting `/favicon.ico`.
+- **No network host permissions such as `<all_urls>` are requested.**
+- Browsing history used by the New Tab "recommended" and "continue where you left off" features is **processed in memory on your device only**, and is never uploaded.
+- **Not yet unified:** in the popup, the in-page confirmation banner and the command palette, a tab's icon is shown using the `favIconUrl` that Chrome reports for that tab. When such a tab is open, your browser may load that icon from the site itself. This is a normal browser behaviour for an already-open tab, not a YiTab-initiated request, but it is **not** covered by the local-only guarantee above and has not yet been migrated to the local favicon store.
 
 ### 5. Open Source Transparency
 YiTab is open source. You can audit the complete source code and build instructions at our official GitHub repository:
@@ -71,10 +79,11 @@ YiTab 在日常使用过程中**不包含任何远程第三方分析代码、不
 
 具体而言：
 
-- **快捷方式名称补全与图标展示不主动请求目标站点或第三方。** 名称补全只查询浏览器本地数据（已打开的标签页、浏览历史）；图标读取 Chrome 本地图标库（`favicon` 权限，即 `_favicon` 接口）。两者均不发起网络请求。
-- **不通过隐藏标签页、网页抓取或请求 `/favicon.ico` 来补齐图标缓存。**
+- **新标签页的快捷方式名称补全与图标展示不主动请求目标站点或第三方。** 名称补全只查询浏览器本地数据（已打开的标签页、浏览历史）；快捷方式图标读取 Chrome 本地图标库（`favicon` 权限，即 `_favicon` 接口）。两者均不发起网络请求。
+- **不通过隐藏标签页、网页抓取或请求 `/favicon.ico` 来补齐快捷方式图标缓存。**
 - **不请求 `<all_urls>` 等网络权限。**
 - 新标签页「猜你想开」推荐与「继续上次」胶囊所依据的浏览历史，**仅在本机内存中用于排序与展示**，不会上传。
+- **尚未统一处理**：弹出面板、页内确认条与命令面板展示标签图标时，使用的是 Chrome 为该标签页上报的 `favIconUrl`。当对应标签页已打开时，浏览器可能向该站点加载图标。这是浏览器对已打开标签页的常规行为，并非 YiTab 主动发起的请求，但**不在上述「纯本地」保证范围内**，目前尚未迁移到本地图标库。
 
 ### 5. 开源与透明度
 YiTab 为开源软件，所有源代码公开透明，接受社区审查：

@@ -114,6 +114,20 @@ export function isIntranetHost(rawHost: string): boolean {
 /** 快捷方式表单等「必须给出有效地址」的场景要求的协议白名单 */
 const WEB_PROTOCOLS = new Set(['http:', 'https:']);
 
+/** 端口号必须是 1–65535 的十进制整数（0 与超界端口都不是可用地址） */
+function isValidPort(raw: string): boolean {
+  if (!/^\d{1,5}$/.test(raw)) return false;
+  const port = Number.parseInt(raw, 10);
+  return port >= 1 && port <= 65535;
+}
+
+/** 严格 IPv4 字面量：四段十进制、每段 0–255。用于避免把 "1.2" 当成 IP 简写。 */
+function isIPv4Literal(host: string): boolean {
+  const parts = host.split('.');
+  if (parts.length !== 4) return false;
+  return parts.every((p) => /^\d{1,3}$/.test(p) && Number.parseInt(p, 10) <= 255);
+}
+
 /** 无协议输入补全协议时，走 http 的内网/本机主机（与既有直达行为保持一致） */
 function defaultsToHttp(hostname: string): boolean {
   const host = hostname.toLowerCase();
@@ -121,8 +135,38 @@ function defaultsToHttp(hostname: string): boolean {
     return true;
   }
   // 私有/保留 IPv4 字面量
-  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) return true;
+  if (isIPv4Literal(host)) return true;
   return false;
+}
+
+/**
+ * 无协议输入的主机是否**足以证明**它是个地址。
+ *
+ * 这是规则 5 的充分条件，取代此前「包含点/冒号/斜杠就算地址」的宽松判定 ——
+ * 那种写法会把 `1.2` 判成地址，再被浏览器 URL 解析当成 IPv4 简写（`https://1.0.0.2/`），
+ * 使普通搜索输入变成导航。
+ *
+ * 接受：
+ * - 本机名（localhost / 环回 / 0.0.0.0）
+ * - 严格 IPv4 字面量（必须四段，因此 `1.2` 不算）
+ * - 多段域名，且末段是已知公共 TLD 或内网 TLD
+ * - 单段企业内网短名，但必须有显式端口或路径（否则 `hello` 这类搜索词会被吞掉）
+ */
+function looksLikeAddressHost(hostname: string, hasPort: boolean, hasPath: boolean): boolean {
+  const host = hostname.toLowerCase();
+  if (!host) return false;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') return true;
+  if (isIPv4Literal(host)) return true;
+
+  const labels = host.split('.');
+  if (labels.length > 1) {
+    if (labels.some((l) => l === '')) return false; // 空标签，如 "a..b" / ".com"
+    const tld = labels[labels.length - 1];
+    return PUBLIC_TLDS.has(tld) || INTRANET_TLDS.has(tld);
+  }
+
+  // 单段主机名：需要端口或路径这类显式信号才认，避免吞掉普通搜索词
+  return hasPort || hasPath;
 }
 
 /**
@@ -136,6 +180,10 @@ function defaultsToHttp(hostname: string): boolean {
  *    - 公共域名 -> https
  * 3. 非 http/https 协议（如 javascript:、data:）一律拒绝，避免把可执行内容当成地址。
  * 4. 其余情况视为搜索词，不当作地址。
+ *
+ * 候选识别与最终校验是衔接的：先按主机形状判断「像不像地址」，
+ * 再交给 `new URL()` 与端口范围做**最终有效性**校验（`localhost:99999` 会在此被拒），
+ * 两者都通过才返回地址。
  */
 export function resolveTargetUrl(input: string): { isAddress: boolean; url: string } {
   const trimmed = input.trim();
@@ -146,6 +194,7 @@ export function resolveTargetUrl(input: string): { isAddress: boolean; url: stri
     try {
       const parsed = new URL(trimmed);
       if (!WEB_PROTOCOLS.has(parsed.protocol)) return { isAddress: false, url: '' };
+      if (!parsed.hostname) return { isAddress: false, url: '' };
       // 原样返回用户输入，避免规范化改写其路径/查询/锚点
       return { isAddress: true, url: trimmed };
     } catch {
@@ -163,47 +212,55 @@ export function resolveTargetUrl(input: string): { isAddress: boolean; url: stri
   // 2. 端口快捷输入 (如 ":3000" 或 ":8080/dashboard")
   const portMatch = trimmed.match(/^:(\d{2,5})(\/.*)?$/);
   if (portMatch) {
-    const port = Number.parseInt(portMatch[1], 10);
-    if (port > 0 && port <= 65535) {
+    if (isValidPort(portMatch[1])) {
       const rest = portMatch[2] || '';
-      return { isAddress: true, url: `http://localhost:${port}${rest}` };
+      return { isAddress: true, url: `http://localhost:${portMatch[1]}${rest}` };
     }
     return { isAddress: false, url: '' };
   }
 
   // 3. localhost 开头 (如 "localhost:5173", "localhost/app")
-  if (/^localhost(:\d+)?([/?#].*)?$/i.test(trimmed)) {
+  const localhostMatch = trimmed.match(/^localhost(?::(\d+))?([/?#].*)?$/i);
+  if (localhostMatch) {
+    const port = localhostMatch[1];
+    if (port !== undefined && !isValidPort(port)) return { isAddress: false, url: '' };
     return { isAddress: true, url: `http://${trimmed}` };
   }
 
   // 4. IPv4 格式 (如 "192.168.1.254", "10.0.0.1:8080/portal")
-  if (/^(\d{1,3}\.){3}\d{1,3}(:\d+)?([/?#].*)?$/.test(trimmed)) {
+  const ipv4Match = trimmed.match(/^((?:\d{1,3}\.){3}\d{1,3})(?::(\d+))?([/?#].*)?$/);
+  if (ipv4Match) {
+    if (!isIPv4Literal(ipv4Match[1])) return { isAddress: false, url: '' };
+    const port = ipv4Match[2];
+    if (port !== undefined && !isValidPort(port)) return { isAddress: false, url: '' };
     return { isAddress: true, url: `http://${trimmed}` };
   }
 
-  // 5. 无协议的 主机[:端口][/路径]：必须有**显式**地址信号（带点、带端口、带路径），
-  //    否则视为搜索词。注意不能用 isIntranetHost 单独判定 —— 它对任意单节字符串都返回 true，
-  //    会把「普通搜索内容」「hello」这类搜索词误当成内网主机名。
+  // 5/6. 无协议的 主机[:端口][/路径]：先判主机形状，再做最终 URL 校验
   if (!trimmed.includes(' ')) {
     const hostPart = trimmed.split(/[/?#]/)[0];
-    const hostname = hostPart.split(':')[0];
-    const hasDot = hostname.includes('.');
-    const hasPort = hostPart.includes(':');
     const hasPath = /[/?#]/.test(trimmed);
-    if (hasDot || hasPort || hasPath) {
-      const protocol = defaultsToHttp(hostname) ? 'http' : 'https';
-      return { isAddress: true, url: `${protocol}://${trimmed}` };
-    }
-  }
+    const colonAt = hostPart.lastIndexOf(':');
+    const hostname = colonAt === -1 ? hostPart : hostPart.slice(0, colonAt);
+    const port = colonAt === -1 ? undefined : hostPart.slice(colonAt + 1);
+    const hasPort = port !== undefined && port !== '';
 
-  // 6. 纯域名（含已知公共 TLD 或内网 TLD，如 "nas.local"、"github.com"）
-  if (!trimmed.includes(' ') && trimmed.includes('.')) {
-    const parts = trimmed.split('.');
-    const tld = parts[parts.length - 1].toLowerCase().split(':')[0];
-    if (INTRANET_TLDS.has(tld) || PUBLIC_TLDS.has(tld)) {
-      const hostname = trimmed.split(':')[0];
+    // 端口写了就必须合法，否则整条输入不是地址
+    if (hasPort && !isValidPort(port)) return { isAddress: false, url: '' };
+
+    if (looksLikeAddressHost(hostname, hasPort, hasPath)) {
       const protocol = defaultsToHttp(hostname) ? 'http' : 'https';
-      return { isAddress: true, url: `${protocol}://${trimmed}` };
+      const candidate = `${protocol}://${trimmed}`;
+      // 最终有效性校验：交给 URL 解析，不合格一律不当作地址
+      try {
+        const parsed = new URL(candidate);
+        if (!WEB_PROTOCOLS.has(parsed.protocol) || !parsed.hostname) {
+          return { isAddress: false, url: '' };
+        }
+      } catch {
+        return { isAddress: false, url: '' };
+      }
+      return { isAddress: true, url: candidate };
     }
   }
 
@@ -228,6 +285,30 @@ export function resolveShortcutUrl(input: string): { ok: boolean; url: string } 
     return { ok: true, url: resolved.url };
   } catch {
     return { ok: false, url: '' };
+  }
+}
+
+/**
+ * 元数据匹配用的 URL 归一表示。
+ *
+ * 只归一**表示差异**，不合并**语义差异**：
+ * - 归一：主机名大小写、显式默认端口（`:443`/`:80`）、空路径补成 `/`
+ *   （`https://example.com` 与标签页里的 `https://example.com/` 是同一地址）
+ * - 保留：协议、非默认端口、路径、查询参数、Hash
+ *   （`http://a` 与 `https://a` 不同；`a/x` 与 `a/y` 不同；`a#1` 与 `a#2` 不同）
+ *
+ * 注意：这里**不是**去重的 smart/domain 规则 —— 不合并 www、不删查询、不忽略 Hash。
+ * 解析失败返回空串，调用方据此判定「不可比较」而非「相等」。
+ */
+export function canonicalUrlKey(url: string): string {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    if (!WEB_PROTOCOLS.has(u.protocol) || !u.hostname) return '';
+    // URL 已按规范去掉默认端口、统一小写主机名，并补全空路径为 "/"
+    return u.href;
+  } catch {
+    return '';
   }
 }
 

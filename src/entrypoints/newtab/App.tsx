@@ -52,10 +52,9 @@ import {
   SEARCH_ENGINES,
 } from '@/lib/network-utils';
 import {
+  createShortcutMetaController,
   lookupLocalTitle,
-  shouldApplyAutoTitle,
   type TitleCandidate,
-  type TitleSource,
 } from '@/lib/shortcut-meta';
 import {
   DEFAULT_NEWTAB_SETTINGS,
@@ -119,12 +118,12 @@ export default function NewTabApp() {
   // 新标签页设置
   const [settings, setSettings] = useState<NewTabSettings>(DEFAULT_NEWTAB_SETTINGS);
 
-  // 快捷方式表单：URL 解析结果 + 名称来源 + 异步请求编号（防旧请求串写）
+  // 快捷方式表单：URL 预览 + 提示 + 名称建议
+  // 请求编号/会话编号/名称来源由 controller 持有（见 shortcut-meta.ts），
+  // 它们必须在异步回调里同步读到最新值，放 React state 会读到闭包快照。
   const [shortcutPreview, setShortcutPreview] = useState('');
   const [shortcutHint, setShortcutHint] = useState('');
-  const [titleSource, setTitleSource] = useState<TitleSource>('empty');
   const [suggestedTitle, setSuggestedTitle] = useState<TitleCandidate | null>(null);
-  const titleRequestId = useRef(0);
 
   // 当前已开标签页映射 (用于已开检测)
   const [openTabs, setOpenTabs] = useState<
@@ -433,22 +432,42 @@ export default function NewTabApp() {
     return pinnedData.items.filter((i) => i.groupId === activeGroupId);
   }, [pinnedData, activeGroupId]);
 
+  // 快捷方式名称补全的状态机。持有请求编号/会话编号/名称来源，
+  // 使异步回调在返回时读到的是**最新**状态而非闭包快照。
+  const metaController = useMemo(
+    () =>
+      createShortcutMetaController({
+        readUrl: () => form.getFieldValue('url'),
+        readTitle: () => form.getFieldValue('title'),
+        resolve: resolveShortcutUrl,
+        lookup: (targetUrl) =>
+          lookupLocalTitle(
+            {
+              queryTabs: () =>
+                chrome.tabs.query({}).then((ts) => ts.map((t) => ({ url: t.url, title: t.title }))),
+              searchHistory: (url, startTime, maxResults) =>
+                chrome.history.search({ text: url, startTime, maxResults }),
+            },
+            targetUrl,
+          ),
+        writeTitle: (title) => form.setFieldsValue({ title }),
+        setPreview: setShortcutPreview,
+        setHint: setShortcutHint,
+        setSuggestedTitle,
+      }),
+    [form],
+  );
+
   // 打开添加/编辑模态框
   const handleOpenItemModal = (item?: PinnedItem) => {
-    // 每次打开都重置表单会话状态，避免上一条的自动结果/建议串到这一条
-    titleRequestId.current += 1;
-    setShortcutPreview('');
-    setShortcutHint('');
-    setSuggestedTitle(null);
+    // 开新会话：作废上一条所有在途请求，避免旧建议/旧提示串到这一条
+    metaController.beginSession(item != null);
 
     if (item) {
       setEditingItem(item);
-      // 编辑已有条目：名称归用户所有，自动结果只作建议，不自动写入
-      setTitleSource('user');
       form.setFieldsValue(item);
     } else {
       setEditingItem(null);
-      setTitleSource('empty');
       form.resetFields();
       form.setFieldsValue({
         groupId:
@@ -460,64 +479,26 @@ export default function NewTabApp() {
     setItemModalVisible(true);
   };
 
+  /** 关闭弹窗：结束会话，作废在途请求 */
+  const handleCloseItemModal = () => {
+    metaController.endSession();
+    setItemModalVisible(false);
+  };
+
   /** URL 失焦：先规范化地址，再异步查本地名称候选。查询失败不阻塞手填。 */
-  const handleUrlBlur = useCallback(async () => {
-    const raw = String(form.getFieldValue('url') ?? '').trim();
-    const resolved = resolveShortcutUrl(raw);
-    setShortcutPreview(resolved.ok ? resolved.url : '');
-    setSuggestedTitle(null);
-    if (!resolved.ok) {
-      setShortcutHint(raw ? '不是有效网址，可继续手动填写' : '');
-      return;
-    }
-
-    const requestId = ++titleRequestId.current;
-    setShortcutHint('正在查找本地名称…');
-
-    const candidate = await lookupLocalTitle(
-      {
-        queryTabs: () => chrome.tabs.query({}).then((ts) => ts.map((t) => ({ url: t.url, title: t.title }))),
-        searchHistory: (url, startTime, maxResults) =>
-          chrome.history.search({ text: url, startTime, maxResults }),
-      },
-      resolved.url,
-    );
-
-    // 返回时重新核对：请求编号、当前 URL、名称来源，任一不符即放弃
-    const currentUrl = resolveShortcutUrl(String(form.getFieldValue('url') ?? '').trim()).url;
-    const apply = candidate
-      ? shouldApplyAutoTitle({
-          requestId,
-          latestRequestId: titleRequestId.current,
-          requestUrl: resolved.url,
-          currentUrl,
-          titleSource,
-          currentTitle: String(form.getFieldValue('title') ?? ''),
-          candidateSource: candidate.source,
-          isEditing: editingItem != null,
-        })
-      : false;
-
-    if (candidate && apply) {
-      form.setFieldsValue({ title: candidate.title });
-      setTitleSource('auto');
-    }
-    // 编辑已有条目时把自动结果作为「建议」呈现，由用户点击后替换
-    if (candidate && editingItem) setSuggestedTitle(candidate);
-
-    setShortcutHint(
-      candidate
-        ? candidate.source === 'tab'
-          ? '已从当前标签填充名称'
-          : '已从历史记录找到名称'
-        : '未找到本地名称，可手动填写',
-    );
-  }, [form, titleSource, editingItem]);
+  const handleUrlBlur = useCallback(() => {
+    void metaController.onUrlBlur();
+  }, [metaController]);
 
   /** 用户真实输入标题 -> 名称归用户所有，后续自动结果不得覆盖 */
   const handleTitleChange = useCallback(() => {
-    setTitleSource('user');
-  }, []);
+    metaController.onTitleInput();
+  }, [metaController]);
+
+  /** URL 被改写 -> 在途查询立即失效，不等它返回 */
+  const handleUrlChange = useCallback(() => {
+    metaController.invalidate();
+  }, [metaController]);
 
   // 保存固钉卡片
   const handleSaveItem = async () => {
@@ -547,7 +528,8 @@ export default function NewTabApp() {
       }
       const refreshed = await getPinnedData();
       setPinnedData(refreshed);
-      setItemModalVisible(false);
+      // 保存成功即结束会话，作废在途请求
+      handleCloseItemModal();
     } catch {
       // 表单校验失败
     }
@@ -1205,7 +1187,7 @@ export default function NewTabApp() {
           title={editingItem ? '编辑快捷方式' : '添加快捷方式'}
           open={itemModalVisible}
           onOk={handleSaveItem}
-          onCancel={() => setItemModalVisible(false)}
+          onCancel={handleCloseItemModal}
           okText="保存"
           cancelText="取消"
           destroyOnClose
@@ -1228,7 +1210,8 @@ export default function NewTabApp() {
             >
               <Input
                 placeholder="例如: https://github.com 或 192.168.1.100:8080"
-                onBlur={() => void handleUrlBlur()}
+                onChange={handleUrlChange}
+                onBlur={handleUrlBlur}
               />
             </Form.Item>
             <Form.Item
@@ -1249,11 +1232,7 @@ export default function NewTabApp() {
                   type="link"
                   size="small"
                   style={{ padding: '0 4px', height: 'auto', fontSize: 12 }}
-                  onClick={() => {
-                    form.setFieldsValue({ title: suggestedTitle.title });
-                    setTitleSource('user');
-                    setSuggestedTitle(null);
-                  }}
+                  onClick={() => metaController.applySuggestion(suggestedTitle)}
                 >
                   {suggestedTitle.title}
                 </Button>

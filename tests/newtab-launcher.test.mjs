@@ -6,6 +6,7 @@ import {
   parseSearchQuery,
   resolveTargetUrl,
   resolveShortcutUrl,
+  canonicalUrlKey,
   generateSvgFavicon,
   formatTimeGreeting,
   SEARCH_ENGINES,
@@ -177,6 +178,52 @@ test('resolveShortcutUrl requires a valid web address but never invents one', ()
     assert.deepEqual(resolveShortcutUrl(word), { ok: false, url: '' }, `${word} must not become a URL`);
   }
   assert.deepEqual(resolveShortcutUrl('javascript:alert(1)'), { ok: false, url: '' });
+});
+
+test('address detection does not swallow ordinary search input', () => {
+  // 反例：规则 5 曾把「含点」当作地址的充分条件，于是 `1.2` 被解析成
+  // `https://1.2`，再被浏览器 URL 解析当成 IPv4 简写 `https://1.0.0.2/` —— 搜索变导航。
+  for (const word of ['1.2', 'v1.2', '1.2.3', '3.14', 'release 1.2']) {
+    assert.equal(resolveTargetUrl(word).isAddress, false, `${word} must stay a search term`);
+  }
+  // 版本号/小数不得被当作 IP：IPv4 必须严格四段且每段 0–255
+  assert.equal(resolveTargetUrl('1.2.3.4').isAddress, true);
+  assert.equal(resolveTargetUrl('999.1.1.1').isAddress, false, 'out-of-range octet is not an IPv4');
+  assert.equal(resolveTargetUrl('1.2.3.256').isAddress, false);
+
+  // 单段主机名仍需端口或路径这类显式信号，否则不认
+  assert.equal(resolveTargetUrl('hello').isAddress, false);
+  assert.equal(resolveTargetUrl('hello:8080').isAddress, true);
+  assert.equal(resolveTargetUrl('wiki/docs').isAddress, true);
+});
+
+test('invalid ports are rejected by both the direct-jump and the save path', () => {
+  // 反例：`localhost:99999` 曾出现「直达判定为地址、保存判定无效」的分裂。
+  // 候选识别与最终校验必须衔接，两条路径结论一致。
+  for (const bad of [
+    'localhost:99999',
+    'localhost:0',
+    'localhost:65536',
+    '192.168.1.1:99999',
+    'example.com:70000',
+    ':99999',
+  ]) {
+    assert.equal(resolveTargetUrl(bad).isAddress, false, `${bad} is not a usable address`);
+    assert.deepEqual(resolveShortcutUrl(bad), { ok: false, url: '' }, `${bad} must be rejected on save too`);
+  }
+
+  // 合法端口边界必须保留
+  assert.deepEqual(resolveTargetUrl('localhost:65535'), { isAddress: true, url: 'http://localhost:65535' });
+  assert.deepEqual(resolveTargetUrl('localhost:1'), { isAddress: true, url: 'http://localhost:1' });
+});
+
+test('canonicalUrlKey keeps metadata matching consistent with address parsing', () => {
+  // 元数据精确匹配用的归一 key：只消除表示差异，不合并语义差异
+  assert.equal(canonicalUrlKey('https://example.com'), canonicalUrlKey('https://example.com/'));
+  assert.equal(canonicalUrlKey('https://Example.COM:443/'), canonicalUrlKey('https://example.com/'));
+  assert.notEqual(canonicalUrlKey('https://example.com/'), canonicalUrlKey('https://example.com:8443/'));
+  assert.notEqual(canonicalUrlKey('https://example.com/#1'), canonicalUrlKey('https://example.com/#2'));
+  assert.equal(canonicalUrlKey('1.2'), '', 'a search term has no comparable URL key');
 });
 
 test('parseSearchQuery parses engine prefixes and direct jump routes', () => {
