@@ -90,23 +90,21 @@ try {
   await until(async () => (await targets()).find(t => t.id === duplicateId && t.url.includes('utm_source=second')), 'open anyway preserves target');
   assert.ok((await targets()).find(t => t.url.includes('utm_source=first')), 'first document remains open');
 
-  // Verify reload does NOT trigger interception when ignoreReload is enabled (default)
-  const doc2Target = (await targets()).find(t => t.id === duplicateId);
-  const doc2 = await connect(doc2Target.webSocketDebuggerUrl);
-  await doc2.call('Page.reload');
+  // Verify reload does NOT trigger interception on doc1 when ignoreReload is enabled (default)
+  await doc1.call('Page.reload');
   await delay(500);
-  const doc2AfterReload = (await targets()).find(t => t.id === duplicateId);
-  assert.ok(doc2AfterReload.url.includes('utm_source=second'), 'reload preserves doc2 without intercept');
-  assert.ok(!doc2AfterReload.url.includes('/confirm.html'), 'reload does not bounce to confirm.html');
+  const doc1AfterReload = (await targets()).find(t => t.id === doc1Target.id);
+  assert.ok(doc1AfterReload.url.includes('utm_source=first'), 'reload preserves doc1 without intercept');
+  assert.ok(!doc1AfterReload.url.includes('/confirm.html'), 'reload does not bounce doc1 to confirm.html');
 
-  // Verify reload DOES trigger interception when ignoreReload is explicitly turned off
+  // Verify reload DOES trigger interception on doc1 when ignoreReload is explicitly turned off
   await options.evaluate(`chrome.storage.sync.set({ ignoreReload: false })`);
-  await delay(200);
-  await doc2.call('Page.reload');
-  await until(async () => (await targets()).find(t => t.id === duplicateId && t.url.includes('/confirm.html')), 'reload intercepted when ignoreReload is false');
+  await delay(300);
+  await doc1.call('Page.reload');
+  await until(async () => (await targets()).find(t => t.id === doc1Target.id && t.url.includes('/confirm.html')), 'reload intercepted when ignoreReload is false');
   // Re-enable ignoreReload
   await options.evaluate(`chrome.storage.sync.set({ ignoreReload: true })`);
-  await delay(200);
+  await delay(300);
 
   // --- Part 3: SPA Navigation & Non-intrusive in-page Toast ---
   const { targetId: spaTabId } = await browser.call('Target.createTarget', { url: `${serverBase}/spa?page=home` });
