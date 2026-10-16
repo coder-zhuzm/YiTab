@@ -69,6 +69,7 @@ import {
   type BookmarkScanReport,
 } from '../../lib/bookmarks';
 import { ESTIMATED_MB_PER_TAB, type TabHealthReport } from '../../lib/tab-health';
+import { APP_VERSION } from '../../lib/version';
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -406,7 +407,7 @@ function OptionsPage() {
                     YiTab 一签 · 控制中心
                   </Title>
                   <Tag color="indigo" style={{ margin: 0, fontSize: 11, borderRadius: 4 }}>
-                    v1.0.0
+                    {APP_VERSION}
                   </Tag>
                 </div>
                 <Text type="secondary" style={{ fontSize: 13 }}>
@@ -1805,7 +1806,7 @@ function OptionsPage() {
             </Popconfirm>
 
             <Text type="secondary" style={{ fontSize: 12 }}>
-              YiTab 一签 · v1.0.0
+              YiTab 一签 · {APP_VERSION}
             </Text>
           </div>
         </div>

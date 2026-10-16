@@ -54,6 +54,7 @@ import {
   type BookmarkScanReport,
 } from '@/lib/bookmarks';
 import { ESTIMATED_MB_PER_TAB, type TabHealthReport } from '@/lib/tab-health';
+import { APP_VERSION } from '@/lib/version';
 import {
   analyzeTabsByDomain,
   deleteSnapshot,
@@ -493,7 +494,7 @@ function PopupApp() {
                     borderRadius: 4,
                   }}
                 >
-                  v1.0.0
+                  {APP_VERSION}
                 </Tag>
               </div>
               <Text type="secondary" style={{ fontSize: 11 }}>
