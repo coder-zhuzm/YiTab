@@ -185,5 +185,7 @@ try {
   proc.kill('SIGTERM');
   await new Promise(r => proc.once('exit', r));
   testServer.close();
-  await rm(profile, { recursive: true, force: true });
+  try {
+    await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  } catch {}
 }
