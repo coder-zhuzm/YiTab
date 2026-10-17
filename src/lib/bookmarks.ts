@@ -86,10 +86,25 @@ export function normalizeBookmarkUrl(rawUrl: string, smart = true): string {
       }
     }
 
-    // 检查 hash 是否为前端路由 (如 #/login 或 #!/path)
+    // 检查 hash 是否为前端路由 (如 #/login, #!/path, #route/a 或带参数 #page?tab=1，或单段应用/邮件路由 #inbox, #sent)
     let cleanHash = '';
-    if (parsed.hash && (/^#[/!]/u.test(parsed.hash) || parsed.hash.includes('?'))) {
-      cleanHash = parsed.hash;
+    if (parsed.hash) {
+      const hashContent = parsed.hash.slice(1);
+      const isKnownAppRoute =
+        /^(inbox|sent|drafts|trash|starred|all|archive|spam|settings|profile|dashboard|home|feed|explore|notifications|messages|account|login|register|signup|admin|overview)$/i.test(
+          hashContent,
+        );
+      const isRoute =
+        /^[/!]/.test(hashContent) ||
+        hashContent.includes('/') ||
+        hashContent.includes('?') ||
+        hashContent.includes('=') ||
+        isKnownAppRoute ||
+        parsed.hostname.startsWith('mail.') ||
+        parsed.pathname.includes('/mail');
+      if (isRoute) {
+        cleanHash = parsed.hash;
+      }
     }
 
     const host = parsed.hostname.replace(/^www\./i, '');
@@ -363,7 +378,10 @@ export function exportBookmarksAsNetscapeHtml(
 }
 
 /** 导出书签为结构化 JSON 格式 */
-export function exportBookmarksAsJson(tree: chrome.bookmarks.BookmarkTreeNode[]): string {
+export function exportBookmarksAsJson(
+  tree: chrome.bookmarks.BookmarkTreeNode[],
+  pretty = true,
+): string {
   const { bookmarks } = flattenBookmarkTree(tree);
   return JSON.stringify(
     {
@@ -380,6 +398,71 @@ export function exportBookmarksAsJson(tree: chrome.bookmarks.BookmarkTreeNode[])
       })),
     },
     null,
-    2,
+    pretty ? 2 : 0,
   );
 }
+
+export interface BookmarkBackupRecord {
+  id: string;
+  createdAt: number;
+  reason: string;
+  totalBookmarks: number;
+  data: string;
+}
+
+export const BOOKMARK_BACKUPS_KEY = 'yitab_bookmark_backups';
+export const MAX_BOOKMARK_BACKUPS = 5;
+
+/**
+ * 在执行破坏性清理书签前，自动暂存快照到本地存储，最多保留最近 5 份。
+ * 具备防抖与历史保护机制：若同类清理操作在 60 秒内已产生快照，则复用现有备份，避免高频单项清理将远期全量备份逐出。
+ */
+export async function backupBookmarksBeforeClean(
+  tree: chrome.bookmarks.BookmarkTreeNode[],
+  reason: string,
+): Promise<BookmarkBackupRecord | null> {
+  if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+    return null;
+  }
+  try {
+    const res = await chrome.storage.local.get(BOOKMARK_BACKUPS_KEY);
+    const existing: BookmarkBackupRecord[] = Array.isArray(res[BOOKMARK_BACKUPS_KEY])
+      ? res[BOOKMARK_BACKUPS_KEY]
+      : [];
+
+    // 防抖与保护：同原因且在 60s 内产生的备份直接复用，不挤占历史轮转插槽
+    const BACKUP_COOLDOWN_MS = 60_000;
+    if (
+      existing.length > 0 &&
+      existing[0].reason === reason &&
+      Date.now() - existing[0].createdAt < BACKUP_COOLDOWN_MS
+    ) {
+      return existing[0];
+    }
+
+    // 采用紧凑 JSON 格式存储，避免多余格式化字符消耗 storage 配额
+    const jsonStr = exportBookmarksAsJson(tree, false);
+    const { bookmarks } = flattenBookmarkTree(tree);
+    const record: BookmarkBackupRecord = {
+      id: `bk_backup_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: Date.now(),
+      reason,
+      totalBookmarks: bookmarks.length,
+      data: jsonStr,
+    };
+
+    const updated = [record, ...existing].slice(0, MAX_BOOKMARK_BACKUPS);
+    try {
+      await chrome.storage.local.set({ [BOOKMARK_BACKUPS_KEY]: updated });
+    } catch (setErr) {
+      console.warn('[YiTab] 存储书签快照配额异常，裁剪历史记录重试:', setErr);
+      const reduced = [record, ...existing].slice(0, 2);
+      await chrome.storage.local.set({ [BOOKMARK_BACKUPS_KEY]: reduced });
+    }
+    return record;
+  } catch (err) {
+    console.error('[YiTab] 自动备份书签失败:', err);
+    throw new Error('书签自动备份失败，已中止删除以防数据丢失');
+  }
+}
+

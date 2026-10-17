@@ -148,6 +148,7 @@ export default function NewTabApp() {
   const [searchInput, setSearchInput] = useState('');
   const [activeEngine, setActiveEngine] = useState<SearchEngine>(SEARCH_ENGINES[0]);
   const [searchSuggestions, setSearchSuggestions] = useState<SearchItem[]>([]);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<number>(-1);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef<InputRef>(null);
 
@@ -312,6 +313,7 @@ export default function NewTabApp() {
   useEffect(() => {
     if (!searchInput.trim()) {
       setSearchSuggestions([]);
+      setSelectedSuggestionIndex(-1);
       return;
     }
 
@@ -358,6 +360,7 @@ export default function NewTabApp() {
               }
             }
             setSearchSuggestions(merged.slice(0, 6));
+            setSelectedSuggestionIndex(-1);
             return;
           }
         } catch {
@@ -366,6 +369,7 @@ export default function NewTabApp() {
       }
 
       setSearchSuggestions(ranked);
+      setSelectedSuggestionIndex(-1);
     }, 400);
 
     return () => clearTimeout(timer);
@@ -396,9 +400,57 @@ export default function NewTabApp() {
     }
   };
 
-  // 回车提交搜索或直达
-  const handleSearchSubmit = () => {
+  // 激活搜索建议项
+  const handleActivateSearchItem = (item: SearchItem) => {
+    if (item.tabId && typeof chrome !== 'undefined' && chrome.tabs?.update) {
+      chrome.tabs.update(item.tabId, { active: true });
+      if (item.windowId && chrome.windows?.update) {
+        chrome.windows.update(item.windowId, { focused: true });
+      }
+    } else if (item.url) {
+      handleOpenUrl(item.url);
+    }
+  };
+
+  // 键盘方向键切换建议项
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) {
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      if (searchSuggestions.length > 0) {
+        e.preventDefault();
+        setSelectedSuggestionIndex((prev) =>
+          prev < searchSuggestions.length - 1 ? prev + 1 : -1,
+        );
+      }
+    } else if (e.key === 'ArrowUp') {
+      if (searchSuggestions.length > 0) {
+        e.preventDefault();
+        setSelectedSuggestionIndex((prev) =>
+          prev === -1 ? searchSuggestions.length - 1 : prev - 1,
+        );
+      }
+    } else if (e.key === 'Escape') {
+      setSelectedSuggestionIndex(-1);
+    }
+  };
+
+  // 回车提交搜索或直达 (支持键盘高亮建议直接跳转)
+  const handleSearchSubmit = (e?: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e?.nativeEvent?.isComposing) {
+      return;
+    }
     if (!searchInput.trim()) return;
+
+    // 1. 若当前用户通过方向键显式高亮选中了建议项，直接切换或打开
+    if (
+      selectedSuggestionIndex >= 0 &&
+      selectedSuggestionIndex < searchSuggestions.length
+    ) {
+      handleActivateSearchItem(searchSuggestions[selectedSuggestionIndex]);
+      return;
+    }
 
     if (parsedSearch.isAddress && parsedSearch.targetUrl) {
       handleOpenUrl(parsedSearch.targetUrl);
@@ -731,6 +783,7 @@ export default function NewTabApp() {
                 onChange={(e) => setSearchInput(e.target.value)}
                 onFocus={() => setIsSearchFocused(true)}
                 onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
+                onKeyDown={handleSearchKeyDown}
                 onPressEnter={handleSearchSubmit}
                 style={{ fontSize: 15 }}
                 suffix={
@@ -739,7 +792,7 @@ export default function NewTabApp() {
                       type="primary"
                       size="small"
                       icon={<SearchOutlined />}
-                      onClick={handleSearchSubmit}
+                      onClick={() => handleSearchSubmit()}
                     >
                       {parsedSearch.isAddress ? '直达' : '搜索'}
                     </Button>
@@ -771,48 +824,45 @@ export default function NewTabApp() {
                 }}
               >
                 <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>
-                  已开标签智能匹配 (按回车或点击直接切换):
+                  已开标签智能匹配 (按上下键选择，回车或点击直接切换):
                 </div>
-                {searchSuggestions.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => {
-                      if (item.tabId && typeof chrome !== 'undefined') {
-                        chrome.tabs.update(item.tabId, { active: true });
-                        if (item.windowId && chrome.windows?.update) {
-                          chrome.windows.update(item.windowId, { focused: true });
-                        }
-                      } else if (item.url) {
-                        handleOpenUrl(item.url);
-                      }
-                    }}
-                    style={{
-                      padding: '6px 10px',
-                      borderRadius: 6,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      transition: 'background 0.15s',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = isDark ? '#334155' : '#f1f5f9';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent';
-                    }}
-                  >
-                    <Space direction="horizontal" size="small" style={{ overflow: 'hidden' }}>
-                      <Tag color="cyan">已开标签</Tag>
-                      <Text style={{ fontSize: 13, fontWeight: 500 }} ellipsis>
-                        {item.title}
+                {searchSuggestions.map((item, index) => {
+                  const isSelected = index === selectedSuggestionIndex;
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => handleActivateSearchItem(item)}
+                      onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        background: isSelected
+                          ? isDark
+                            ? 'rgba(59, 130, 246, 0.25)'
+                            : 'rgba(59, 130, 246, 0.1)'
+                          : 'transparent',
+                        border: isSelected
+                          ? '1px solid #3b82f6'
+                          : '1px solid transparent',
+                      }}
+                    >
+                      <Space direction="horizontal" size="small" style={{ overflow: 'hidden' }}>
+                        <Tag color={isSelected ? 'blue' : 'cyan'}>已开标签</Tag>
+                        <Text style={{ fontSize: 13, fontWeight: isSelected ? 600 : 500 }} ellipsis>
+                          {item.title}
+                        </Text>
+                      </Space>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        {item.domain} {isSelected ? '⏎ 切换' : '↗'}
                       </Text>
-                    </Space>
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      {item.domain} ↗
-                    </Text>
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </Card>
