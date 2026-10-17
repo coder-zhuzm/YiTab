@@ -47,6 +47,10 @@ export interface NewTabSettings {
   openInNewTab: boolean;
   showGreeting: boolean;
   iconMode: IconMode;
+  /** 办公模式下选中的搜索引擎 ID（独立记忆） */
+  workEngineId?: string;
+  /** 个人模式下选中的搜索引擎 ID（独立记忆） */
+  homeEngineId?: string;
 }
 
 export const DEFAULT_NEWTAB_SETTINGS: NewTabSettings = {
@@ -55,4 +59,6 @@ export const DEFAULT_NEWTAB_SETTINGS: NewTabSettings = {
   openInNewTab: false,
   showGreeting: true,
   iconMode: 'initials',
+  workEngineId: 'google',
+  homeEngineId: 'google',
 };

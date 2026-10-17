@@ -5,11 +5,14 @@ import {
   CheckCircleFilled,
   ClockCircleOutlined,
   CloseOutlined,
+  CopyOutlined,
   DeleteOutlined,
+  DownOutlined,
   EditOutlined,
   FolderOpenOutlined,
   GlobalOutlined,
   HistoryOutlined,
+  MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
   RocketOutlined,
@@ -17,6 +20,7 @@ import {
   SettingOutlined,
   SwapOutlined,
   ThunderboltOutlined,
+  UpOutlined,
 } from '@ant-design/icons';
 import {
   Button,
@@ -42,8 +46,10 @@ import {
   loadBookmarkCards,
   type BookmarkFolderCard,
 } from '@/lib/bookmarks-matrix';
+import type { BookmarkItem } from '@/lib/bookmarks';
 import {
   browserFaviconUrl,
+  formatLiveStatusGreeting,
   formatTimeGreeting,
   generateSvgFavicon,
   isIntranetHost,
@@ -127,15 +133,18 @@ export default function NewTabApp() {
 
   // 当前已开标签页映射 (用于已开检测)
   const [openTabs, setOpenTabs] = useState<
-    Array<{ id: number; url: string; title: string; windowId: number }>
+    Array<{ id: number; url: string; title: string; windowId?: number }>
   >([]);
 
   // 猜你想开智能推选
   const [recommendations, setRecommendations] = useState<RecommendedStation[]>([]);
 
-  // 书签快捷平铺看板
+  // 书签看板状态
   const [bookmarkCards, setBookmarkCards] = useState<BookmarkFolderCard[]>([]);
   const [bookmarkSearch, setBookmarkSearch] = useState('');
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
+  const [editingBookmark, setEditingBookmark] = useState<BookmarkItem | null>(null);
+  const [bookmarkForm] = Form.useForm();
 
   // 会话现场恢复
   const [recentSnapshot, setRecentSnapshot] = useState<SessionSnapshot | null>(null);
@@ -209,25 +218,30 @@ export default function NewTabApp() {
         setRecommendations(cachedRecs);
       }
 
+      // 1.1 根据当前工作/个人模式还原选中的搜索引擎
+      const initialEngineId =
+        nSettings.profile === 'home'
+          ? nSettings.homeEngineId || nSettings.defaultEngineId
+          : nSettings.workEngineId || nSettings.defaultEngineId;
       const matchedEngine =
-        SEARCH_ENGINES.find((e) => e.id === nSettings.defaultEngineId) ||
+        SEARCH_ENGINES.find((e) => e.id === initialEngineId) ||
         SEARCH_ENGINES[0];
       setActiveEngine(matchedEngine);
 
       // 2. 查询已开标签
+      let initialOpenTabs: Array<{ id: number; url: string; title: string; windowId?: number }> = [];
       if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
         try {
           const tabs = await chrome.tabs.query({});
-          setOpenTabs(
-            tabs
-              .filter((t) => t.id && t.url)
-              .map((t) => ({
-                id: t.id!,
-                url: t.url!,
-                title: t.title || '',
-                windowId: t.windowId,
-              })),
-          );
+          initialOpenTabs = tabs
+            .filter((t) => t.id && t.url)
+            .map((t) => ({
+              id: t.id!,
+              url: t.url!,
+              title: t.title || '',
+              windowId: t.windowId,
+            }));
+          setOpenTabs(initialOpenTabs);
         } catch {
           // ignore
         }
@@ -262,28 +276,27 @@ export default function NewTabApp() {
 
       // 4. 读取书签平铺目录与最近会话快照
       loadBookmarkCards().then((cards) => setBookmarkCards(cards));
-      getSnapshots().then((snaps) => {
+      const snapsPromise = getSnapshots();
+      snapsPromise.then((snaps) => {
         if (snaps && snaps.length > 0) {
           setRecentSnapshot(snaps[0]);
         }
       });
 
-      // 5. 探测端侧 AI 配置并生成晨间简报
-      getAiSettings().then(async (aiSet) => {
+      // 5. 立即计算基于真实时段与标签/快照的动态问候语 (0 毫秒首屏直出，彻底杜绝写死)
+      snapsPromise.then(async (snaps) => {
+        const snapCount = Array.isArray(snaps) ? snaps.length : 0;
+        const liveGreeting = formatLiveStatusGreeting(initialOpenTabs.length, snapCount);
+        setMorningBriefing(liveGreeting);
+
+        // 探测端侧 AI 配置，若可用且开启则由 Gemini Nano 渐进增强
+        const aiSet = await getAiSettings();
         setAiSettings(aiSet);
         if (aiSet.enabled && aiSet.morningBriefing) {
-          let openCount = 0;
-          if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
-            try {
-              const allTabs = await chrome.tabs.query({});
-              openCount = allTabs.length;
-            } catch {
-              // ignore
-            }
+          const briefing = await generateMorningBriefing(initialOpenTabs.length, snapCount, aiSet);
+          if (briefing) {
+            setMorningBriefing(briefing);
           }
-          const snaps = await getSnapshots();
-          const briefing = await generateMorningBriefing(openCount, snaps.length, aiSet);
-          setMorningBriefing(briefing);
         }
       });
     }
@@ -383,7 +396,7 @@ export default function NewTabApp() {
     const foundTab = openTabs.find((t) => t.url === targetUrl);
     if (foundTab && typeof chrome !== 'undefined' && chrome.tabs?.update) {
       chrome.tabs.update(foundTab.id, { active: true });
-      if (chrome.windows?.update) {
+      if (foundTab.windowId !== undefined && chrome.windows?.update) {
         chrome.windows.update(foundTab.windowId, { focused: true });
       }
       return;
@@ -466,9 +479,40 @@ export default function NewTabApp() {
     handleOpenUrl(searchUrl);
   };
 
-  // 切换工作与个人模式
+  // 切换工作与个人模式（独立记忆搜索引擎、内网卡片过滤、分组自适应）
   const handleToggleProfile = async (newProfile: ProfileMode) => {
     const updated = await saveNewTabSettings({ profile: newProfile });
+    setSettings(updated);
+    // 恢复对应模式下记忆的搜索引擎
+    const targetEngineId =
+      newProfile === 'home'
+        ? updated.homeEngineId || updated.defaultEngineId
+        : updated.workEngineId || updated.defaultEngineId;
+    const targetEngine =
+      SEARCH_ENGINES.find((e) => e.id === targetEngineId) || SEARCH_ENGINES[0];
+    setActiveEngine(targetEngine);
+    // 模式切换时自适应分组（如有个人/生活相关分组或工作分组）
+    if (newProfile === 'home') {
+      const homeGroup = pinnedData.groups.find((g) =>
+        /生活|个人|常用|home|life/i.test(g.name),
+      );
+      if (homeGroup) setActiveGroupId(homeGroup.id);
+    } else {
+      const workGroup = pinnedData.groups.find((g) =>
+        /工作|开发|技术|work|dev/i.test(g.name),
+      );
+      if (workGroup) setActiveGroupId(workGroup.id);
+    }
+  };
+
+  // 切换搜索引擎并同步记忆至对应模式
+  const handleSelectEngine = async (engine: SearchEngine) => {
+    setActiveEngine(engine);
+    const updates =
+      settings.profile === 'home'
+        ? { homeEngineId: engine.id }
+        : { workEngineId: engine.id };
+    const updated = await saveNewTabSettings(updates);
     setSettings(updated);
   };
 
@@ -478,11 +522,31 @@ export default function NewTabApp() {
     setSettings(updated);
   };
 
-  // 过滤当前分组卡片
+  // 过滤当前分组卡片（个人模式下过滤内网卡片）
   const filteredItems = useMemo(() => {
-    if (activeGroupId === 'all') return pinnedData.items;
-    return pinnedData.items.filter((i) => i.groupId === activeGroupId);
-  }, [pinnedData, activeGroupId]);
+    let list = pinnedData.items;
+    if (settings.profile === 'home') {
+      list = list.filter((item) => {
+        let hostname = '';
+        try {
+          hostname = new URL(item.url).hostname;
+        } catch {
+          hostname = item.url;
+        }
+        return !isIntranetHost(hostname);
+      });
+    }
+    if (activeGroupId === 'all') return list;
+    return list.filter((i) => i.groupId === activeGroupId);
+  }, [pinnedData, activeGroupId, settings.profile]);
+
+  // 猜你想开：个人模式下过滤纯内网服务
+  const displayRecommendations = useMemo(() => {
+    if (settings.profile === 'home') {
+      return recommendations.filter((r) => !r.isIntranet);
+    }
+    return recommendations;
+  }, [recommendations, settings.profile]);
 
   // 快捷方式名称补全的状态机。持有请求编号/会话编号/名称来源，
   // 使异步回调在返回时读到的是**最新**状态而非闭包快照。
@@ -497,6 +561,12 @@ export default function NewTabApp() {
             {
               queryTabs: () =>
                 chrome.tabs.query({}).then((ts) => ts.map((t) => ({ url: t.url, title: t.title }))),
+              searchBookmarks: (url) =>
+                typeof chrome !== 'undefined' && chrome.bookmarks?.search
+                  ? chrome.bookmarks
+                      .search(url)
+                      .then((bs) => bs.map((b) => ({ url: b.url, title: b.title })))
+                  : Promise.resolve([]),
               searchHistory: (url, startTime, maxResults) =>
                 chrome.history.search({ text: url, startTime, maxResults }),
             },
@@ -612,10 +682,107 @@ export default function NewTabApp() {
   const [messageApi, contextHolder] = message.useMessage();
   const [snapshotDismissed, setSnapshotDismissed] = useState(false);
 
-  // 过滤书签目录卡片
+  // 过滤书签目录卡片（全量检索）
   const displayBookmarkCards = useMemo(() => {
     return filterBookmarkCards(bookmarkCards, bookmarkSearch);
   }, [bookmarkCards, bookmarkSearch]);
+
+  // 折叠/展开书签文件夹
+  const toggleFolderExpand = (folderId: string) => {
+    setExpandedFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  };
+
+  // 后台静默打开书签
+  const handleOpenBookmarkInBackground = (url: string) => {
+    if (!url) return;
+    if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+      chrome.tabs.create({ url, active: false });
+      messageApi.success('已在后台标签页打开');
+    } else {
+      window.open(url, '_blank');
+    }
+  };
+
+  // 复制书签网址
+  const handleCopyUrl = async (url: string) => {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      messageApi.success('已复制网址到剪贴板');
+    } catch {
+      messageApi.error('复制网址失败');
+    }
+  };
+
+  // 一键在后台打开该目录下所有书签
+  const handleOpenFolderAll = (card: BookmarkFolderCard) => {
+    const pool = card.allItems || card.items;
+    const validItems = pool.filter((it) => it.url && !it.isInvalid);
+    if (validItems.length === 0) {
+      messageApi.warning('该目录下无有效网址');
+      return;
+    }
+    if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+      for (const it of validItems) {
+        chrome.tabs.create({ url: it.url, active: false });
+      }
+      messageApi.success(`已在后台打开该目录下全部 ${validItems.length} 个书签`);
+    } else {
+      validItems.slice(0, 5).forEach((it) => window.open(it.url, '_blank'));
+      messageApi.success(`已打开 ${Math.min(validItems.length, 5)} 个书签`);
+    }
+  };
+
+  // 保存修改的书签
+  const handleSaveBookmark = async () => {
+    if (!editingBookmark) return;
+    try {
+      const values = await bookmarkForm.validateFields();
+      if (typeof chrome !== 'undefined' && chrome.bookmarks?.update) {
+        await chrome.bookmarks.update(editingBookmark.id, {
+          title: String(values.title ?? '').trim(),
+          url: String(values.url ?? '').trim(),
+        });
+        messageApi.success('书签修改成功');
+        const refreshed = await loadBookmarkCards();
+        setBookmarkCards(refreshed);
+      } else {
+        messageApi.info('当前环境不支持直接更新 Chrome 书签');
+      }
+      setEditingBookmark(null);
+    } catch {
+      // 校验失败
+    }
+  };
+
+  // 删除书签
+  const handleDeleteBookmark = (item: BookmarkItem) => {
+    Modal.confirm({
+      title: '确认删除书签？',
+      content: `确定从 Chrome 收藏夹中永久删除「${item.title}」吗？`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        if (typeof chrome !== 'undefined' && chrome.bookmarks?.remove) {
+          await chrome.bookmarks.remove(item.id);
+          messageApi.success('书签已删除');
+          const refreshed = await loadBookmarkCards();
+          setBookmarkCards(refreshed);
+        } else {
+          messageApi.info('当前环境不支持直接删除 Chrome 书签');
+        }
+      },
+    });
+  };
 
   // 一键恢复会话快照
   const handleRestoreSnapshot = async (snapshot: SessionSnapshot) => {
@@ -760,7 +927,7 @@ export default function NewTabApp() {
                   items: SEARCH_ENGINES.map((e) => ({
                     key: e.id,
                     label: `${e.icon} ${e.name} [前缀: ${e.prefix}]`,
-                    onClick: () => setActiveEngine(e),
+                    onClick: () => handleSelectEngine(e),
                   })),
                 }}
                 trigger={['click']}
@@ -869,7 +1036,7 @@ export default function NewTabApp() {
         </div>
 
         {/* 💡 猜你想开 (智能推选引擎 + 胶囊双态直达) */}
-        {recommendations.length > 0 && (
+        {displayRecommendations.length > 0 && (
           <div className="recommendations-section">
             <div
               style={{
@@ -888,7 +1055,7 @@ export default function NewTabApp() {
             </div>
 
             <div className="recommendations-grid">
-              {recommendations.map((rec) => {
+              {displayRecommendations.map((rec) => {
                 return (
                   <div
                     key={`rec_${rec.domain}`}
@@ -1107,7 +1274,7 @@ export default function NewTabApp() {
           )}
         </div>
 
-        {/* 📑 书签快捷直展矩阵 (Bookmarks Direct Matrix) */}
+        {/* 📑 书签看板 (Bookmarks Board) */}
         {bookmarkCards.length > 0 && (
           <div>
             <div
@@ -1119,9 +1286,9 @@ export default function NewTabApp() {
               }}
             >
               <Title level={5} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <BookOutlined style={{ color: '#10b981' }} /> 书签直展矩阵
+                <BookOutlined style={{ color: '#10b981' }} /> 书签看板
                 <span style={{ fontSize: 11, fontWeight: 'normal', color: '#94a3b8' }}>
-                  按目录平铺聚合
+                  按常用目录聚合速览
                 </span>
               </Title>
 
@@ -1142,50 +1309,154 @@ export default function NewTabApp() {
               </Card>
             ) : (
               <div className="bookmark-matrix-grid">
-                {displayBookmarkCards.map((card) => (
-                  <div key={card.id} className="bookmark-folder-card">
-                    <div className="bookmark-folder-header">
-                      <Space direction="horizontal" size="small" style={{ overflow: 'hidden' }}>
-                        <FolderOpenOutlined style={{ color: '#f59e0b', fontSize: 15 }} />
-                        <Text strong style={{ fontSize: 13 }} ellipsis>
-                          {card.name}
-                        </Text>
-                      </Space>
-                      <Tag style={{ margin: 0, fontSize: 10 }}>{card.totalCount} 项</Tag>
-                    </div>
+                {displayBookmarkCards.map((card) => {
+                  const isSearching = Boolean(bookmarkSearch.trim());
+                  const isExpanded = expandedFolderIds.has(card.id);
+                  const itemsToRender = isSearching
+                    ? card.items
+                    : isExpanded
+                      ? card.allItems || card.items
+                      : card.items;
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      {card.items.map((item) => {
-                        return (
-                          <div
-                            key={item.id}
-                            className="bookmark-link-item"
-                            onClick={() => handleOpenUrl(item.url)}
-                            title={item.title}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
-                              <img
-                                src={iconFor(item.url, item.title, 32).src}
-                                alt=""
-                                style={{ width: 14, height: 14, borderRadius: 2, flexShrink: 0 }}
-                                onError={(e) => {
-                                  e.currentTarget.onerror = null;
-                                  e.currentTarget.src = iconFor(item.url, item.title, 32).fallback;
-                                }}
-                              />
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {item.title}
-                              </span>
-                            </div>
-                            <span style={{ fontSize: 11, color: '#94a3b8', flexShrink: 0, marginLeft: 6 }}>
-                              {item.domain}
-                            </span>
-                          </div>
-                        );
-                      })}
+                  return (
+                    <div key={card.id} className="bookmark-folder-card">
+                      <div className="bookmark-folder-header">
+                        <Space direction="horizontal" size="small" style={{ overflow: 'hidden' }}>
+                          <FolderOpenOutlined style={{ color: '#f59e0b', fontSize: 15 }} />
+                          <Text strong style={{ fontSize: 13 }} ellipsis>
+                            {card.name}
+                          </Text>
+                        </Space>
+                        <Space direction="horizontal" size="small">
+                          <Tag style={{ margin: 0, fontSize: 10 }}>{card.totalCount} 项</Tag>
+                          <Tooltip title="在后台一键打开该目录下全部书签">
+                            <Button
+                              type="text"
+                              size="small"
+                              style={{ padding: '0 4px', height: 22, fontSize: 11, color: '#10b981' }}
+                              icon={<RocketOutlined />}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenFolderAll(card);
+                              }}
+                            >
+                              全部打开
+                            </Button>
+                          </Tooltip>
+                        </Space>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {itemsToRender.map((item) => {
+                          const bookmarkMenuItems = [
+                            {
+                              key: 'open-new-tab',
+                              icon: <GlobalOutlined />,
+                              label: '在新标签页打开',
+                              onClick: () => handleOpenUrl(item.url, true),
+                            },
+                            {
+                              key: 'open-bg',
+                              icon: <RocketOutlined />,
+                              label: '后台静默打开',
+                              onClick: () => handleOpenBookmarkInBackground(item.url),
+                            },
+                            {
+                              key: 'copy-url',
+                              icon: <CopyOutlined />,
+                              label: '复制网址',
+                              onClick: () => handleCopyUrl(item.url),
+                            },
+                            {
+                              type: 'divider' as const,
+                            },
+                            {
+                              key: 'edit',
+                              icon: <EditOutlined />,
+                              label: '修改书签',
+                              onClick: () => {
+                                setEditingBookmark(item);
+                                bookmarkForm.setFieldsValue({
+                                  title: item.title,
+                                  url: item.url,
+                                });
+                              },
+                            },
+                            {
+                              key: 'delete',
+                              icon: <DeleteOutlined />,
+                              danger: true,
+                              label: '删除书签',
+                              onClick: () => handleDeleteBookmark(item),
+                            },
+                          ];
+
+                          return (
+                            <Dropdown
+                              key={item.id}
+                              menu={{ items: bookmarkMenuItems }}
+                              trigger={['contextMenu']}
+                            >
+                              <div
+                                className="bookmark-link-item"
+                                onClick={() => handleOpenUrl(item.url)}
+                                title={`${item.title}\n${item.url}\n(右键呼出书签操作菜单)`}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden', flex: 1 }}>
+                                  <img
+                                    src={iconFor(item.url, item.title, 32).src}
+                                    alt=""
+                                    style={{ width: 14, height: 14, borderRadius: 2, flexShrink: 0 }}
+                                    onError={(e) => {
+                                      e.currentTarget.onerror = null;
+                                      e.currentTarget.src = iconFor(item.url, item.title, 32).fallback;
+                                    }}
+                                  />
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {item.title}
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, marginLeft: 6 }}>
+                                  <span className="bookmark-domain-text">
+                                    {item.domain}
+                                  </span>
+                                  <Dropdown menu={{ items: bookmarkMenuItems }} trigger={['click']}>
+                                    <Button
+                                      type="text"
+                                      size="small"
+                                      className="bookmark-item-more-btn"
+                                      icon={<MoreOutlined style={{ fontSize: 12 }} />}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </Dropdown>
+                                </div>
+                              </div>
+                            </Dropdown>
+                          );
+                        })}
+                      </div>
+
+                      {card.totalCount > 6 && !isSearching && (
+                        <div
+                          className="bookmark-folder-expand-btn"
+                          onClick={() => toggleFolderExpand(card.id)}
+                        >
+                          {isExpanded ? (
+                            <Space size={4}>
+                              <UpOutlined style={{ fontSize: 10 }} />
+                              <span>收起</span>
+                            </Space>
+                          ) : (
+                            <Space size={4}>
+                              <DownOutlined style={{ fontSize: 10 }} />
+                              <span>展开更多 (共 {card.totalCount} 项)</span>
+                            </Space>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1277,7 +1548,16 @@ export default function NewTabApp() {
             {suggestedTitle && (
               <div style={{ marginTop: -8, marginBottom: 16, fontSize: 12, color: '#64748b' }}>
                 建议名称（来自
-                {suggestedTitle.source === 'tab' ? '当前标签' : '历史记录'}）：
+                {suggestedTitle.source === 'tab'
+                  ? '当前标签'
+                  : suggestedTitle.source === 'bookmark'
+                    ? '本地书签'
+                    : suggestedTitle.source === 'history'
+                      ? '浏览历史'
+                      : suggestedTitle.source === 'preset'
+                        ? '知名站点'
+                        : '域名匹配'}
+                ）：
                 <Button
                   type="link"
                   size="small"
@@ -1320,6 +1600,34 @@ export default function NewTabApp() {
               rules={[{ required: true, message: '请输入分组名称' }]}
             >
               <Input placeholder="例如: 核心微服务、QA 测试环境" />
+            </Form.Item>
+          </Form>
+        </Modal>
+
+        {/* 修改书签模态框 */}
+        <Modal
+          title="修改 Chrome 收藏夹书签"
+          open={editingBookmark !== null}
+          onOk={handleSaveBookmark}
+          onCancel={() => setEditingBookmark(null)}
+          okText="保存修改"
+          cancelText="取消"
+          destroyOnClose
+        >
+          <Form form={bookmarkForm} layout="vertical" style={{ marginTop: 16 }}>
+            <Form.Item
+              name="title"
+              label="书签名称"
+              rules={[{ required: true, message: '请输入书签名称' }]}
+            >
+              <Input placeholder="书签名称" />
+            </Form.Item>
+            <Form.Item
+              name="url"
+              label="网址 (URL)"
+              rules={[{ required: true, message: '请输入有效网址' }]}
+            >
+              <Input placeholder="https://..." />
             </Form.Item>
           </Form>
         </Modal>

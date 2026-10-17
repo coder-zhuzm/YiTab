@@ -24,16 +24,16 @@ permissions:
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: 检出仓库代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: 配置 Node.js 环境 (v22)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
@@ -75,12 +75,14 @@ jobs:
         if: steps.check_plan.outputs.should_build == 'true'
         run: npm run zip
 
-      - name: 上传构建产物至 GitHub Artifacts (随时可免登录下载)
+      - name: 上传构建产物至 GitHub Artifacts (需登录下载)
         if: steps.check_plan.outputs.should_build == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: yitab-v${{ steps.check_plan.outputs.version }}-chrome-mv3
           path: .output/*.zip
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 90
 
       - name: 创建 GitHub Release 并挂载扩展安装包
@@ -89,7 +91,7 @@ jobs:
           (github.ref_type == 'tag' ||
            (github.event_name == 'workflow_dispatch' && inputs.create_release) ||
            (github.event_name == 'push'))
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.check_plan.outputs.tag_name }}
           name: YiTab 一签 ${{ steps.check_plan.outputs.tag_name }}

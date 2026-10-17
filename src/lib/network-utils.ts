@@ -502,6 +502,8 @@ export function generateSvgFavicon(title: string, hostname: string): string {
  */
 export function formatTimeGreeting(now = new Date()): {
   greeting: string;
+  icon: string;
+  wish: string;
   timeStr: string;
   dateStr: string;
 } {
@@ -510,18 +512,33 @@ export function formatTimeGreeting(now = new Date()): {
   const timeStr = `${hours.toString().padStart(2, '0')}:${minutes}`;
 
   let greeting = '你好';
+  let icon = '☀️';
+  let wish = '祝工作顺心';
+
   if (hours >= 5 && hours < 9) {
     greeting = '清晨好';
+    icon = '🌅';
+    wish = '新的一天充满活力';
   } else if (hours >= 9 && hours < 12) {
     greeting = '上午好';
+    icon = '☀️';
+    wish = '祝工作顺心，高效推进';
   } else if (hours >= 12 && hours < 14) {
     greeting = '中午好';
+    icon = '🍱';
+    wish = '劳逸结合，享用午餐吧';
   } else if (hours >= 14 && hours < 18) {
     greeting = '下午好';
+    icon = '☕️';
+    wish = '来杯咖啡，保持专注';
   } else if (hours >= 18 && hours < 23) {
     greeting = '晚上好';
+    icon = '🌙';
+    wish = '今日辛苦，放松一下';
   } else {
     greeting = '夜深了';
+    icon = '🌌';
+    wish = '早点休息，明天更美好';
   }
 
   const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -530,5 +547,20 @@ export function formatTimeGreeting(now = new Date()): {
   const dayName = days[now.getDay()];
   const dateStr = `${month}月${date}日 · ${dayName}`;
 
-  return { greeting, timeStr, dateStr };
+  return { greeting, icon, wish, timeStr, dateStr };
+}
+
+/**
+ * 实时动态问候文案（根据真实时段与活动标签/快照总数动态生成）
+ */
+export function formatLiveStatusGreeting(
+  openTabsCount: number,
+  snapshotCount: number,
+  now = new Date(),
+): string {
+  const info = formatTimeGreeting(now);
+  if (snapshotCount > 0) {
+    return `${info.icon} ${info.greeting}！当前有 ${openTabsCount} 个活动页面与 ${snapshotCount} 个未完工现场，${info.wish}！`;
+  }
+  return `${info.icon} ${info.greeting}！当前有 ${openTabsCount} 个活动页面，${info.wish}！`;
 }
