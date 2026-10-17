@@ -210,6 +210,7 @@ export interface SearchItemsResponse {
 export interface ExecuteCommandResponse {
   ok: boolean;
   message: string;
+  copyText?: string;
 }
 
 export interface ScanBookmarksResponse {
@@ -220,7 +221,7 @@ export interface ScanBookmarksResponse {
 
 export interface CleanBookmarksResponse {
   ok: boolean;
-  removedCount: number;
+  removedCount?: number;
   error?: string;
 }
 

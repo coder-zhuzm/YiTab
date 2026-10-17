@@ -1,3 +1,6 @@
+import type { Settings } from './settings.ts';
+import { INTERNAL_URL_RE, inWhitelist, computeMatchKey } from './match.ts';
+
 /**
  * 关闭源标签前的安全守卫。
  *
@@ -128,4 +131,55 @@ export async function switchToTab(
     return closeTabAfterSwitch(api, senderTabId, sourceUrl, () => false);
   }
   return 'noop';
+}
+
+export interface DeduplicateTabCandidate {
+  id?: number;
+  url?: string;
+  active?: boolean;
+  pinned?: boolean;
+}
+
+/**
+ * 窗口内重复标签批量清理规划：
+ * 1. 过滤内部协议与白名单保护站点；
+ * 2. 组内选出保留者（活动标签 > 钉选标签 > 首个标签）；
+ * 3. 绝对安全防线：已钉选或当前活动的标签绝不纳入删除列表。
+ */
+export function planCloseDuplicates(
+  tabs: DeduplicateTabCandidate[],
+  settings: Settings,
+): number[] {
+  const candidates = tabs.filter((t) => {
+    if (!t.url || !t.id || INTERNAL_URL_RE.test(t.url)) return false;
+    if (inWhitelist(t.url, settings.whitelist)) return false;
+    return true;
+  });
+
+  const groupMap = new Map<string, DeduplicateTabCandidate[]>();
+  for (const t of candidates) {
+    const key = computeMatchKey(t.url!, settings);
+    if (!key) continue;
+    const list = groupMap.get(key) ?? [];
+    list.push(t);
+    groupMap.set(key, list);
+  }
+
+  const toRemove: number[] = [];
+  for (const [, group] of groupMap.entries()) {
+    if (group.length <= 1) continue;
+
+    const keeper =
+      group.find((t) => t.active) ||
+      group.find((t) => t.pinned) ||
+      group[0];
+
+    for (const t of group) {
+      if (t.id === keeper.id) continue;
+      if (t.pinned || t.active) continue;
+      toRemove.push(t.id!);
+    }
+  }
+
+  return toRemove;
 }

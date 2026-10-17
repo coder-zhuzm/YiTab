@@ -10,6 +10,7 @@ export default defineConfig({
     permissions: [
       'tabs',
       'storage',
+      'unlimitedStorage',
       'webNavigation',
       'tabGroups',
       'clipboardWrite',

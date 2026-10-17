@@ -9,6 +9,8 @@ import {
   computeRecommendedDeletePlan,
   exportBookmarksAsNetscapeHtml,
   exportBookmarksAsJson,
+  backupBookmarksBeforeClean,
+  BOOKMARK_BACKUPS_KEY,
 } from '../src/lib/bookmarks.ts';
 
 test('normalizeBookmarkUrl strips tracking params, normalizes www, and preserves route hash', () => {
@@ -196,4 +198,65 @@ test('exportBookmarksAsNetscapeHtml and exportBookmarksAsJson produce standard f
   assert.equal(parsed.bookmarks[0].title, 'YiTab & Extensions');
   assert.equal(parsed.bookmarks[0].domain, 'github.com');
   assert.equal(parsed.bookmarks[0].url, 'https://github.com/coder-zhuzm/YiTab');
+});
+
+test('normalizeBookmarkUrl preserves deep and single-segment route hashes to prevent duplicate collapse', () => {
+  // 单段深层路由如 #route/a vs #route/b 必须区分
+  const routeA = normalizeBookmarkUrl('https://example.com/#route/a');
+  const routeB = normalizeBookmarkUrl('https://example.com/#route/b');
+  assert.equal(routeA, 'https://example.com/#route/a');
+  assert.equal(routeB, 'https://example.com/#route/b');
+  assert.notEqual(routeA, routeB);
+
+  // 参数型 hash
+  const queryHash = normalizeBookmarkUrl('https://example.com/app#page?id=123');
+  assert.equal(queryHash, 'https://example.com/app#page?id=123');
+
+  // 网页应用与邮件单段路由如 #inbox vs #sent 必须保留
+  const gmailInbox = normalizeBookmarkUrl('https://mail.google.com/mail/u/0/#inbox');
+  const gmailSent = normalizeBookmarkUrl('https://mail.google.com/mail/u/0/#sent');
+  assert.equal(gmailInbox, 'https://mail.google.com/mail/u/0#inbox');
+  assert.equal(gmailSent, 'https://mail.google.com/mail/u/0#sent');
+  assert.notEqual(gmailInbox, gmailSent);
+});
+
+test('backupBookmarksBeforeClean automatically saves snapshots to storage and rotates to max 5', async () => {
+  const store = new Map();
+  globalThis.chrome = {
+    storage: {
+      local: {
+        get: async (key) => ({ [key]: store.get(key) }),
+        set: async (obj) => {
+          for (const [k, v] of Object.entries(obj)) {
+            store.set(k, v);
+          }
+        },
+      },
+    },
+  };
+
+  const sampleTree = [
+    {
+      id: '1',
+      title: '书签栏',
+      children: [
+        { id: '10', title: 'Test 1', url: 'https://example.com/1' },
+      ],
+    },
+  ];
+
+  // 连续备份 6 次
+  for (let i = 1; i <= 6; i++) {
+    await backupBookmarksBeforeClean(sampleTree, `Clean reason ${i}`);
+  }
+
+  const backups = store.get(BOOKMARK_BACKUPS_KEY);
+  assert.equal(backups.length, 5); // 严格上限 5 份
+  assert.equal(backups[0].reason, 'Clean reason 6'); // 最新在最前
+  assert.equal(backups[4].reason, 'Clean reason 2'); // 最旧的被轮转淘汰
+
+  // 验证防抖机制：同原因高频调用不消耗新的轮转插槽
+  const snap1 = await backupBookmarksBeforeClean(sampleTree, 'Same Clean Session');
+  const snap2 = await backupBookmarksBeforeClean(sampleTree, 'Same Clean Session');
+  assert.equal(snap1.id, snap2.id, 'High-frequency deletions with identical reason should reuse snapshot');
 });

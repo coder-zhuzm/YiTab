@@ -40,6 +40,7 @@ import type {
   AutoGroupTabsResponse,
   CleanBookmarksResponse,
   DiscardTabsResponse,
+  ExecuteCommandResponse,
   ExportBookmarksBackupResponse,
   GetCurrentWindowTabsResponse,
   GetTabHealthResponse,
@@ -149,10 +150,17 @@ function PopupApp() {
       return;
     }
     if (item.kind === 'command' && item.commandAction) {
-      const res = await sendToBackground<{ ok: boolean; message: string }>({
+      const res = await sendToBackground<ExecuteCommandResponse>({
         type: 'executeCommand',
         action: item.commandAction,
       });
+      if (res?.copyText) {
+        try {
+          await navigator.clipboard.writeText(res.copyText);
+        } catch (e) {
+          console.warn('[YiTab] 写入剪贴板失败:', e);
+        }
+      }
       if (res?.message) {
         alert(res.message);
       }

@@ -6,11 +6,24 @@ import {
   queryWebTabs,
   computeMatchKey,
   shouldSkipNavigation,
+  inWhitelist,
   type MatchResult,
   type TabInfo,
 } from '@/lib/match';
-import { analyzeTabsByDomain, getDeterministicColor, saveSnapshot } from '@/lib/snapshots';
-import { closeTabAfterSwitch, switchToTab, type SwitchApi, type TabCloseApi } from '@/lib/tab-close';
+import {
+  analyzeTabsByDomain,
+  getDeterministicColor,
+  saveSnapshot,
+  formatTabsExport,
+  extractCleanDomain,
+} from '@/lib/snapshots';
+import {
+  closeTabAfterSwitch,
+  switchToTab,
+  planCloseDuplicates,
+  type SwitchApi,
+  type TabCloseApi,
+} from '@/lib/tab-close';
 import {
   ACTION_COMMANDS,
   extractHostname,
@@ -24,12 +37,14 @@ import {
   exportBookmarksAsNetscapeHtml,
   exportBookmarksAsJson,
   computeRecommendedDeletePlan,
+  backupBookmarksBeforeClean,
 } from '@/lib/bookmarks';
 import {
   analyzeTabHealth,
   ESTIMATED_MB_PER_TAB,
   isEligibleForDiscard,
 } from '@/lib/tab-health';
+import { navigationCoordinator } from '@/lib/coordinator';
 import type { BackgroundRequest } from '@/lib/messaging';
 
 const ALLOW_TTL = 8000;
@@ -89,16 +104,18 @@ export default defineBackground(() => {
     );
   });
 
-  // 标签关闭或被预渲染替换时清理状态表
+  // 标签关闭或被预渲染替换时清理状态表与协调器
   chrome.tabs.onRemoved.addListener((tabId) => {
     allowed.delete(tabId);
     tabStates.delete(tabId);
+    navigationCoordinator.unregister(tabId);
   });
 
   if (chrome.tabs.onReplaced) {
     chrome.tabs.onReplaced.addListener((_addedTabId, removedTabId) => {
       allowed.delete(removedTabId);
       tabStates.delete(removedTabId);
+      navigationCoordinator.unregister(removedTabId);
     });
   }
 
@@ -260,11 +277,15 @@ export default defineBackground(() => {
           );
           sendResponse({ ok: true, items });
         } else if (msg.type === 'executeCommand') {
-          const message = await executeActionCommand(
+          const res = await executeActionCommand(
             msg.action,
             msg.windowId ?? sender.tab?.windowId,
           );
-          sendResponse({ ok: true, message });
+          if (typeof res === 'object' && res !== null) {
+            sendResponse({ ok: true, message: res.message, copyText: res.copyText });
+          } else {
+            sendResponse({ ok: true, message: res });
+          }
         } else if (msg.type === 'scanBookmarks') {
           if (!chrome.bookmarks) {
             sendResponse({ ok: false, error: '未获取书签读取权限' });
@@ -275,7 +296,15 @@ export default defineBackground(() => {
           sendResponse({ ok: true, report });
         } else if (msg.type === 'cleanBookmarks') {
           if (!chrome.bookmarks) {
-            sendResponse({ ok: false, error: '未获取书签管理权限' });
+            sendResponse({ ok: false, removedCount: 0, error: '未获取书签管理权限' });
+            return;
+          }
+          try {
+            const tree = await chrome.bookmarks.getTree();
+            await backupBookmarksBeforeClean(tree, 'Popup/Options 清理重复书签');
+          } catch (err) {
+            console.error('[YiTab] 自动备份书签失败，已中止清理:', err);
+            sendResponse({ ok: false, removedCount: 0, error: '书签自动备份失败，已中止清理以防数据丢失' });
             return;
           }
           let removedCount = 0;
@@ -571,6 +600,9 @@ async function handleNavigation(
   if (state.seq !== currentSeq) return; // 已有更新的导航事件发生
 
   const currentMatchKey = computeMatchKey(url, settings);
+  if (currentMatchKey) {
+    navigationCoordinator.register(currentMatchKey, tabId, url);
+  }
 
   // 检查放行表并清理过期项
   const allowEntry = allowed.get(tabId);
@@ -594,27 +626,41 @@ async function handleNavigation(
   if (skipCheck.skip) {
     state.lastUrl = url;
     state.lastMatchKey = currentMatchKey;
+    navigationCoordinator.unregister(tabId);
     return;
   }
 
   // 查询其他所有网页标签，并在同一轮里完成匹配（避免重复计算 matchDuplicate）
   const allTabs = await queryWebTabs();
-  if (state.seq !== currentSeq) return;
+  if (state.seq !== currentSeq) {
+    navigationCoordinator.unregister(tabId);
+    return;
+  }
 
   // 校验当前标签依然存在且 URL 未变
   let self: chrome.tabs.Tab;
   try {
     self = await browser.tabs.get(tabId);
-    if (self.url && self.url !== url) return;
+    if (self.url && self.url !== url) {
+      navigationCoordinator.unregister(tabId);
+      return;
+    }
   } catch {
+    navigationCoordinator.unregister(tabId);
     return; // 标签已关闭
   }
-  if (state.seq !== currentSeq) return; // tabs.get 期间又发生了新导航
+  if (state.seq !== currentSeq) {
+    navigationCoordinator.unregister(tabId);
+    return; // tabs.get 期间又发生了新导航
+  }
 
   const hit = pickDuplicateTarget(allTabs, tabId, self.windowId, url, settings);
   state.lastUrl = url;
   state.lastMatchKey = currentMatchKey;
-  if (!hit) return;
+  if (!hit) {
+    navigationCoordinator.unregister(tabId);
+    return;
+  }
   const { tab: target, match } = hit;
   const targetId = target.id!;
 
@@ -622,6 +668,7 @@ async function handleNavigation(
   if (eventType === 'committed') {
     // 整页导航（新标签页、地址栏、书签）
     if (settings.interceptMode === 'ask') {
+      navigationCoordinator.unregister(tabId);
       browser.tabs.update(tabId, { url: confirmURL(url) }).catch(() => {});
       return;
     }
@@ -629,45 +676,73 @@ async function handleNavigation(
     // 静默切换式：聚焦已有标签后，关闭本标签。
     // 这里不再跳确认页——用户选的正是「别问我」，与 switchTab 的处理保持一致。
     try {
+      if (currentMatchKey) {
+        const canClose = navigationCoordinator.claimClosePermission(
+          currentMatchKey,
+          tabId,
+          targetId,
+        );
+        if (!canClose) {
+          // 自身被裁定为保留者，或者目标正在关闭中，放弃关闭自身以保证页面存活
+          return;
+        }
+      }
+
+      // 二次确认目标标签依然存活且有效
+      try {
+        const targetAlive = await browser.tabs.get(targetId);
+        if (!targetAlive || !targetAlive.url) {
+          return;
+        }
+      } catch {
+        return;
+      }
+
       await browser.tabs.update(targetId, { active: true });
       await browser.windows.update(target.windowId, { focused: true });
       await closeTabAfterSwitch(tabCloseApi(), tabId, url, () => state.seq !== currentSeq);
     } catch (err) {
       console.warn('[YiTab] 静默切换失败:', err);
+    } finally {
+      navigationCoordinator.unregister(tabId);
     }
     return;
   }
 
   // SPA 内部路由切换（history / fragment）
   // 默认 toast：绝不抢焦点，只弹页内轻提示，避免正在输入的页面被夺走。
-  if (settings.spaPolicy === 'auto') {
-    try {
-      await browser.tabs.update(targetId, { active: true });
-      await browser.windows.update(target.windowId, { focused: true });
-    } catch {}
-    return;
-  }
-  if (settings.spaPolicy === 'off') return;
-
-  // 页内确认式：发送轻量页内提示给 Content Script，避免跳出确认页卸载单页应用
-  const tabInfo: TabInfo = {
-    id: targetId,
-    windowId: target.windowId,
-    title: target.title ?? target.url ?? '',
-    url: target.url ?? '',
-    favicon: target.favIconUrl || '',
-    match,
-  };
-
   try {
-    await chrome.tabs.sendMessage(tabId, {
-      type: 'yitab_spa_duplicate',
-      candidateUrl: url,
-      targetTab: tabInfo,
-    });
-  } catch (err) {
-    // 受限页面或 Content Script 尚未就绪（SPA 站内不跳确认页，避免卸载运行中的页面）
-    console.debug('[YiTab] SPA 提示未能送达当前页面:', err);
+    if (settings.spaPolicy === 'auto') {
+      try {
+        await browser.tabs.update(targetId, { active: true });
+        await browser.windows.update(target.windowId, { focused: true });
+      } catch {}
+      return;
+    }
+    if (settings.spaPolicy === 'off') return;
+
+    // 页内确认式：发送轻量页内提示给 Content Script，避免跳出确认页卸载单页应用
+    const tabInfo: TabInfo = {
+      id: targetId,
+      windowId: target.windowId,
+      title: target.title ?? target.url ?? '',
+      url: target.url ?? '',
+      favicon: target.favIconUrl || '',
+      match,
+    };
+
+    try {
+      await chrome.tabs.sendMessage(tabId, {
+        type: 'yitab_spa_duplicate',
+        candidateUrl: url,
+        targetTab: tabInfo,
+      });
+    } catch (err) {
+      // 受限页面或 Content Script 尚未就绪（SPA 站内不跳确认页，避免卸载运行中的页面）
+      console.debug('[YiTab] SPA 提示未能送达当前页面:', err);
+    }
+  } finally {
+    navigationCoordinator.unregister(tabId);
   }
 }
 
@@ -773,8 +848,16 @@ async function queryAllSearchItems(
   return filterAndRankItems(items, query, kindFilter, limit);
 }
 
+interface ActionCommandResult {
+  message: string;
+  copyText?: string;
+}
+
 /** 执行快捷指令 */
-async function executeActionCommand(action: string, windowId?: number): Promise<string> {
+async function executeActionCommand(
+  action: string,
+  windowId?: number,
+): Promise<string | ActionCommandResult> {
   const win =
     windowId ??
     (await chrome.windows?.getLastFocused({ populate: false }).catch(() => null))?.id;
@@ -838,24 +921,51 @@ async function executeActionCommand(action: string, windowId?: number): Promise<
         getSettings(),
         chrome.tabs.query({ windowId: win }),
       ]);
-      const seenKeys = new Set<string>();
-      const toRemove: number[] = [];
-      for (const t of tabs) {
-        if (!t.url || !t.id || INTERNAL_URL_RE.test(t.url)) continue;
-        const key = computeMatchKey(t.url, settings);
-        if (!key) continue;
-        if (seenKeys.has(key)) {
-          toRemove.push(t.id);
-        } else {
-          seenKeys.add(key);
-        }
-      }
+
+      const toRemove = planCloseDuplicates(tabs, settings);
       if (toRemove.length > 0) {
         await chrome.tabs.remove(toRemove).catch(() => {});
-        return `已扫描并清理 ${toRemove.length} 个重复标签`;
+        return `已扫描并清理 ${toRemove.length} 个重复标签（已受白名单与状态保护）`;
       }
       return '当前窗口未发现重复标签';
     }
+    return '获取窗口标签失败';
+  }
+
+  if (action === 'export_markdown' || action === 'export_table' || action === 'export_urls') {
+    if (win != null) {
+      const tabs = await chrome.tabs.query({ windowId: win });
+      const validTabs = tabs
+        .filter((t) => t.url && !INTERNAL_URL_RE.test(t.url))
+        .map((t) => ({
+          title: t.title || t.url || '',
+          url: t.url || '',
+          domain: extractCleanDomain(t.url || ''),
+          favIconUrl: t.favIconUrl,
+        }));
+
+      if (!validTabs.length) {
+        return { message: '当前窗口没有可导出的有效网页标签' };
+      }
+
+      const formatMap: Record<string, 'markdown_list' | 'markdown_table' | 'urls_only'> = {
+        export_markdown: 'markdown_list',
+        export_table: 'markdown_table',
+        export_urls: 'urls_only',
+      };
+
+      const copyText = formatTabsExport(validTabs, formatMap[action]);
+      const formatNames: Record<string, string> = {
+        export_markdown: 'Markdown 列表',
+        export_table: 'Markdown 表格',
+        export_urls: '纯网址列表',
+      };
+      return {
+        message: `已生成当前窗口 ${validTabs.length} 个标签的 ${formatNames[action]} 并复制到剪贴板`,
+        copyText,
+      };
+    }
+    return '获取窗口标签失败';
   }
 
   if (action === 'discard_inactive_tabs') {
@@ -909,6 +1019,11 @@ async function executeActionCommand(action: string, windowId?: number): Promise<
       const tree = await chrome.bookmarks.getTree();
       const report = scanBookmarkDuplicates(tree);
       if (report.redundantCount > 0) {
+        try {
+          await backupBookmarksBeforeClean(tree, '快捷指令一键清理重复书签');
+        } catch (err) {
+          return '书签自动备份失败，已取消清理以防数据丢失';
+        }
         const { deleteIds } = computeRecommendedDeletePlan(report.groups);
         let removed = 0;
         for (const id of deleteIds) {
@@ -917,7 +1032,7 @@ async function executeActionCommand(action: string, windowId?: number): Promise<
             removed++;
           } catch {}
         }
-        return `已智能扫描并清理 ${removed} 个多余重复书签`;
+        return `已智能扫描并清理 ${removed} 个多余重复书签（已生成自动恢复备份）`;
       }
       return '当前收藏夹未发现重复书签';
     }
@@ -949,7 +1064,21 @@ async function handleOmniboxInput(content: string, disposition: string): Promise
 
   if (content.startsWith('action:')) {
     const action = content.slice('action:'.length);
-    await executeActionCommand(action);
+    const res = await executeActionCommand(action);
+    if (res && typeof res === 'object' && res.copyText) {
+      try {
+        const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        if (activeTab?.id) {
+          await chrome.tabs.sendMessage(activeTab.id, {
+            type: 'yitab_copy_to_clipboard',
+            text: res.copyText,
+            message: res.message,
+          });
+        }
+      } catch (err) {
+        console.warn('[YiTab] Omnibox 剪贴板中继失败:', err);
+      }
+    }
     return;
   }
 

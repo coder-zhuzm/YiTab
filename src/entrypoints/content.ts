@@ -13,6 +13,18 @@ export default defineContentScript({
       } else if (msg && msg.type === 'yitab_toggle_palette') {
         toggleCommandPalette();
         sendResponse({ ok: true });
+      } else if (msg && msg.type === 'yitab_copy_to_clipboard') {
+        navigator.clipboard
+          .writeText(msg.text || '')
+          .then(() => {
+            if (msg.message) {
+              alert(msg.message);
+            }
+          })
+          .catch((err) => {
+            console.warn('[YiTab] 写入剪贴板失败:', err);
+          });
+        sendResponse({ ok: true });
       }
     });
 
@@ -895,8 +907,17 @@ function openCommandPalette() {
         type: 'executeCommand',
         action: item.commandAction,
       });
-      if (res && res.message) {
-        alert(res.message);
+      if (res) {
+        if (res.copyText) {
+          try {
+            await navigator.clipboard.writeText(res.copyText);
+          } catch (e) {
+            console.warn('[YiTab] 写入剪贴板失败:', e);
+          }
+        }
+        if (res.message) {
+          alert(res.message);
+        }
       }
       return;
     }

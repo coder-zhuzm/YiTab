@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { closeTabAfterSwitch, isLastTabInWindow, switchToTab } from '../src/lib/tab-close.ts';
+import { closeTabAfterSwitch, isLastTabInWindow, switchToTab, planCloseDuplicates } from '../src/lib/tab-close.ts';
 
 /** 可控的 tabs 替身：记录所有破坏性调用，便于断言「绝未调用 remove」。 */
 function makeApi({
@@ -394,4 +394,47 @@ test('Issue1 chain: a vanished source tab is a no-op, not an error', async () =>
 
   assert.equal(outcome, 'noop');
   assert.deepEqual(api.calls.remove, []);
+});
+
+test('planCloseDuplicates respects whitelist, protects pinned & active tabs, and picks optimal keeper', () => {
+  const mockSettings = {
+    matchMode: 'smart',
+    hashPolicy: 'keep',
+    whitelist: ['whitelist.example.com'],
+    interceptMode: 'ask',
+    closeSelf: true,
+    siteRules: [],
+  };
+
+  const tabs = [
+    // 组 1: 白名单域名，虽然有两个相同 URL，但绝不纳入清理
+    { id: 1, url: 'https://whitelist.example.com/page', active: false, pinned: false },
+    { id: 2, url: 'https://whitelist.example.com/page', active: false, pinned: false },
+
+    // 组 2: 普通重复标签，id 12 是当前 active 标签，必须作为 keeper 保留；id 11 是普通标签，应被关闭
+    { id: 11, url: 'https://example.com/search?q=1', active: false, pinned: false },
+    { id: 12, url: 'https://example.com/search?q=1', active: true, pinned: false },
+
+    // 组 3: 包含 pinned 标签，id 21 是 pinned 标签，作为 keeper；id 22 是普通标签，应被关闭
+    { id: 21, url: 'https://example.org/dashboard', active: false, pinned: true },
+    { id: 22, url: 'https://example.org/dashboard', active: false, pinned: false },
+
+    // 组 4: 内部协议，绝不处理
+    { id: 31, url: 'chrome://settings', active: false, pinned: false },
+    { id: 32, url: 'chrome://settings', active: false, pinned: false },
+
+    // 组 5: 独立标签
+    { id: 41, url: 'https://unique.org', active: false, pinned: false },
+  ];
+
+  const toRemove = planCloseDuplicates(tabs, mockSettings);
+
+  assert.ok(!toRemove.includes(1) && !toRemove.includes(2), 'Whitelisted tabs must not be removed');
+  assert.ok(!toRemove.includes(12), 'Active tab must be kept');
+  assert.ok(toRemove.includes(11), 'Duplicate sibling of active tab should be removed');
+  assert.ok(!toRemove.includes(21), 'Pinned tab must be kept');
+  assert.ok(toRemove.includes(22), 'Duplicate sibling of pinned tab should be removed');
+  assert.ok(!toRemove.includes(31) && !toRemove.includes(32), 'Internal chrome:// tabs must be ignored');
+  assert.ok(!toRemove.includes(41), 'Unique tab must not be removed');
+  assert.deepEqual(toRemove.sort((a, b) => a - b), [11, 22]);
 });
