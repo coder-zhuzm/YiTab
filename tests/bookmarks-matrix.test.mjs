@@ -121,3 +121,32 @@ test('filterBookmarkCards accurately filters by item title, domain, or folder na
   // 空搜索返回全部
   assert.equal(filterBookmarkCards(cards, '').length, 2);
 });
+
+test('filterBookmarkCards searches in allItems and recalls items beyond the display limit', () => {
+  const bookmarks = Array.from({ length: 15 }, (_, i) => ({
+    id: `item_${i}`,
+    title: i === 12 ? '特殊隐藏书签 DeepTarget' : `常规书签 ${i}`,
+    url: `https://example.com/page/${i}`,
+    domain: 'example.com',
+    folderPath: ['书签栏', '巨型目录'],
+  }));
+
+  // itemsPerCard = 6：默认切片只留下前 6 条
+  const cards = groupBookmarksByFolders(bookmarks, 5, 6);
+  assert.equal(cards[0].totalCount, 15);
+  assert.equal(cards[0].items.length, 6);
+  assert.equal(cards[0].allItems.length, 15);
+
+  // 搜索第 12 项（在默认 6 项之外）
+  const searchHit = filterBookmarkCards(cards, 'DeepTarget');
+  assert.equal(searchHit.length, 1);
+  assert.equal(searchHit[0].items.length, 1);
+  assert.equal(searchHit[0].items[0].title, '特殊隐藏书签 DeepTarget');
+
+  // 多关键词检索验证
+  const multiTokenHit = filterBookmarkCards(cards, '隐藏 常规');
+  assert.equal(multiTokenHit.length, 0);
+
+  const multiTokenHit2 = filterBookmarkCards(cards, '隐藏 DeepTarget');
+  assert.equal(multiTokenHit2.length, 1);
+});

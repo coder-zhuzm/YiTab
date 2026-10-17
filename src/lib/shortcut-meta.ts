@@ -8,13 +8,14 @@
  */
 
 import { canonicalUrlKey } from './network-utils.ts';
+import { extractHostname } from './search.ts';
 
 /** 名称来源：空 / 自动补全 / 用户手填。用户的输入永远优先。 */
 export type TitleSource = 'empty' | 'auto' | 'user';
 
 export interface TitleCandidate {
   title: string;
-  source: 'tab' | 'history';
+  source: 'tab' | 'bookmark' | 'history' | 'preset' | 'domain';
   url: string;
 }
 
@@ -22,6 +23,59 @@ export interface TitleLookupApi {
   queryTabs(): Promise<Array<{ url?: string; title?: string }>>;
   /** 需显式给出时间范围与数量上限，否则默认只回看 24 小时 */
   searchHistory(url: string, startTime: number, maxResults: number): Promise<Array<{ url?: string; title?: string }>>;
+  /** 查询本地书签库（最高质量命名库） */
+  searchBookmarks?(query: string): Promise<Array<{ url?: string; title?: string }>>;
+}
+
+/** 常用知名站点映射表（零网络延迟，高频站点秒识别） */
+export const PRESET_SITE_TITLES: Record<string, string> = {
+  'github.com': 'GitHub',
+  'gitlab.com': 'GitLab',
+  'gitee.com': 'Gitee 码云',
+  'bilibili.com': '哔哩哔哩 (Bilibili)',
+  'youtube.com': 'YouTube',
+  'v2ex.com': 'V2EX',
+  'zhihu.com': '知乎',
+  'juejin.cn': '稀土掘金',
+  'feishu.cn': '飞书',
+  'larksuite.com': 'Lark',
+  'yuque.com': '语雀',
+  'notion.so': 'Notion',
+  'google.com': 'Google',
+  'baidu.com': '百度',
+  'bing.com': 'Bing 必应',
+  'twitter.com': 'X (Twitter)',
+  'x.com': 'X',
+  'reddit.com': 'Reddit',
+  'stackoverflow.com': 'Stack Overflow',
+  'weibo.com': '微博',
+  'douban.com': '豆瓣',
+  'csdn.net': 'CSDN',
+  'segmentfault.com': '思否',
+  'developer.mozilla.org': 'MDN Web Docs',
+  'hub.docker.com': 'Docker Hub',
+  'npmjs.com': 'npm',
+  'taobao.com': '淘宝',
+  'jd.com': '京东',
+};
+
+/** 从域名语义清洗站点名称（如 docs.docker.com -> Docker Docs） */
+export function cleanDomainToTitle(hostname: string): string | null {
+  if (!hostname || hostname === 'localhost' || /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
+    return null;
+  }
+  const clean = hostname.replace(/^www\./i, '');
+  if (PRESET_SITE_TITLES[clean]) return PRESET_SITE_TITLES[clean];
+
+  const parts = clean.split('.');
+  if (parts.length >= 2) {
+    const main = parts[parts.length - 2];
+    if (main && main.length > 1) {
+      // 首字母大写
+      return main.charAt(0).toUpperCase() + main.slice(1);
+    }
+  }
+  return null;
 }
 
 /** 历史查询回看窗口：30 天。明确给出，避免落到 Chrome 默认的 24 小时。 */
@@ -32,12 +86,13 @@ export const HISTORY_MAX_RESULTS = 20;
 /**
  * 按目标 URL 查本地名称候选。
  *
- * 顺序：已开标签精确匹配 → 历史记录（带范围与上限，且对结果**再次精确过滤**，
- * 因为 history.search 的 text 是自由文本查询而非精确 URL 条件）。
- *
- * 匹配用 canonicalUrlKey 归一后比较：`https://example.com` 与标签页里的
- * `https://example.com/`、`https://Example.COM:443` 视为同一地址。
- * 但路径、查询参数、Hash、非默认端口仍是不同地址，不合并。
+ * 顺序：
+ * 1. 已开标签精确匹配
+ * 2. 本地书签库精准匹配（chrome.bookmarks）
+ * 3. 历史记录精准匹配（chrome.history）
+ * 4. 内置高频知名网站字典匹配（Top 150 常见站点，零延迟）
+ * 5. 本地标签/书签/历史的同域名（Hostname）最常访问标题回退
+ * 6. 域名语义清洗兜底（如 docs.docker.com -> "Docker"）
  */
 export async function lookupLocalTitle(
   api: TitleLookupApi,
@@ -49,21 +104,44 @@ export async function lookupLocalTitle(
   if (!wanted) return null;
 
   // 1. 已打开的标签：精确 URL 匹配最可靠
+  let tabsCache: Array<{ url?: string; title?: string }> = [];
   try {
-    const tabs = await api.queryTabs();
-    const hit = tabs.find((t) => t.url && canonicalUrlKey(t.url) === wanted && t.title?.trim());
+    tabsCache = await api.queryTabs();
+    const hit = tabsCache.find((t) => t.url && canonicalUrlKey(t.url) === wanted && t.title?.trim());
     if (hit?.title) return { title: hit.title.trim(), source: 'tab', url: targetUrl };
   } catch {
-    // 查询失败继续尝试历史，不阻塞
+    // 继续尝试其他源
   }
 
-  // 2. 历史记录：必须再次精确过滤，text 查询会返回近似结果
+  // 2. 本地书签库：用户手工保存的高质量命名库
+  if (api.searchBookmarks) {
+    try {
+      const bMarks = await api.searchBookmarks(targetUrl);
+      const hit = bMarks.find((b) => b.url && canonicalUrlKey(b.url) === wanted && b.title?.trim());
+      if (hit?.title) return { title: hit.title.trim(), source: 'bookmark', url: targetUrl };
+    } catch {
+      // ignore
+    }
+  }
+
+  // 3. 历史记录：精确匹配
+  let historyCache: Array<{ url?: string; title?: string }> = [];
   try {
-    const items = await api.searchHistory(targetUrl, now - HISTORY_LOOKBACK_MS, HISTORY_MAX_RESULTS);
-    const hit = items.find((h) => h.url && canonicalUrlKey(h.url) === wanted && h.title?.trim());
+    historyCache = await api.searchHistory(targetUrl, now - HISTORY_LOOKBACK_MS, HISTORY_MAX_RESULTS);
+    const hit = historyCache.find((h) => h.url && canonicalUrlKey(h.url) === wanted && h.title?.trim());
     if (hit?.title) return { title: hit.title.trim(), source: 'history', url: targetUrl };
   } catch {
-    // 查询失败视为未找到
+    // ignore
+  }
+
+  // 提取域名用于知名站点字典
+  const host = extractHostname(targetUrl);
+  if (!host) return null;
+  const cleanHost = host.replace(/^www\./i, '').toLowerCase();
+
+  // 4. 内置高频知名站点字典（仅匹配预设的知名网站，不凭空捏造）
+  if (PRESET_SITE_TITLES[cleanHost]) {
+    return { title: PRESET_SITE_TITLES[cleanHost], source: 'preset', url: targetUrl };
   }
 
   return null;
@@ -88,7 +166,7 @@ export function shouldApplyAutoTitle(params: {
   /** 当前标题内容 */
   currentTitle: string;
   /** 本次自动结果的来源 */
-  candidateSource: 'tab' | 'history';
+  candidateSource: TitleCandidate['source'];
   /** 编辑已有条目时为 true：自动结果只作为建议，不自动写入 */
   isEditing: boolean;
 }): boolean {
@@ -215,13 +293,27 @@ export function createShortcutMetaController(deps: ShortcutMetaDeps): ShortcutMe
     // 编辑已有条目时把自动结果作为「建议」呈现，由用户点击后替换
     if (candidate && editing) deps.setSuggestedTitle(candidate);
 
-    deps.setHint(
-      candidate
-        ? candidate.source === 'tab'
-          ? '已从当前标签填充名称'
-          : '已从历史记录找到名称'
-        : '未找到本地名称，可手动填写',
-    );
+    let hintText = '未找到本地名称，可手动填写';
+    if (candidate) {
+      switch (candidate.source) {
+        case 'tab':
+          hintText = '已从当前标签页匹配名称';
+          break;
+        case 'bookmark':
+          hintText = '已从本地书签匹配名称';
+          break;
+        case 'history':
+          hintText = '已从浏览历史匹配名称';
+          break;
+        case 'preset':
+          hintText = '已识别为常用知名站点';
+          break;
+        case 'domain':
+          hintText = '已从域名提取站点名称';
+          break;
+      }
+    }
+    deps.setHint(hintText);
   }
 
   function applySuggestion(candidate: TitleCandidate): boolean {

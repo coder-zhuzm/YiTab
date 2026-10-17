@@ -1,24 +1,32 @@
 :root {
   --bg-color: #f8fafc;
   --card-bg: #ffffff;
+  --card-bg-glass: rgba(255, 255, 255, 0.82);
+  --card-border-glass: rgba(226, 232, 240, 0.85);
   --text-primary: #0f172a;
   --text-secondary: #64748b;
   --border-color: #e2e8f0;
-  --hover-bg: #f1f5f9;
+  --hover-bg: rgba(241, 245, 249, 0.85);
   --accent-color: #3b82f6;
   --accent-light: #eff6ff;
+  --card-shadow: 0 4px 18px -2px rgba(15, 23, 42, 0.04), 0 2px 6px -1px rgba(15, 23, 42, 0.02);
+  --card-shadow-hover: 0 12px 28px -4px rgba(15, 23, 42, 0.09), 0 4px 10px -2px rgba(15, 23, 42, 0.03);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --bg-color: #0f172a;
     --card-bg: #1e293b;
+    --card-bg-glass: rgba(30, 41, 59, 0.78);
+    --card-border-glass: rgba(51, 65, 85, 0.75);
     --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
     --border-color: #334155;
-    --hover-bg: #334155;
+    --hover-bg: rgba(51, 65, 85, 0.8);
     --accent-color: #60a5fa;
-    --accent-light: #1e3a8a;
+    --accent-light: rgba(30, 58, 138, 0.4);
+    --card-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.28), 0 2px 6px -1px rgba(0, 0, 0, 0.16);
+    --card-shadow-hover: 0 12px 32px -4px rgba(0, 0, 0, 0.45), 0 4px 12px -2px rgba(0, 0, 0, 0.22);
   }
 }
 
@@ -30,12 +38,26 @@ body {
   margin: 0;
   padding: 0;
   background-color: var(--bg-color);
+  background-image:
+    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.08) 0px, transparent 55%),
+    radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.06) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(99, 102, 241, 0.04) 0px, transparent 55%);
+  background-attachment: fixed;
   color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
   overflow-x: hidden;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background-image:
+      radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.14) 0px, transparent 55%),
+      radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.09) 0px, transparent 50%),
+      radial-gradient(at 50% 100%, rgba(99, 102, 241, 0.07) 0px, transparent 55%);
+  }
 }
 
 ::-webkit-scrollbar {
@@ -72,23 +94,35 @@ body {
 }
 
 .greeting-time {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 700;
-  letter-spacing: -0.5px;
-  color: var(--text-primary);
-  line-height: 1.2;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  background: linear-gradient(135deg, var(--text-primary) 65%, var(--text-secondary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .greeting-subtitle {
   font-size: 13px;
   color: var(--text-secondary);
   margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .search-section {
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
+}
+
+.search-section .ant-card {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background: var(--card-bg-glass) !important;
 }
 
 .pinned-grid {
@@ -98,37 +132,55 @@ body {
 }
 
 .pinned-card {
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
+  background: var(--card-bg-glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--card-border-glass);
+  border-radius: 12px;
   padding: 12px 14px;
   display: flex;
   align-items: center;
   gap: 12px;
   text-decoration: none;
   color: inherit;
-  transition: all 0.18s ease;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
   position: relative;
+  box-shadow: var(--card-shadow);
 }
 
 .pinned-card:hover {
   transform: translateY(-2px);
   border-color: var(--accent-color);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--card-shadow-hover);
 }
 
 .pinned-card:hover .pinned-actions {
   display: flex !important;
+  opacity: 1 !important;
+}
+
+.pinned-actions {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  display: flex;
+  opacity: 0;
   gap: 2px;
+  transition: opacity 0.15s ease;
+  background: var(--card-bg-glass);
+  border-radius: 6px;
+  padding: 2px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
 .pinned-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
   flex-shrink: 0;
   object-fit: cover;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
 }
 
 .pinned-info {
@@ -166,30 +218,33 @@ body {
 }
 
 .recommendation-card {
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
+  background: var(--card-bg-glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--card-border-glass);
+  border-radius: 12px;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   text-decoration: none;
   color: inherit;
-  transition: all 0.18s ease;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
   position: relative;
+  box-shadow: var(--card-shadow);
 }
 
 .recommendation-card:hover {
   transform: translateY(-2px);
   border-color: var(--accent-color);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--card-shadow-hover);
 }
 
 .resume-capsule {
   background: var(--hover-bg);
   border: 1px dashed var(--border-color);
-  border-radius: 6px;
+  border-radius: 7px;
   padding: 5px 8px;
   font-size: 11.5px;
   color: var(--accent-color);
@@ -215,13 +270,22 @@ body {
 }
 
 .bookmark-folder-card {
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
+  background: var(--card-bg-glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--card-border-glass);
+  border-radius: 12px;
   padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  box-shadow: var(--card-shadow);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bookmark-folder-card:hover {
+  box-shadow: var(--card-shadow-hover);
+  border-color: rgba(59, 130, 246, 0.3);
 }
 
 .bookmark-folder-header {
@@ -236,12 +300,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 6px;
-  border-radius: 6px;
+  padding: 6px 8px;
+  border-radius: 7px;
   text-decoration: none;
   color: var(--text-primary);
   font-size: 12.5px;
-  transition: background 0.12s ease;
+  transition: all 0.15s ease;
   cursor: pointer;
 }
 
@@ -250,15 +314,60 @@ body {
   color: var(--accent-color);
 }
 
+.bookmark-link-item:hover .bookmark-item-more-btn {
+  opacity: 1 !important;
+}
+
+.bookmark-item-more-btn {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  padding: 0 4px !important;
+  height: 20px !important;
+  color: var(--text-secondary);
+}
+
+.bookmark-domain-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+
+.bookmark-folder-expand-btn {
+  margin-top: 4px;
+  padding: 6px 0;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--accent-color);
+  background: var(--hover-bg);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.bookmark-folder-expand-btn:hover {
+  background: var(--accent-light);
+  color: var(--accent-color);
+}
+
 .session-resume-bar {
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
+  background: var(--card-bg-glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--card-border-glass);
   border-radius: 12px;
   padding: 12px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  box-shadow: var(--card-shadow);
+  transition: all 0.2s ease;
 }
 
-
+.session-resume-bar:hover {
+  box-shadow: var(--card-shadow-hover);
+}

@@ -9,6 +9,7 @@
  */
 
 import { cleanCapsuleTitle } from './recommendations.ts';
+import { formatLiveStatusGreeting } from './network-utils.ts';
 import {
   type AiSettings,
   DEFAULT_AI_SETTINGS,
@@ -326,7 +327,7 @@ export async function generateMorningBriefing(
   snapshotCount: number,
   customSettings?: AiSettings,
 ): Promise<string> {
-  const defaultBriefing = `☀️ 早上好！当前有 ${openTabCount} 个活动页面与 ${snapshotCount} 个未完工现场，祝工作顺心！`;
+  const defaultBriefing = formatLiveStatusGreeting(openTabCount, snapshotCount);
   const settings = customSettings || (await getAiSettings());
 
   if (!settings.enabled || !settings.morningBriefing) {
