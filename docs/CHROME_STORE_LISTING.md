@@ -164,7 +164,7 @@ Tired of tab clutter? Frequently reopening duplicate GitHub PRs, Jira tickets, d
 
 ## 模块 5：上传文件清单
 
-- **代码压缩包**：`.output/yitab-1.2.0-chrome.zip`（由 `npm run zip` 生成）
+- **代码压缩包**：`.output/yitab-1.2.1-chrome.zip`（由 `npm run zip` 生成）
 - **商店截图**：见 `docs/store-assets/screenshots/`（标准 1280 × 800 像素）
 - **商店图标**：`docs/store-assets/icon-128.png`（128 × 128 像素）
 - **小型宣传瓷砖（可选）**：`docs/store-assets/promo-tile-440x280.png`
