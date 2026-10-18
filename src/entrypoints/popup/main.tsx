@@ -12,6 +12,7 @@ import {
   Space,
   Tabs,
   Tag,
+  theme,
   Tooltip,
   Typography,
 } from 'antd';
@@ -56,6 +57,9 @@ import {
 } from '@/lib/bookmarks';
 import { ESTIMATED_MB_PER_TAB, type TabHealthReport } from '@/lib/tab-health';
 import { APP_VERSION } from '@/lib/version';
+import { useThemeTokens } from '@/lib/theme-tokens';
+import { useThemeMode, applyThemeToDocument } from '@/lib/theme-mode';
+import { ThemeModeButton } from '@/components/ThemeToggle';
 import {
   analyzeTabsByDomain,
   deleteSnapshot,
@@ -73,6 +77,11 @@ import {
 const { Text, Paragraph } = Typography;
 
 function PopupApp() {
+  const { isDark, mode: themeMode, setMode: setThemeMode } = useThemeMode();
+  const { tk } = useThemeTokens(isDark);
+
+  // 让原生控件与页面底色跟随主题，避免首帧闪白
+  useEffect(() => applyThemeToDocument(isDark, tk.canvas), [isDark, tk.canvas]);
   const [currentTabs, setCurrentTabs] = useState<TabSnapshotItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTabKey, setActiveTabKey] = useState('organize');
@@ -449,6 +458,7 @@ function PopupApp() {
   return (
     <ConfigProvider
       theme={{
+        algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
           colorPrimary: '#4f46e5',
           borderRadius: 8,
@@ -457,7 +467,7 @@ function PopupApp() {
         },
       }}
     >
-      <div style={{ padding: '14px 16px', background: '#f8fafc', minHeight: 520, boxSizing: 'border-box' }}>
+      <div style={{ padding: '14px 16px', background: tk.canvas, minHeight: 520, boxSizing: 'border-box' }}>
         {/* Header */}
         <div
           style={{
@@ -466,7 +476,7 @@ function PopupApp() {
             justifyContent: 'space-between',
             marginBottom: 12,
             paddingBottom: 10,
-            borderBottom: '1px solid #e2e8f0',
+            borderBottom: `1px solid ${tk.hairline}`,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -489,7 +499,7 @@ function PopupApp() {
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Text strong style={{ fontSize: 15, color: '#0f172a' }}>
+                <Text strong style={{ fontSize: 15, color: tk.ink }}>
                   YiTab 一签
                 </Text>
                 <Tag
@@ -511,11 +521,12 @@ function PopupApp() {
             </div>
           </div>
           <Space size={4}>
+            <ThemeModeButton mode={themeMode} onChange={setThemeMode} ink3={tk.ink3} />
             <Tooltip title="刷新窗口与健康数据">
               <Button
                 type="text"
                 size="small"
-                icon={<ReloadOutlined style={{ fontSize: 13, color: '#64748b' }} />}
+                icon={<ReloadOutlined style={{ fontSize: 13, color: tk.ink3 }} />}
                 onClick={refreshCurrentWindow}
               />
             </Tooltip>
@@ -523,7 +534,7 @@ function PopupApp() {
               <Button
                 type="text"
                 size="small"
-                icon={<SettingOutlined style={{ fontSize: 14, color: '#64748b' }} />}
+                icon={<SettingOutlined style={{ fontSize: 14, color: tk.ink3 }} />}
                 onClick={() => chrome.runtime.openOptionsPage()}
               />
             </Tooltip>
@@ -551,12 +562,12 @@ function PopupApp() {
                     size="small"
                     style={{
                       borderRadius: 10,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                      border: '1px solid #e2e8f0',
+                      boxShadow: tk.shadowCard,
+                      border: `1px solid ${tk.hairline}`,
                     }}
                   >
                     <div style={{ marginBottom: 10 }}>
-                      <Text strong style={{ fontSize: 13, color: '#1e293b' }}>
+                      <Text strong style={{ fontSize: 13, color: tk.ink }}>
                         域名智能聚合与标签归拢
                       </Text>
                       <Paragraph
@@ -570,7 +581,7 @@ function PopupApp() {
                     {domainAnalysis.length > 0 ? (
                       <div
                         style={{
-                          background: '#f1f5f9',
+                          background: tk.surfaceMuted,
                           padding: '8px 10px',
                           borderRadius: 6,
                           marginBottom: 12,
@@ -587,8 +598,8 @@ function PopupApp() {
                                 margin: 0,
                                 fontSize: 11,
                                 borderRadius: 4,
-                                border: '1px solid #cbd5e1',
-                                background: '#fff',
+                                border: `1px solid ${tk.hairlineStrong}`,
+                                background: tk.surface,
                               }}
                             >
                               <span
@@ -610,7 +621,7 @@ function PopupApp() {
                     ) : (
                       <div
                         style={{
-                          background: '#f8fafc',
+                          background: tk.canvas,
                           padding: '8px 10px',
                           borderRadius: 6,
                           marginBottom: 12,
@@ -654,13 +665,13 @@ function PopupApp() {
                     size="small"
                     style={{
                       borderRadius: 10,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                      border: '1px solid #e2e8f0',
+                      boxShadow: tk.shadowCard,
+                      border: `1px solid ${tk.hairline}`,
                     }}
                   >
                     <div style={{ marginBottom: 10 }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Text strong style={{ fontSize: 13, color: '#1e293b' }}>
+                        <Text strong style={{ fontSize: 13, color: tk.ink }}>
                           闲置休眠与内存沉淀
                         </Text>
                         {tabHealth && (
@@ -679,18 +690,18 @@ function PopupApp() {
 
                     <div
                       style={{
-                        background: '#f8fafc',
+                        background: tk.canvas,
                         padding: '8px 10px',
                         borderRadius: 6,
                         marginBottom: 12,
                         fontSize: 11,
-                        color: '#64748b',
+                        color: tk.ink3,
                         display: 'flex',
                         justifyContent: 'space-between',
                       }}
                     >
-                      <span>已休眠: <strong style={{ color: '#0f172a' }}>{tabHealth?.discardedCount ?? 0}</strong></span>
-                      <span>发声/保护: <strong style={{ color: '#0f172a' }}>{(tabHealth?.audibleCount ?? 0) + (tabHealth?.pinnedCount ?? 0)}</strong></span>
+                      <span>已休眠: <strong style={{ color: tk.ink }}>{tabHealth?.discardedCount ?? 0}</strong></span>
+                      <span>发声/保护: <strong style={{ color: tk.ink }}>{(tabHealth?.audibleCount ?? 0) + (tabHealth?.pinnedCount ?? 0)}</strong></span>
                       <span>可休眠: <strong style={{ color: '#4f46e5' }}>{tabHealth?.eligibleDiscardCount ?? 0}</strong></span>
                     </div>
 
@@ -733,7 +744,7 @@ function PopupApp() {
               children: (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <Input
-                    prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+                    prefix={<SearchOutlined style={{ color: tk.ink3 }} />}
                     placeholder="搜索标签、书签或快捷指令 (Alt+K 随时唤出)"
                     allowClear
                     value={searchQuery}
@@ -812,19 +823,19 @@ function PopupApp() {
                               gap: 10,
                               padding: '8px 10px',
                               borderRadius: 8,
-                              background: '#fff',
-                              border: '1px solid #e2e8f0',
+                              background: tk.surface,
+                              border: `1px solid ${tk.hairline}`,
                               cursor: 'pointer',
                               transition: 'all 0.15s ease',
-                              boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                              boxShadow: tk.shadowCard,
                             }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.borderColor = '#4f46e5';
-                              e.currentTarget.style.background = '#f8fafc';
+                              e.currentTarget.style.background = tk.surfaceHover;
                             }}
                             onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = '#e2e8f0';
-                              e.currentTarget.style.background = '#fff';
+                              e.currentTarget.style.borderColor = tk.hairline;
+                              e.currentTarget.style.background = tk.surface;
                             }}
                           >
                             <div
@@ -832,7 +843,7 @@ function PopupApp() {
                                 width: 24,
                                 height: 24,
                                 borderRadius: 6,
-                                background: '#f1f5f9',
+                                background: tk.surfaceMuted,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -927,13 +938,13 @@ function PopupApp() {
                     size="small"
                     style={{
                       borderRadius: 10,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                      border: '1px solid #e2e8f0',
+                      boxShadow: tk.shadowCard,
+                      border: `1px solid ${tk.hairline}`,
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                       <div>
-                        <Text strong style={{ fontSize: 13, color: '#1e293b' }}>
+                        <Text strong style={{ fontSize: 13, color: tk.ink }}>
                           书签智能去重
                         </Text>
                         <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
@@ -953,18 +964,18 @@ function PopupApp() {
                     {bookmarkReport ? (
                       <div
                         style={{
-                          background: '#f8fafc',
+                          background: tk.canvas,
                           padding: '8px 10px',
                           borderRadius: 6,
                           marginBottom: 10,
                           fontSize: 11,
                           display: 'flex',
                           justifyContent: 'space-between',
-                          color: '#64748b',
+                          color: tk.ink3,
                         }}
                       >
-                        <span>总书签: <strong style={{ color: '#0f172a' }}>{bookmarkReport.totalBookmarks}</strong></span>
-                        <span>文件夹: <strong style={{ color: '#0f172a' }}>{bookmarkReport.totalFolders}</strong></span>
+                        <span>总书签: <strong style={{ color: tk.ink }}>{bookmarkReport.totalBookmarks}</strong></span>
+                        <span>文件夹: <strong style={{ color: tk.ink }}>{bookmarkReport.totalFolders}</strong></span>
                         <span>重复组: <strong style={{ color: '#4f46e5' }}>{bookmarkReport.duplicateGroupCount}</strong></span>
                         <span>可清理: <strong style={{ color: '#ef4444' }}>{bookmarkReport.redundantCount}</strong></span>
                       </div>
@@ -1049,11 +1060,11 @@ function PopupApp() {
                             <div
                               key={group.groupKey}
                               style={{
-                                background: '#fff',
-                                border: '1px solid #e2e8f0',
+                                background: tk.surface,
+                                border: `1px solid ${tk.hairline}`,
                                 borderRadius: 8,
                                 padding: '8px 10px',
-                                boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                                boxShadow: tk.shadowCard,
                               }}
                             >
                               <div
@@ -1061,7 +1072,7 @@ function PopupApp() {
                                 onClick={() => setExpandedGroupKey(isExpanded ? null : group.groupKey)}
                               >
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                  <Text strong ellipsis style={{ fontSize: 13, color: '#1e293b', display: 'block' }}>
+                                  <Text strong ellipsis style={{ fontSize: 13, color: tk.ink, display: 'block' }}>
                                     {group.title}
                                   </Text>
                                   <Text type="secondary" ellipsis style={{ fontSize: 11, display: 'block' }}>
@@ -1074,7 +1085,7 @@ function PopupApp() {
                               </div>
 
                               {isExpanded && (
-                                <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${tk.hairline}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
                                   {group.items.map((it) => {
                                     const isKeep = it.id === group.recommendedKeepId;
                                     return (
@@ -1086,8 +1097,8 @@ function PopupApp() {
                                           justifyContent: 'space-between',
                                           padding: '4px 6px',
                                           borderRadius: 4,
-                                          background: isKeep ? '#f0fdf4' : '#fff',
-                                          border: isKeep ? '1px solid #bbf7d0' : '1px solid #f1f5f9',
+                                          background: isKeep ? tk.successSoft : tk.surface,
+                                          border: isKeep ? `1px solid ${tk.successBorder}` : `1px solid ${tk.hairline}`,
                                         }}
                                       >
                                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -1098,7 +1109,7 @@ function PopupApp() {
                                             >
                                               {isKeep ? '推荐保留' : '待清理'}
                                             </Tag>
-                                            <Text ellipsis style={{ fontSize: 12, color: '#334155' }}>
+                                            <Text ellipsis style={{ fontSize: 12, color: tk.ink2 }}>
                                               {it.title}
                                             </Text>
                                           </div>
@@ -1147,7 +1158,7 @@ function PopupApp() {
                       count={snapshots.length}
                       style={{
                         marginLeft: 4,
-                        backgroundColor: '#eef2ff',
+                        backgroundColor: tk.accentSoft,
                         color: '#4f46e5',
                         boxShadow: 'none',
                       }}
@@ -1200,11 +1211,11 @@ function PopupApp() {
                           <div
                             key={snap.id}
                             style={{
-                              background: '#fff',
-                              border: '1px solid #e2e8f0',
+                              background: tk.surface,
+                              border: `1px solid ${tk.hairline}`,
                               borderRadius: 8,
                               padding: '10px 12px',
-                              boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                              boxShadow: tk.shadowCard,
                             }}
                           >
                             <div
@@ -1224,7 +1235,7 @@ function PopupApp() {
                                   <Text
                                     strong
                                     ellipsis
-                                    style={{ fontSize: 13, color: '#0f172a', maxWidth: 190 }}
+                                    style={{ fontSize: 13, color: tk.ink, maxWidth: 190 }}
                                   >
                                     {snap.name}
                                   </Text>
@@ -1285,7 +1296,7 @@ function PopupApp() {
                                 style={{
                                   marginTop: 8,
                                   paddingTop: 8,
-                                  borderTop: '1px solid #f1f5f9',
+                                  borderTop: `1px solid ${tk.hairline}`,
                                   maxHeight: 160,
                                   overflowY: 'auto',
                                 }}
@@ -1309,7 +1320,7 @@ function PopupApp() {
                                     </Text>
                                     <Text
                                       ellipsis
-                                      style={{ flex: 1, color: '#334155' }}
+                                      style={{ flex: 1, color: tk.ink2 }}
                                       title={t.title || t.url}
                                     >
                                       {t.title || t.url}
@@ -1333,9 +1344,9 @@ function PopupApp() {
                   )}
 
                   {/* 导出工具集成 */}
-                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
+                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${tk.hairline}` }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <Text strong style={{ fontSize: 12, color: '#334155' }}>
+                      <Text strong style={{ fontSize: 12, color: tk.ink2 }}>
                         多格式快速导出
                       </Text>
                       <Radio.Group

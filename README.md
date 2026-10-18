@@ -32,7 +32,10 @@
 > 接管 Chrome 空白页，打造首屏冷启动 < 30ms 的高效极简直达面板。
 
 <p align="center">
-  <img src="./docs/images/yitab-preview-newtab.png" alt="YiTab 工作台" width="850" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/images/yitab-preview-newtab-dark.png" />
+    <img src="./docs/images/yitab-preview-newtab.png" alt="YiTab 工作台" width="850" />
+  </picture>
 </p>
 
 - **内网与端口免搜索直达**：智能识别私有 IPv4、`localhost`、`[::1]`、内网 TLD（`.corp`、`.oa`、`.lan`）及特定端口，回车直接导航。
@@ -47,7 +50,10 @@
 > 从源头杜绝相同页面多开，支持静默聚焦切换与吸顶确认管理。
 
 <p align="center">
-  <img src="./docs/images/yitab-preview-confirm.png" alt="YiTab 拦截确认页" width="850" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/images/yitab-preview-confirm-dark.png" />
+    <img src="./docs/images/yitab-preview-confirm.png" alt="YiTab 拦截确认页" width="850" />
+  </picture>
 </p>
 
 - **双层拦截架构**：兼顾普通整页跳转（网络提交前拦截）与单页应用内部无刷新路由（Shadow DOM 轻量浮窗），保护当前输入状态。
@@ -75,25 +81,48 @@
 <table align="center">
   <tr>
     <td align="center" width="50%">
-      <img src="./docs/images/yitab-preview-palette.png" alt="全局命令面板" />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="./docs/images/yitab-preview-palette-dark.png" />
+        <img src="./docs/images/yitab-preview-palette.png" alt="全局命令面板" />
+      </picture>
       <br /><strong>全局命令面板 (Alt+K / Cmd+K)</strong>
     </td>
     <td align="center" width="50%">
-      <img src="./docs/images/yitab-preview-popup.png" alt="控制弹窗" />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="./docs/images/yitab-preview-popup-dark.png" />
+        <img src="./docs/images/yitab-preview-popup.png" alt="控制弹窗" />
+      </picture>
       <br /><strong>工具栏控制中心 (Popup)</strong>
     </td>
   </tr>
   <tr>
     <td align="center" width="50%">
-      <img src="./docs/images/yitab-preview-spa-toast.png" alt="SPA 路由轻量提示" />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="./docs/images/yitab-preview-spa-toast-dark.png" />
+        <img src="./docs/images/yitab-preview-spa-toast.png" alt="SPA 路由轻量提示" />
+      </picture>
       <br /><strong>SPA 路由轻量浮窗 (Shadow DOM)</strong>
     </td>
     <td align="center" width="50%">
-      <img src="./docs/images/yitab-preview-options.png" alt="规则与端侧智能配置中心" />
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="./docs/images/yitab-preview-options-dark.png" />
+        <img src="./docs/images/yitab-preview-options.png" alt="规则与端侧智能配置中心" />
+      </picture>
       <br /><strong>规则与端侧智能配置中心 (Options)</strong>
     </td>
   </tr>
+  <tr>
+    <td align="center" colspan="2" width="100%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="./docs/images/yitab-preview-bookmarks-dark.png" />
+        <img src="./docs/images/yitab-preview-bookmarks.png" alt="书签健康与生态治理" width="850" />
+      </picture>
+      <br /><strong>书签健康与生态治理 (Options)</strong>
+    </td>
+  </tr>
 </table>
+
+> 以上截图均提供浅色 / 深色两版，随 GitHub 主题自动切换；各界面均支持手动切换浅色 / 深色或跟随系统。
 
 ---
 

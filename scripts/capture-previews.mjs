@@ -1,10 +1,31 @@
 // Automatically captures high-resolution Retina screenshots of YiTab's core UI surfaces.
+// Each surface is captured twice: light (default file name) and dark (`-dark` suffix).
 // Run: node scripts/capture-previews.mjs
 import http from 'node:http';
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
+
+/** Chromium 内核可执行文件：优先 CHROME_PATH，其次各平台常见安装位置。
+ *  注意：Chrome 137+ 的品牌版已移除 --load-extension，需用 Chrome for Testing / Chromium。 */
+const CHROME_CANDIDATES = [
+  process.env.CHROME_PATH,
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+  '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  '/usr/bin/google-chrome',
+  // Playwright 缓存的 Chrome for Testing（支持 --load-extension）
+  ...['1223'].flatMap((v) => [
+    `${process.env.HOME}/Library/Caches/ms-playwright/chromium-${v}/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`,
+    `${process.env.HOME}/.cache/ms-playwright/chromium-${v}/chrome-linux64/chrome`,
+  ]),
+].filter(Boolean);
+const chromePath = CHROME_CANDIDATES.find((p) => existsSync(p));
+if (!chromePath) {
+  throw new Error(`未找到 Chromium 内核，请设置 CHROME_PATH。已尝试：\n${CHROME_CANDIDATES.join('\n')}`);
+}
 
 const testServer = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -18,7 +39,7 @@ const profile = await mkdtemp(join(tmpdir(), 'yitab-preview-'));
 const extension = resolve(new URL('../.output/chrome-mv3', import.meta.url).pathname);
 const port = 9338;
 const proc = spawn(
-  '/usr/bin/chromium',
+  chromePath,
   [
     '--headless=new',
     '--no-sandbox',
@@ -58,6 +79,7 @@ async function connect(wsUrl) {
     ws.send(JSON.stringify({ id, method, params }));
   });
   return {
+    ws,
     call,
     close: () => ws.close(),
     evaluate: async expression => {
@@ -68,140 +90,173 @@ async function connect(wsUrl) {
   };
 }
 
+const outDir = resolve(new URL('../docs/images', import.meta.url).pathname);
+const THEMES = ['light', 'dark'];
+
+/** 显式模拟系统配色，避免受构建机自身主题影响。 */
+async function emulateTheme(client, theme) {
+  await client.call('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: theme }],
+  });
+}
+
+function fileFor(name, theme) {
+  return join(outDir, theme === 'dark' ? `${name}-dark.png` : `${name}.png`);
+}
+
+async function saveScreenshot(client, name, theme, extra = {}) {
+  await delay(600);
+  const { data } = await client.call('Page.captureScreenshot', { format: 'png', ...extra });
+  await writeFile(fileFor(name, theme), Buffer.from(data, 'base64'));
+  console.log(`Captured: docs/images/${theme === 'dark' ? `${name}-dark.png` : `${name}.png`}`);
+}
+
+/** 打开页面 → 设置配色 → 等待渲染 → 截图。 */
+async function capturePage({ url, name, width, height, readyText, afterReady, clip }) {
+  for (const theme of THEMES) {
+    const { targetId } = await browser.call('Target.createTarget', { url });
+    const target = await until(async () => (await targets()).find(t => t.id === targetId), `${name} target`);
+    const client = await connect(target.webSocketDebuggerUrl);
+    await client.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: false });
+    await emulateTheme(client, theme);
+    // 配色需在渲染前生效：重新加载一次，避免 React 首帧沿用系统主题
+    await client.call('Page.reload', { ignoreCache: false });
+    await until(() => client.evaluate('document.readyState === "complete"'), `${name} reloaded`);
+    await until(() => client.evaluate(`document.body.innerText.includes(${JSON.stringify(readyText)})`), `${name} rendered`);
+    if (afterReady) await afterReady(client);
+    await saveScreenshot(client, name, theme, clip ? { clip } : {});
+    client.close();
+    await browser.call('Target.closeTarget', { targetId });
+  }
+}
+
 let browser;
 try {
-  const worker = await until(async () => (await targets()).find(t => t.type === 'service_worker' && t.url.startsWith('chrome-extension://')), 'extension worker');
+  const worker = await until(
+    async () =>
+      (await targets()).find(
+        (t) => t.type === 'service_worker' && t.url.endsWith('/background.js'),
+      ),
+    'extension worker',
+  );
   const origin = `chrome-extension://${new URL(worker.url).hostname}`;
   const browserInfo = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
   browser = await connect(browserInfo.webSocketDebuggerUrl);
 
-  const outDir = resolve(new URL('../docs/images', import.meta.url).pathname);
+  // 1. Options Page
+  await capturePage({
+    url: `${origin}/options.html`,
+    name: 'yitab-preview-options',
+    width: 1280,
+    height: 960,
+    readyText: '去重拦截策略',
+  });
 
-  // 1. Screenshot Options Page (Retina 2x)
+  // 2. Confirm Page（先准备一次重复打开，产生 confirm.html）
   {
-    const { targetId } = await browser.call('Target.createTarget', { url: `${origin}/options.html` });
-    const target = await until(async () => (await targets()).find(t => t.id === targetId), 'options target');
-    const client = await connect(target.webSocketDebuggerUrl);
-    await client.call('Emulation.setDeviceMetricsOverride', { width: 1280, height: 960, deviceScaleFactor: 2, mobile: false });
-    await until(() => client.evaluate(`document.body.innerText.includes('智能匹配')`), 'options rendered');
-    await delay(600);
-    const { data } = await client.call('Page.captureScreenshot', { format: 'png' });
-    await writeFile(join(outDir, 'yitab-preview-options.png'), Buffer.from(data, 'base64'));
-    console.log('Captured: docs/images/yitab-preview-options.png');
-    client.close();
-  }
-
-  // 2. Screenshot Confirm Page (Retina 2x)
-  {
-    // Ensure interceptMode is 'ask'
     const { targetId: optId } = await browser.call('Target.createTarget', { url: `${origin}/options.html` });
     const optTarget = await until(async () => (await targets()).find(t => t.id === optId), 'optTarget');
     const optClient = await connect(optTarget.webSocketDebuggerUrl);
     await optClient.evaluate(`chrome.storage.sync.set({ matchMode: 'smart', interceptMode: 'ask' })`);
     optClient.close();
+    await browser.call('Target.closeTarget', { targetId: optId });
 
-    // Open first tab
     const { targetId: firstTabId } = await browser.call('Target.createTarget', { url: `${serverBase}/issues/42?utm_source=slack&tab=discussion` });
     const firstTarget = await until(async () => (await targets()).find(t => t.id === firstTabId), 'first tab');
     const firstClient = await connect(firstTarget.webSocketDebuggerUrl);
     await until(() => firstClient.evaluate('document.readyState === "complete"'), 'first tab loaded');
 
-    // Open duplicate tab -> triggers interception to confirm.html
     const { targetId: dupId } = await browser.call('Target.createTarget', { url: `${serverBase}/issues/42?utm_source=second&tab=discussion` });
     const confirmTarget = await until(async () => (await targets()).find(t => t.id === dupId && t.url.includes('/confirm.html')), 'confirm target');
-    const confirmClient = await connect(confirmTarget.webSocketDebuggerUrl);
-    await confirmClient.call('Emulation.setDeviceMetricsOverride', { width: 1200, height: 780, deviceScaleFactor: 2, mobile: false });
-    await until(() => confirmClient.evaluate(`document.body.innerText.includes('找到 1 个匹配标签')`), 'confirm rendered');
-    await delay(600);
-    const { data } = await confirmClient.call('Page.captureScreenshot', { format: 'png' });
-    await writeFile(join(outDir, 'yitab-preview-confirm.png'), Buffer.from(data, 'base64'));
-    console.log('Captured: docs/images/yitab-preview-confirm.png');
-    confirmClient.close();
+
+    for (const theme of THEMES) {
+      const confirmClient = await connect(confirmTarget.webSocketDebuggerUrl);
+      await confirmClient.call('Emulation.setDeviceMetricsOverride', { width: 1200, height: 780, deviceScaleFactor: 2, mobile: false });
+      await emulateTheme(confirmClient, theme);
+      await confirmClient.call('Page.reload', { ignoreCache: false });
+      await until(() => confirmClient.evaluate('document.readyState === "complete"'), 'confirm reloaded');
+      await until(() => confirmClient.evaluate(`document.body.innerText.includes('找到 1 个匹配标签')`), 'confirm rendered');
+      await saveScreenshot(confirmClient, 'yitab-preview-confirm', theme);
+      confirmClient.close();
+    }
     firstClient.close();
   }
 
-  // 3. Screenshot SPA Toast Banner (Retina 2x)
+  // 3. SPA Toast Banner（pushState 后浮窗才出现，故配色需在 pushState 之前设置）
   {
-    const initialUrl = `${serverBase}/issues/99?tab=code`;
-    const { targetId } = await browser.call('Target.createTarget', { url: initialUrl });
-    const target = await until(async () => (await targets()).find(t => t.id === targetId), 'spa base tab');
-    const clientInitial = await connect(target.webSocketDebuggerUrl);
-    await until(() => clientInitial.evaluate('document.readyState === "complete"'), 'spa base loaded');
+    for (const theme of THEMES) {
+      const { targetId: baseId } = await browser.call('Target.createTarget', { url: `${serverBase}/issues/99?tab=code` });
+      const baseTarget = await until(async () => (await targets()).find(t => t.id === baseId), 'spa base tab');
+      const clientInitial = await connect(baseTarget.webSocketDebuggerUrl);
+      await until(() => clientInitial.evaluate('document.readyState === "complete"'), 'spa base loaded');
 
-    const { targetId: spaTabId } = await browser.call('Target.createTarget', { url: `${serverBase}/dashboard` });
-    const spaTarget = await until(async () => (await targets()).find(t => t.id === spaTabId && t.url.includes('/dashboard')), 'SPA tab target');
-    const clientSpa = await connect(spaTarget.webSocketDebuggerUrl);
-    await clientSpa.call('Emulation.setDeviceMetricsOverride', { width: 1200, height: 600, deviceScaleFactor: 2, mobile: false });
-    await until(() => clientSpa.evaluate('document.readyState === "complete"'), 'SPA tab loaded');
-    await delay(500);
+      const { targetId: spaTabId } = await browser.call('Target.createTarget', { url: `${serverBase}/dashboard` });
+      const spaTarget = await until(async () => (await targets()).find(t => t.id === spaTabId && t.url.includes('/dashboard')), 'SPA tab target');
+      const clientSpa = await connect(spaTarget.webSocketDebuggerUrl);
+      await clientSpa.call('Emulation.setDeviceMetricsOverride', { width: 1200, height: 600, deviceScaleFactor: 2, mobile: false });
+      await emulateTheme(clientSpa, theme);
+      await until(() => clientSpa.evaluate('document.readyState === "complete"'), 'SPA tab loaded');
+      await delay(400);
 
-    await clientSpa.evaluate(`history.pushState(null, '', '/issues/99?tab=code')`);
-    await until(() => clientSpa.evaluate(`Boolean(document.getElementById('yitab-spa-toast-root'))`), 'toast mounted');
-    await delay(500);
+      await clientSpa.evaluate(`history.pushState(null, '', '/issues/99?tab=code')`);
+      await until(() => clientSpa.evaluate(`Boolean(document.getElementById('yitab-spa-toast-root'))`), 'toast mounted');
 
-    const { data } = await clientSpa.call('Page.captureScreenshot', {
-      format: 'png',
-      clip: { x: 760, y: 0, width: 440, height: 260, scale: 2 },
-    });
-    await writeFile(join(outDir, 'yitab-preview-spa-toast.png'), Buffer.from(data, 'base64'));
-    console.log('Captured: docs/images/yitab-preview-spa-toast.png');
-    clientInitial.close();
-    clientSpa.close();
+      await saveScreenshot(clientSpa, 'yitab-preview-spa-toast', theme, {
+        clip: { x: 760, y: 0, width: 440, height: 260, scale: 2 },
+      });
+      clientInitial.close();
+      clientSpa.close();
+      await browser.call('Target.closeTarget', { targetId: baseId });
+      await browser.call('Target.closeTarget', { targetId: spaTabId });
+    }
   }
 
-  // 4. Screenshot Popup UI (Retina 2x)
+  // 4. Popup UI
+  await capturePage({
+    url: `${origin}/popup.html`,
+    name: 'yitab-preview-popup',
+    width: 400,
+    height: 580,
+    readyText: '域名智能聚合',
+  });
+
+  // 5. Global Command Palette（Alt+K 触发，需在触发前设定配色）
   {
-    const { targetId } = await browser.call('Target.createTarget', { url: `${origin}/popup.html` });
-    const target = await until(async () => (await targets()).find(t => t.id === targetId), 'popup target');
-    const client = await connect(target.webSocketDebuggerUrl);
-    await client.call('Emulation.setDeviceMetricsOverride', { width: 400, height: 580, deviceScaleFactor: 2, mobile: false });
-    await until(() => client.evaluate(`document.body.innerText.includes('域名智能聚合')`), 'popup rendered');
-    await delay(600);
-    const { data } = await client.call('Page.captureScreenshot', { format: 'png' });
-    await writeFile(join(outDir, 'yitab-preview-popup.png'), Buffer.from(data, 'base64'));
-    console.log('Captured: docs/images/yitab-preview-popup.png');
-    client.close();
+    for (const theme of THEMES) {
+      const { targetId } = await browser.call('Target.createTarget', { url: `${serverBase}/dashboard` });
+      const target = await until(async () => (await targets()).find(t => t.id === targetId), 'palette target tab');
+      const client = await connect(target.webSocketDebuggerUrl);
+      await client.call('Emulation.setDeviceMetricsOverride', { width: 1200, height: 720, deviceScaleFactor: 2, mobile: false });
+      await emulateTheme(client, theme);
+      await until(() => client.evaluate('document.readyState === "complete"'), 'target loaded');
+      await delay(400);
+
+      await client.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', altKey: true, bubbles: true }))`);
+      await until(() => client.evaluate(`Boolean(document.getElementById('yitab-command-palette-root'))`), 'palette opened');
+
+      await saveScreenshot(client, 'yitab-preview-palette', theme);
+      client.close();
+      await browser.call('Target.closeTarget', { targetId });
+    }
   }
 
-  // 5. Screenshot Global Command Palette (Retina 2x)
-  {
-    const { targetId } = await browser.call('Target.createTarget', { url: `${serverBase}/dashboard` });
-    const target = await until(async () => (await targets()).find(t => t.id === targetId), 'palette target tab');
-    const client = await connect(target.webSocketDebuggerUrl);
-    await client.call('Emulation.setDeviceMetricsOverride', { width: 1200, height: 720, deviceScaleFactor: 2, mobile: false });
-    await until(() => client.evaluate('document.readyState === "complete"'), 'target loaded');
-    await delay(400);
+  // 6. Bookmarks Health & Maintenance in Options
+  await capturePage({
+    url: `${origin}/options.html`,
+    name: 'yitab-preview-bookmarks',
+    width: 1280,
+    height: 960,
+    readyText: '书签健康与生态治理',
+    afterReady: async (client) => {
+      await client.evaluate(`(() => {
+        const tabHeader = [...document.querySelectorAll('.ant-tabs-tab')].find(el => el.innerText.includes('书签健康'));
+        tabHeader?.click();
+      })()`);
+      await delay(600);
+    },
+  });
 
-    // Trigger Alt+K
-    await client.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', altKey: true, bubbles: true }))`);
-    await until(() => client.evaluate(`Boolean(document.getElementById('yitab-command-palette-root'))`), 'palette opened');
-    await delay(600);
-
-    const { data } = await client.call('Page.captureScreenshot', { format: 'png' });
-    await writeFile(join(outDir, 'yitab-preview-palette.png'), Buffer.from(data, 'base64'));
-    console.log('Captured: docs/images/yitab-preview-palette.png');
-    client.close();
-  }
-
-  // 6. Screenshot Bookmarks Health & Maintenance in Options (Retina 2x)
-  {
-    const { targetId } = await browser.call('Target.createTarget', { url: `${origin}/options.html` });
-    const target = await until(async () => (await targets()).find(t => t.id === targetId), 'options target for bookmarks');
-    const client = await connect(target.webSocketDebuggerUrl);
-    await client.call('Emulation.setDeviceMetricsOverride', { width: 1280, height: 960, deviceScaleFactor: 2, mobile: false });
-    await until(() => client.evaluate(`document.body.innerText.includes('书签健康与生态治理')`), 'options loaded');
-    await client.evaluate(`(() => {
-      const tabHeader = [...document.querySelectorAll('.ant-tabs-tab')].find(el => el.innerText.includes('书签健康'));
-      tabHeader?.click();
-    })()`);
-    await delay(600);
-    const { data } = await client.call('Page.captureScreenshot', { format: 'png' });
-    await writeFile(join(outDir, 'yitab-preview-bookmarks.png'), Buffer.from(data, 'base64'));
-    console.log('Captured: docs/images/yitab-preview-bookmarks.png');
-    client.close();
-  }
-
-  // 7. Screenshot New Tab Smart Launcher (Retina 2x)
+  // 7. New Tab Smart Launcher
   {
     // Seed rich mock data into chrome.storage.local for an authentic, realistic preview
     const { targetId: seedTargetId } = await browser.call('Target.createTarget', { url: `${origin}/options.html` });
@@ -345,17 +400,15 @@ try {
       }
     })()`);
     seedClient.close();
+    await browser.call('Target.closeTarget', { targetId: seedTargetId });
 
-    const { targetId } = await browser.call('Target.createTarget', { url: `${origin}/newtab.html` });
-    const target = await until(async () => (await targets()).find(t => t.id === targetId), 'newtab target');
-    const client = await connect(target.webSocketDebuggerUrl);
-    await client.call('Emulation.setDeviceMetricsOverride', { width: 1280, height: 1040, deviceScaleFactor: 2, mobile: false });
-    await until(() => client.evaluate(`document.body.innerText.includes('猜你想开') && document.body.innerText.includes('常用研发工具')`), 'newtab fully rendered');
-    await delay(1000);
-    const { data } = await client.call('Page.captureScreenshot', { format: 'png' });
-    await writeFile(join(outDir, 'yitab-preview-newtab.png'), Buffer.from(data, 'base64'));
-    console.log('Captured: docs/images/yitab-preview-newtab.png');
-    client.close();
+    await capturePage({
+      url: `${origin}/newtab.html`,
+      name: 'yitab-preview-newtab',
+      width: 1280,
+      height: 1040,
+      readyText: '常用研发工具',
+    });
   }
 
   console.log('All screenshots successfully updated!');

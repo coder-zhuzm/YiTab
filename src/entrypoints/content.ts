@@ -1,10 +1,47 @@
 import type { TabInfo } from '@/lib/match';
 import type { SearchItem, SearchItemKind } from '@/lib/search';
+import { resolveIsDark, THEME_STORAGE_KEY, sanitizeThemeMode, type ThemeMode } from '@/lib/theme-mode';
+
+/** 当前生效的主题；content script 常驻页面，缓存一份避免每次弹窗都读存储。 */
+let themeMode: ThemeMode = 'system';
+let systemDark = false;
+
+function applyThemeTo(el: HTMLElement): void {
+  el.dataset.theme = resolveIsDark(themeMode) ? 'dark' : 'light';
+}
+
+/** 读取一次主题偏好，并订阅后续变化（设置页切换后浮窗立即跟随）。 */
+function initTheme(): void {
+  systemDark = typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(prefers-color-scheme: dark)').matches
+    : false;
+
+  chrome.storage?.sync?.get(THEME_STORAGE_KEY).then((res) => {
+    themeMode = sanitizeThemeMode(res[THEME_STORAGE_KEY]);
+    document.querySelectorAll<HTMLElement>('#yitab-spa-toast-root, #yitab-command-palette-root')
+      .forEach(applyThemeTo);
+  }).catch(() => {});
+
+  chrome.storage?.onChanged?.addListener((changes, area) => {
+    if (area !== 'sync' || !(THEME_STORAGE_KEY in changes)) return;
+    themeMode = sanitizeThemeMode(changes[THEME_STORAGE_KEY].newValue);
+    document.querySelectorAll<HTMLElement>('#yitab-spa-toast-root, #yitab-command-palette-root')
+      .forEach(applyThemeTo);
+  });
+
+  window.matchMedia?.('(prefers-color-scheme: dark)')?.addEventListener('change', (e) => {
+    systemDark = e.matches;
+    document.querySelectorAll<HTMLElement>('#yitab-spa-toast-root, #yitab-command-palette-root')
+      .forEach(applyThemeTo);
+  });
+}
 
 export default defineContentScript({
   matches: ['*://*/*'],
   runAt: 'document_idle',
   main() {
+    initTheme();
+
     // 1. 监听来自 background 的 SPA 路由重复提醒与全局快捷键指令
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg && msg.type === 'yitab_spa_duplicate') {
@@ -69,6 +106,7 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
     toastContainer.style.pointerEvents = 'auto';
     document.documentElement.appendChild(toastContainer);
   }
+  applyThemeTo(toastContainer);
 
   const shadow = toastContainer.shadowRoot ?? toastContainer.attachShadow({ mode: 'open' });
   const reasonText = targetTab.match?.reason ?? '已打开相同页面';
@@ -81,6 +119,40 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         all: initial;
         display: block;
       }
+
+      /* 深色：由宿主元素的 data-theme 驱动，跟随用户选择而非系统 */
+      :host([data-theme='dark']) .card {
+        background: rgba(30, 41, 59, 0.92);
+        color: #f8fafc;
+        border-color: rgba(255, 255, 255, 0.12);
+        box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+      }
+
+      :host([data-theme='dark']) .head-title { color: #f1f5f9; }
+
+      :host([data-theme='dark']) .favicon-box {
+        background: #334155;
+        border-color: rgba(255, 255, 255, 0.1);
+      }
+
+      :host([data-theme='dark']) .tab-title { color: #e2e8f0; }
+
+      :host([data-theme='dark']) .reason-tag {
+        background: rgba(99, 102, 241, 0.2);
+        color: #c7d2fe;
+        border-color: rgba(99, 102, 241, 0.3);
+      }
+
+      :host([data-theme='dark']) .btn-secondary {
+        background: #334155;
+        color: #cbd5e1;
+        border-color: rgba(255, 255, 255, 0.08);
+      }
+      :host([data-theme='dark']) .btn-secondary:hover {
+        background: #475569;
+        color: #ffffff;
+      }
+
       .card {
         position: relative;
         overflow: hidden;
@@ -98,14 +170,7 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         box-sizing: border-box;
         animation: yitab-slide-in 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       }
-      @media (prefers-color-scheme: dark) {
-        .card {
-          background: rgba(30, 41, 59, 0.92);
-          color: #f8fafc;
-          border-color: rgba(255, 255, 255, 0.12);
-          box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
-        }
-      }
+      
       .card.closing {
         animation: yitab-slide-out 0.16s cubic-bezier(0.4, 0, 1, 1) forwards;
       }
@@ -146,9 +211,7 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         font-size: 13px;
         color: #0f172a;
       }
-      @media (prefers-color-scheme: dark) {
-        .head-title { color: #f1f5f9; }
-      }
+      
       .close-btn {
         background: transparent;
         border: none;
@@ -183,12 +246,7 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         border: 1px solid rgba(0, 0, 0, 0.06);
         margin-top: 1px;
       }
-      @media (prefers-color-scheme: dark) {
-        .favicon-box {
-          background: #334155;
-          border-color: rgba(255, 255, 255, 0.1);
-        }
-      }
+      
       .favicon-img {
         width: 18px;
         height: 18px;
@@ -210,9 +268,7 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         text-overflow: ellipsis;
         margin-bottom: 4px;
       }
-      @media (prefers-color-scheme: dark) {
-        .tab-title { color: #e2e8f0; }
-      }
+      
       .reason-tag {
         display: inline-block;
         background: #eef2ff;
@@ -223,13 +279,7 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         border-radius: 4px;
         border: 1px solid rgba(99, 102, 241, 0.2);
       }
-      @media (prefers-color-scheme: dark) {
-        .reason-tag {
-          background: rgba(99, 102, 241, 0.2);
-          color: #c7d2fe;
-          border-color: rgba(99, 102, 241, 0.3);
-        }
-      }
+      
       .actions {
         display: flex;
         gap: 8px;
@@ -270,17 +320,7 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         background: #e2e8f0;
         color: #0f172a;
       }
-      @media (prefers-color-scheme: dark) {
-        .btn-secondary {
-          background: #334155;
-          color: #cbd5e1;
-          border-color: rgba(255, 255, 255, 0.08);
-        }
-        .btn-secondary:hover {
-          background: #475569;
-          color: #ffffff;
-        }
-      }
+      
       .countdown-bar {
         position: absolute;
         bottom: 0;
@@ -404,6 +444,7 @@ function openCommandPalette() {
   paletteContainer.style.zIndex = '2147483647';
   paletteContainer.style.pointerEvents = 'auto';
   document.documentElement.appendChild(paletteContainer);
+  applyThemeTo(paletteContainer);
 
   const shadow = paletteContainer.shadowRoot ?? paletteContainer.attachShadow({ mode: 'open' });
 
@@ -413,6 +454,55 @@ function openCommandPalette() {
         all: initial;
         display: block;
       }
+
+      /* 深色：由宿主元素的 data-theme 驱动，跟随用户选择而非系统 */
+      :host([data-theme='dark']) .palette-box {
+        background: #1e293b;
+        color: #f8fafc;
+        border-color: rgba(255, 255, 255, 0.1);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
+      }
+
+      :host([data-theme='dark']) .search-bar { border-color: #334155; }
+
+      :host([data-theme='dark']) .kbd-hint {
+        background: #334155;
+        color: #94a3b8;
+        border-color: #475569;
+      }
+
+      :host([data-theme='dark']) .filter-tabs {
+        background: #0f172a;
+        border-color: #334155;
+      }
+
+      :host([data-theme='dark']) .filter-tab:hover {
+        background: #1e293b;
+        color: #f8fafc;
+      }
+
+      :host([data-theme='dark']) .result-item:hover,
+      :host([data-theme='dark']) .result-item.selected {
+        background: #334155;
+      }
+
+      :host([data-theme='dark']) .item-icon-box { background: #0f172a; }
+
+      :host([data-theme='dark']) .item-title mark { color: #818cf8; }
+
+      :host([data-theme='dark']) .item-sub { color: #94a3b8; }
+
+      :host([data-theme='dark']) .kind-tab { background: rgba(99, 102, 241, 0.25); color: #c7d2fe; }
+      :host([data-theme='dark']) .kind-command { background: rgba(217, 70, 239, 0.25); color: #f5d0fe; }
+      :host([data-theme='dark']) .kind-bookmark { background: rgba(34, 197, 94, 0.25); color: #bbf7d0; }
+      :host([data-theme='dark']) .kind-history { background: rgba(249, 115, 22, 0.25); color: #fed7aa; }
+
+      :host([data-theme='dark']) .footer-bar {
+        background: #0f172a;
+        border-color: #334155;
+        color: #94a3b8;
+      }
+
       .backdrop {
         position: fixed;
         inset: 0;
@@ -444,14 +534,7 @@ function openCommandPalette() {
         color: #0f172a;
         animation: yitab-scale-up 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       }
-      @media (prefers-color-scheme: dark) {
-        .palette-box {
-          background: #1e293b;
-          color: #f8fafc;
-          border-color: rgba(255, 255, 255, 0.1);
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
-        }
-      }
+      
       @keyframes yitab-scale-up {
         from { opacity: 0; transform: translateY(-14px) scale(0.97); }
         to { opacity: 1; transform: translateY(0) scale(1); }
@@ -463,9 +546,7 @@ function openCommandPalette() {
         padding: 14px 18px;
         border-bottom: 1px solid #e2e8f0;
       }
-      @media (prefers-color-scheme: dark) {
-        .search-bar { border-color: #334155; }
-      }
+      
       .logo-icon {
         width: 24px;
         height: 24px;
@@ -502,13 +583,7 @@ function openCommandPalette() {
         border-radius: 4px;
         border: 1px solid #cbd5e1;
       }
-      @media (prefers-color-scheme: dark) {
-        .kbd-hint {
-          background: #334155;
-          color: #94a3b8;
-          border-color: #475569;
-        }
-      }
+      
       .filter-tabs {
         display: flex;
         align-items: center;
@@ -518,12 +593,7 @@ function openCommandPalette() {
         border-bottom: 1px solid #e2e8f0;
         overflow-x: auto;
       }
-      @media (prefers-color-scheme: dark) {
-        .filter-tabs {
-          background: #0f172a;
-          border-color: #334155;
-        }
-      }
+      
       .filter-tab {
         border: none;
         background: transparent;
@@ -538,12 +608,7 @@ function openCommandPalette() {
         background: #e2e8f0;
         color: #0f172a;
       }
-      @media (prefers-color-scheme: dark) {
-        .filter-tab:hover {
-          background: #1e293b;
-          color: #f8fafc;
-        }
-      }
+      
       .filter-tab.active {
         background: #4f46e5;
         color: #ffffff;
@@ -568,12 +633,7 @@ function openCommandPalette() {
       .result-item.selected {
         background: #f1f5f9;
       }
-      @media (prefers-color-scheme: dark) {
-        .result-item:hover,
-        .result-item.selected {
-          background: #334155;
-        }
-      }
+      
       .result-item.selected {
         box-shadow: inset 0 0 0 1.5px #4f46e5;
       }
@@ -588,9 +648,7 @@ function openCommandPalette() {
         flex-shrink: 0;
         overflow: hidden;
       }
-      @media (prefers-color-scheme: dark) {
-        .item-icon-box { background: #0f172a; }
-      }
+      
       .item-icon-img {
         width: 16px;
         height: 16px;
@@ -613,9 +671,7 @@ function openCommandPalette() {
         color: #4f46e5;
         font-weight: 700;
       }
-      @media (prefers-color-scheme: dark) {
-        .item-title mark { color: #818cf8; }
-      }
+      
       .item-sub {
         font-size: 11px;
         color: #64748b;
@@ -627,9 +683,7 @@ function openCommandPalette() {
         align-items: center;
         gap: 6px;
       }
-      @media (prefers-color-scheme: dark) {
-        .item-sub { color: #94a3b8; }
-      }
+      
       .kind-tag {
         font-size: 10px;
         padding: 1px 5px;
@@ -641,12 +695,7 @@ function openCommandPalette() {
       .kind-command { background: #fae8ff; color: #86198f; }
       .kind-bookmark { background: #dcfce7; color: #15803d; }
       .kind-history { background: #ffedd5; color: #c2410c; }
-      @media (prefers-color-scheme: dark) {
-        .kind-tab { background: rgba(99, 102, 241, 0.25); color: #c7d2fe; }
-        .kind-command { background: rgba(217, 70, 239, 0.25); color: #f5d0fe; }
-        .kind-bookmark { background: rgba(34, 197, 94, 0.25); color: #bbf7d0; }
-        .kind-history { background: rgba(249, 115, 22, 0.25); color: #fed7aa; }
-      }
+      
       .empty-tip {
         padding: 36px 20px;
         text-align: center;
@@ -663,13 +712,7 @@ function openCommandPalette() {
         font-size: 11px;
         color: #64748b;
       }
-      @media (prefers-color-scheme: dark) {
-        .footer-bar {
-          background: #0f172a;
-          border-color: #334155;
-          color: #94a3b8;
-        }
-      }
+      
       .footer-tips {
         display: flex;
         align-items: center;

@@ -82,6 +82,8 @@ import {
   naturalLanguageSearchMatch,
 } from '@/lib/ai-assistant';
 import { getAiSettings, type AiSettings, DEFAULT_AI_SETTINGS } from '@/lib/settings';
+import { applyThemeToDocument, useThemeMode } from '@/lib/theme-mode';
+import { ThemeModeButton } from '@/components/ThemeToggle';
 
 /** 「继续上次」最多展示的入口数 */
 const RESUME_LIMIT = 3;
@@ -97,12 +99,12 @@ function hostnameOf(url: string): string {
 }
 
 export default function NewTabApp() {
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-    return false;
-  });
+  const { isDark, mode: themeMode, setMode: setThemeMode } = useThemeMode();
+
+  // CSS 令牌由 data-theme 驱动；「跟随系统」已在 useThemeMode 内解析成 isDark。
+  useEffect(() => {
+    applyThemeToDocument(isDark, isDark ? '#0f1115' : '#f6f7f9');
+  }, [isDark]);
 
   const [greetingInfo, setGreetingInfo] = useState(() => formatTimeGreeting());
 
@@ -168,7 +170,7 @@ export default function NewTabApp() {
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
     const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => setIsDark(e.matches);
+    const handler = () => setGreetingInfo(formatTimeGreeting());
     media.addEventListener('change', handler);
     return () => media.removeEventListener('change', handler);
   }, []);
@@ -892,6 +894,8 @@ export default function NewTabApp() {
                 个人
               </button>
             </div>
+
+            <ThemeModeButton mode={themeMode} onChange={setThemeMode} ink3="var(--ink-3)" />
 
             <button
               className="yt-icon-btn"

@@ -18,21 +18,22 @@
   --radius-icon: 11px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --canvas: #0f1115;
-    --surface: #16181d;
-    --surface-hover: #1e2127;
-    --hairline: #262a31;
-    --hairline-strong: #343941;
-    --ink: #e8eaee;
-    --ink-2: #b3bac5;
-    --ink-3: #8f96a2;
-    --accent: #8b8bf5;
-    --accent-soft: #23243a;
-    --ok: #34c793;
-    --danger: #f08080;
-  }
+/* 深色令牌。由 App 在 <html> 上设置 data-theme（light / dark），
+   「跟随系统」在 App 内解析后写入，因此这里不再使用媒体查询，
+   否则手动选择浅色时会被系统深色覆盖。 */
+:root[data-theme='dark'] {
+  --canvas: #0f1115;
+  --surface: #16181d;
+  --surface-hover: #1e2127;
+  --hairline: #262a31;
+  --hairline-strong: #343941;
+  --ink: #e8eaee;
+  --ink-2: #b3bac5;
+  --ink-3: #8f96a2;
+  --accent: #8b8bf5;
+  --accent-soft: #23243a;
+  --ok: #34c793;
+  --danger: #f08080;
 }
 
 * {
@@ -488,10 +489,8 @@ input {
   color: var(--danger);
 }
 
-@media (prefers-color-scheme: dark) {
-  .yt-tile .tile-act.danger:hover {
-    background: #3a1f22;
-  }
+:root[data-theme='dark'] .yt-tile .tile-act.danger:hover {
+  background: #3a1f22;
 }
 
 /* ---------- 继续上次 ---------- */

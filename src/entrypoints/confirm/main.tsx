@@ -14,6 +14,7 @@ import {
   Select,
   Space,
   Tag,
+  theme,
   Typography,
 } from 'antd';
 import { sendToBackground } from '@/lib/messaging';
@@ -24,6 +25,9 @@ import type {
   TabGroupColor,
 } from '@/lib/messaging';
 import { MODE_LABELS, type TabInfo } from '@/lib/match';
+import { useThemeTokens, type ThemeTokens } from '@/lib/theme-tokens';
+import { useThemeMode, applyThemeToDocument } from '@/lib/theme-mode';
+import { ThemeModeButton } from '@/components/ThemeToggle';
 
 const GROUP_COLORS: { label: string; value: TabGroupColor; hex: string }[] = [
   { label: '灰色', value: 'grey', hex: '#64748b' },
@@ -37,7 +41,7 @@ const GROUP_COLORS: { label: string; value: TabGroupColor; hex: string }[] = [
   { label: '橙色', value: 'orange', hex: '#f97316' },
 ];
 
-function Kbd({ children }: { children: React.ReactNode }) {
+function Kbd({ children, tk }: { children: React.ReactNode; tk: ThemeTokens }) {
   return (
     <kbd
       style={{
@@ -50,10 +54,10 @@ function Kbd({ children }: { children: React.ReactNode }) {
         fontSize: 11,
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
         fontWeight: 600,
-        color: '#475569',
-        background: '#f1f5f9',
-        border: '1px solid #cbd5e1',
-        borderBottom: '2px solid #94a3b8',
+        color: tk.ink2,
+        background: tk.surfaceMuted,
+        border: `1px solid ${tk.hairlineStrong}`,
+        borderBottom: `2px solid ${tk.hairlineStrong}`,
         borderRadius: 4,
         marginLeft: 6,
         lineHeight: 1,
@@ -67,6 +71,11 @@ function Kbd({ children }: { children: React.ReactNode }) {
 createRoot(document.getElementById('root')!).render(<ConfirmPage />);
 
 function ConfirmPage() {
+  const { isDark, mode: themeMode, setMode: setThemeMode } = useThemeMode();
+  const { tk } = useThemeTokens(isDark);
+
+  // 让原生控件与页面底色跟随主题，避免首帧闪白
+  useEffect(() => applyThemeToDocument(isDark, tk.canvas), [isDark, tk.canvas]);
   const [targetUrl] = useState(() => new URLSearchParams(location.search).get('u') ?? '');
   const [dups, setDups] = useState<TabInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -404,28 +413,29 @@ function ConfirmPage() {
   return (
     <ConfigProvider
       theme={{
+        algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
           colorPrimary: '#4f46e5',
           borderRadius: 8,
           fontFamily:
             '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif',
-          colorBgContainer: '#ffffff',
-          colorBorderSecondary: '#e2e8f0',
+          colorBgContainer: tk.surface,
+          colorBorderSecondary: tk.hairline,
         },
       }}
     >
-      <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#0f172a' }}>
+      <div style={{ minHeight: '100vh', background: tk.canvas, color: tk.ink }}>
         {/* 顶部主操作区：Sticky 吸顶，列表滚动时始终可见 */}
         <header
           style={{
             position: 'sticky',
             top: 0,
             zIndex: 100,
-            background: 'rgba(255, 255, 255, 0.88)',
+            background: tk.stickyBg,
             backdropFilter: 'blur(16px) saturate(180%)',
             WebkitBackdropFilter: 'blur(16px) saturate(180%)',
-            borderBottom: '1px solid rgba(226, 232, 240, 0.8)',
-            boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.05)',
+            borderBottom: `1px solid ${tk.stickyBorder}`,
+            boxShadow: tk.shadowSticky,
             padding: '12px 24px',
           }}
         >
@@ -472,7 +482,7 @@ function ConfirmPage() {
                 </svg>
                 YiTab
               </div>
-              <Typography.Text strong style={{ fontSize: 16, color: '#0f172a' }}>
+              <Typography.Text strong style={{ fontSize: 16, color: tk.ink }}>
                 {loading
                   ? '正在检查匹配标签…'
                   : dups.length
@@ -497,7 +507,7 @@ function ConfirmPage() {
                   }}
                 >
                   <span>切换到所选标签</span>
-                  <Kbd>↵ Enter</Kbd>
+                  <Kbd tk={tk}>↵ Enter</Kbd>
                 </Button>
               ) : (
                 <Button
@@ -513,7 +523,7 @@ function ConfirmPage() {
                   }}
                 >
                   <span>继续打开目标页面</span>
-                  <Kbd>↵ Enter</Kbd>
+                  <Kbd tk={tk}>↵ Enter</Kbd>
                 </Button>
               )}
 
@@ -524,10 +534,11 @@ function ConfirmPage() {
                 style={{ display: 'inline-flex', alignItems: 'center' }}
               >
                 <span>仍要打开</span>
-                <Kbd>Esc</Kbd>
+                <Kbd tk={tk}>Esc</Kbd>
               </Button>
 
               <Button onClick={() => void chrome.runtime.openOptionsPage()}>网站规则</Button>
+              <ThemeModeButton mode={themeMode} onChange={setThemeMode} ink3={tk.ink3} size="middle" />
             </Space>
           </div>
         </header>
@@ -559,9 +570,9 @@ function ConfirmPage() {
             style={{
               marginBottom: 20,
               borderRadius: 12,
-              borderColor: '#e2e8f0',
-              background: '#ffffff',
-              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+              borderColor: tk.hairline,
+              background: tk.surface,
+              boxShadow: tk.shadowCard,
             }}
           >
             <div
@@ -580,7 +591,7 @@ function ConfirmPage() {
                   height="14"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="#64748b"
+                  stroke={tk.ink3}
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -617,7 +628,7 @@ function ConfirmPage() {
                     '复制完整地址'
                   )}
                 </Button>
-                <span style={{ color: '#cbd5e1' }}>|</span>
+                <span style={{ color: tk.hairlineStrong }}>|</span>
                 <Button
                   type="link"
                   size="small"
@@ -635,17 +646,17 @@ function ConfirmPage() {
                 fontSize: 13,
                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
                 padding: '8px 12px',
-                background: '#f8fafc',
+                background: tk.canvas,
                 borderRadius: 8,
-                border: '1px solid #e2e8f0',
+                border: `1px solid ${tk.hairline}`,
                 display: 'flex',
                 alignItems: 'baseline',
                 flexWrap: 'wrap',
                 gap: 6,
               }}
             >
-              <span style={{ fontWeight: 700, color: '#0f172a' }}>{targetSummary.host}</span>
-              <span style={{ color: '#475569' }}>{targetSummary.path}</span>
+              <span style={{ fontWeight: 700, color: tk.ink }}>{targetSummary.host}</span>
+              <span style={{ color: tk.ink2 }}>{targetSummary.path}</span>
               {targetSummary.queryCount > 0 && (
                 <Tag
                   color="purple"
@@ -680,7 +691,7 @@ function ConfirmPage() {
                 style={{
                   marginTop: 12,
                   paddingTop: 12,
-                  borderTop: '1px dashed #e2e8f0',
+                  borderTop: `1px dashed ${tk.hairline}`,
                   fontSize: 13,
                 }}
               >
@@ -694,12 +705,12 @@ function ConfirmPage() {
                       overflowWrap: 'anywhere',
                       marginTop: 4,
                       marginBottom: 0,
-                      background: '#f1f5f9',
+                      background: tk.surfaceMuted,
                       padding: '8px 12px',
                       borderRadius: 6,
                       fontSize: 12,
                       fontFamily: 'ui-monospace, monospace',
-                      color: '#1e293b',
+                      color: tk.ink,
                     }}
                   >
                     {targetUrl}
@@ -721,11 +732,11 @@ function ConfirmPage() {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Typography.Title level={5} style={{ margin: 0, fontSize: 16, color: '#0f172a' }}>
+              <Typography.Title level={5} style={{ margin: 0, fontSize: 16, color: tk.ink }}>
                 已有标签（{dups.length}）
               </Typography.Title>
               {dups.length > 0 && (
-                <span style={{ fontSize: 12, color: '#64748b' }}>
+                <span style={{ fontSize: 12, color: tk.ink3 }}>
                   ↑ ↓ 键快速选择 · Enter 键直接跳转
                 </span>
               )}
@@ -827,13 +838,13 @@ function ConfirmPage() {
                   marginBottom: 12,
                   borderRadius: 12,
                   cursor: 'pointer',
-                  borderColor: isSelected && !batchMode ? '#4f46e5' : '#e2e8f0',
+                  borderColor: isSelected && !batchMode ? '#4f46e5' : tk.hairline,
                   boxShadow:
                     isSelected && !batchMode
                       ? '0 0 0 2px rgba(79, 70, 229, 0.2), 0 4px 14px rgba(79, 70, 229, 0.08)'
                       : '0 1px 3px rgba(0, 0, 0, 0.03)',
                   transition: 'all 0.16s cubic-bezier(0.16, 1, 0.3, 1)',
-                  background: isSelected && !batchMode ? '#ffffff' : '#ffffff',
+                  background: tk.surface,
                 }}
                 styles={{ body: { padding: '14px 18px' } }}
               >
@@ -868,8 +879,8 @@ function ConfirmPage() {
                       height: 38,
                       flexShrink: 0,
                       borderRadius: 9,
-                      background: '#f8fafc',
-                      border: '1px solid #e2e8f0',
+                      background: tk.canvas,
+                      border: `1px solid ${tk.hairline}`,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -881,7 +892,7 @@ function ConfirmPage() {
                       shape="square"
                       size={24}
                       src={t.favicon || undefined}
-                      style={{ background: 'transparent', color: '#64748b', fontWeight: 600 }}
+                      style={{ background: 'transparent', color: tk.ink3, fontWeight: 600 }}
                     >
                       {t.title ? t.title[0] : 'T'}
                     </Avatar>
@@ -902,7 +913,7 @@ function ConfirmPage() {
                         strong
                         style={{
                           fontSize: 15,
-                          color: '#0f172a',
+                          color: tk.ink,
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           display: '-webkit-box',
@@ -922,7 +933,7 @@ function ConfirmPage() {
                         fontSize: 12,
                         fontFamily:
                           'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                        color: '#64748b',
+                        color: tk.ink3,
                         marginBottom: 6,
                         display: 'flex',
                         alignItems: 'baseline',
@@ -930,7 +941,7 @@ function ConfirmPage() {
                         gap: 6,
                       }}
                     >
-                      <span style={{ fontWeight: 600, color: '#334155' }}>{tSummary.host}</span>
+                      <span style={{ fontWeight: 600, color: tk.ink2 }}>{tSummary.host}</span>
                       <span>{tSummary.path}</span>
                       {tSummary.queryCount > 0 && (
                         <Tag
@@ -978,14 +989,14 @@ function ConfirmPage() {
                       <Tag
                         style={{
                           margin: 0,
-                          background: '#f1f5f9',
-                          color: '#64748b',
+                          background: tk.surfaceMuted,
+                          color: tk.ink3,
                           borderRadius: 4,
                         }}
                       >
                         窗口 {t.windowId}
                       </Tag>
-                      <span style={{ fontSize: 12, color: '#64748b' }}>{t.match?.reason}</span>
+                      <span style={{ fontSize: 12, color: tk.ink3 }}>{t.match?.reason}</span>
                     </div>
 
                     {/* 展开的完整地址与详情 */}
@@ -994,7 +1005,7 @@ function ConfirmPage() {
                         style={{
                           marginTop: 10,
                           paddingTop: 10,
-                          borderTop: '1px dashed #e2e8f0',
+                          borderTop: `1px dashed ${tk.hairline}`,
                           fontSize: 12,
                         }}
                         onClick={(e) => e.stopPropagation()}
@@ -1006,7 +1017,7 @@ function ConfirmPage() {
                             overflowWrap: 'anywhere',
                             marginTop: 4,
                             marginBottom: 4,
-                            background: '#f8fafc',
+                            background: tk.canvas,
                             padding: '6px 10px',
                             borderRadius: 6,
                             fontFamily: 'ui-monospace, monospace',
@@ -1089,7 +1100,7 @@ function ConfirmPage() {
                         <Button
                           type="text"
                           size="small"
-                          style={{ fontSize: 11, padding: '0 4px', color: '#64748b' }}
+                          style={{ fontSize: 11, padding: '0 4px', color: tk.ink3 }}
                         >
                           仅留此项
                         </Button>
@@ -1107,10 +1118,10 @@ function ConfirmPage() {
               style={{
                 textAlign: 'center',
                 padding: '48px 20px',
-                background: '#ffffff',
+                background: tk.surface,
                 borderRadius: 12,
-                border: '1px solid #e2e8f0',
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
+                border: `1px solid ${tk.hairline}`,
+                boxShadow: tk.shadowCard,
               }}
             >
               <div
@@ -1118,12 +1129,12 @@ function ConfirmPage() {
                   width: 48,
                   height: 48,
                   borderRadius: 12,
-                  background: '#f1f5f9',
+                  background: tk.surfaceMuted,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   margin: '0 auto 16px',
-                  color: '#64748b',
+                  color: tk.ink3,
                 }}
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1131,7 +1142,7 @@ function ConfirmPage() {
                   <polyline points="22 4 12 14.01 9 11.01"></polyline>
                 </svg>
               </div>
-              <Typography.Title level={4} style={{ color: '#0f172a', marginBottom: 8, fontSize: 18 }}>
+              <Typography.Title level={4} style={{ color: tk.ink, marginBottom: 8, fontSize: 18 }}>
                 没有匹配的已有标签
               </Typography.Title>
               <Typography.Paragraph type="secondary" style={{ marginBottom: 20, fontSize: 14 }}>
@@ -1190,8 +1201,8 @@ function ConfirmPage() {
                         padding: '5px 10px',
                         borderRadius: 6,
                         cursor: 'pointer',
-                        border: isSelected ? '2px solid #4f46e5' : '1px solid #e2e8f0',
-                        background: isSelected ? '#f5f3ff' : '#fff',
+                        border: isSelected ? '2px solid #4f46e5' : `1px solid ${tk.hairline}`,
+                        background: isSelected ? tk.accentSoft : tk.surface,
                         transition: 'all 0.15s ease',
                       }}
                     >
@@ -1202,7 +1213,7 @@ function ConfirmPage() {
                           borderRadius: '50%',
                           background: c.hex,
                           display: 'inline-block',
-                          boxShadow: isSelected ? `0 0 0 2px #fff, 0 0 0 4px ${c.hex}` : undefined,
+                          boxShadow: isSelected ? `0 0 0 2px ${tk.surface}, 0 0 0 4px ${c.hex}` : undefined,
                         }}
                       />
                       <span style={{ fontSize: 12, fontWeight: isSelected ? 600 : 400 }}>
