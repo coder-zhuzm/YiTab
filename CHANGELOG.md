@@ -8,6 +8,16 @@
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-18
+
+### 🐛 缺陷修复 (Bug Fixes)
+
+- **书签删除事件冒泡与意外跳转修复**：
+  - 修复在新标签页点击书签右侧「更多操作」或右键菜单中的「删除书签」时，由于 React Portal 合成事件向上冒泡至 `.yt-bm-row` 容器引发 `handleOpenUrl` 导致页面异常跳转的问题。
+  - 为 `bookmarkMenuItems` 内各操作项显式补充 `domEvent.stopPropagation()`，阻断下拉浮层向组件树上游冒泡。
+  - 在 `.yt-bm-row` 行点击事件中引入来源元素校验守卫，忽略源自操作区 `.bacts` 与下拉菜单浮层 `.ant-dropdown` 的点击事件。
+  - 将静态 `Modal.confirm` 迁移至 `Modal.useModal()`，使确认弹窗深度继承深浅色主题配置。
+
 ## [1.3.0] - 2026-10-18
 
 ### 🌓 全界面深色适配与三态手动切换 (Multi-Surface Dark Theme & Manual Mode)
