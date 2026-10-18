@@ -1,7 +1,7 @@
 # YiTab 一签
 
 <p align="center">
-  <strong>优雅、轻量的 Chrome 标签页生命周期、新标签页直达与书签生态治理套件</strong>
+  <strong>优雅、轻量的 Chrome 标签页生命周期、工作台直达与书签生态治理套件</strong>
 </p>
 
 <p align="center">
@@ -28,11 +28,11 @@
 
 ## 核心特性
 
-### 1. 新标签页极速直达工作台 (New Tab Smart Launcher)
+### 1. 工作台 · 接管新标签页 (Smart Launcher)
 > 接管 Chrome 空白页，打造首屏冷启动 < 30ms 的高效极简直达面板。
 
 <p align="center">
-  <img src="./docs/images/yitab-preview-newtab.png" alt="YiTab 新标签页极速直达工作台" width="850" />
+  <img src="./docs/images/yitab-preview-newtab.png" alt="YiTab 工作台" width="850" />
 </p>
 
 - **内网与端口免搜索直达**：智能识别私有 IPv4、`localhost`、`[::1]`、内网 TLD（`.corp`、`.oa`、`.lan`）及特定端口，回车直接导航。
@@ -103,9 +103,9 @@
 | :--- | :--- | :--- |
 | **任意网页** | <kbd>Alt+K</kbd> / <kbd>Cmd+K</kbd> | 唤出 Spotlight 风格全局命令面板，即时搜索标签、书签、历史与执行指令 |
 | **Chrome 地址栏** | 输入 <kbd>tab</kbd> + <kbd>Space</kbd> | 激活 Omnibox 搜索建议，输入关键字回车快速切换至已有标签 |
-| **新标签页** | <kbd>/</kbd> | 秒级聚焦全能聚合搜索框；按 <kbd>Esc</kbd> 失焦 |
-| **新标签页** | <kbd>↑</kbd> / <kbd>↓</kbd> | 在智能建议列表（已开标签/快捷跳转）中上下循环切换选择 |
-| **新标签页** | <kbd>↵ Enter</kbd> | 直接激活并切换至选中的已开标签（未选中时执行搜索或网址直达） |
+| **工作台** | <kbd>/</kbd> | 秒级聚焦全能聚合搜索框；按 <kbd>Esc</kbd> 失焦 |
+| **工作台** | <kbd>↑</kbd> / <kbd>↓</kbd> | 在智能建议列表（已开标签/快捷跳转）中上下循环切换选择 |
+| **工作台** | <kbd>↵ Enter</kbd> | 直接激活并切换至选中的已开标签（未选中时执行搜索或网址直达） |
 | **拦截确认页** | <kbd>↵ Enter</kbd> | 立即激活并切换至选中的已有标签页 |
 | **拦截确认页** | <kbd>Esc</kbd> | 忽略拦截并在当前标签页中继续打开新页面（8 秒智能防回流） |
 | **拦截确认页** | <kbd>↑</kbd> / <kbd>↓</kbd> | 在找到的多个候选已有标签页之间切换选择 |

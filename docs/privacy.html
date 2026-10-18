@@ -104,8 +104,8 @@
     <h2>2. 数据使用与权限说明 (Data Processing &amp; Permissions)</h2>
     <ul>
       <li><code>tabs</code> &amp; <code>webNavigation</code>: 实时比对已打开标签页的 URL，防止重复开启，并在确认后聚焦已有标签。所有比对逻辑均在本地内存中运行。</li>
-      <li><code>bookmarks</code>: 在 Alt+K 命令面板中快速检索书签，以及在新标签页中展示常用书签网格与健康去重。</li>
-      <li><code>history</code>: 用于新标签页恢复胶囊，以及添加快捷方式时在本机查询历史标题作为名称建议。</li>
+      <li><code>bookmarks</code>: 在 Alt+K 命令面板中快速检索书签，以及在工作台中展示常用书签网格与健康去重。</li>
+      <li><code>history</code>: 用于工作台恢复胶囊，以及添加快捷方式时在本机查询历史标题作为名称建议。</li>
       <li><code>storage</code>: 在本地保存您的匹配偏好、域名白名单与设置（通过 Google Sync 或本地持久化）。</li>
       <li><code>tabGroups</code>: 允许按域名自动归类管理标签页。</li>
       <li><code>clipboardWrite</code>: 仅在您主动点击导出标签列表时，将 Markdown 链接写入系统剪贴板。</li>
@@ -114,7 +114,7 @@
 
     <h2>3. 零第三方追踪 (Zero Third-Party Tracking)</h2>
     <p>YiTab 不包含任何数据埋点、外部分析统计代码、广告 SDK 或任何远程动态执行代码，可在断网离线环境下正常运作。</p>
-    <p>新标签页的快捷方式<strong>名称补全只查询浏览器本地数据</strong>（已打开的标签页与浏览历史），<strong>图标读取 Chrome 本地图标库</strong>。两者均不主动请求目标站点或第三方，也不会通过隐藏标签页、网页抓取或请求 <code>/favicon.ico</code> 来补齐图标缓存。</p>
+    <p>工作台的快捷方式<strong>名称补全只查询浏览器本地数据</strong>（已打开的标签页与浏览历史），<strong>图标读取 Chrome 本地图标库</strong>。两者均不主动请求目标站点或第三方，也不会通过隐藏标签页、网页抓取或请求 <code>/favicon.ico</code> 来补齐图标缓存。</p>
     <p><strong>尚未统一处理：</strong>弹出面板、页内确认条与命令面板仍直接使用 Chrome 提供的 <code>favIconUrl</code>。展示图标时可能触发对该 URL 的资源请求，是否访问网络取决于缓存等因素，因此不属于上述本地图标保证范围。</p>
 
     <h2>4. 遵守 Chrome Web Store 政策 (Limited Use Compliance)</h2>

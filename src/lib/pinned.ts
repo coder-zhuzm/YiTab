@@ -166,9 +166,13 @@ export async function getNewTabSettings(): Promise<NewTabSettings> {
   const res = await chrome.storage.sync.get(STORAGE_NEWTAB_SETTINGS_KEY);
   const settings = res[STORAGE_NEWTAB_SETTINGS_KEY] as Partial<NewTabSettings> | undefined;
   const merged = { ...DEFAULT_NEWTAB_SETTINGS, ...(settings || {}) };
-  // 旧数据没有 iconMode 字段：回落到默认的首字母图标，不静默改变用户观感
+  // 旧数据没有 iconMode 字段：跟随默认值（浏览器本地图标库）。
+  // 只有非法值才回落，用户显式选过的 initials 予以保留。
   if (merged.iconMode !== 'browser' && merged.iconMode !== 'initials') {
     merged.iconMode = DEFAULT_NEWTAB_SETTINGS.iconMode;
+  }
+  if (typeof merged.bookmarksExpanded !== 'boolean') {
+    merged.bookmarksExpanded = DEFAULT_NEWTAB_SETTINGS.bookmarksExpanded;
   }
   return merged;
 }
