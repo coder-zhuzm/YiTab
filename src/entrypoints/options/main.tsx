@@ -70,6 +70,14 @@ import {
   type BookmarkScanReport,
 } from '../../lib/bookmarks';
 import { ESTIMATED_MB_PER_TAB, type TabHealthReport } from '../../lib/tab-health';
+import {
+  DEFAULT_NEWTAB_SETTINGS,
+  type IconMode,
+  type NewTabSettings,
+  type ProfileMode,
+} from '../../lib/newtab-types';
+import { getNewTabSettings, saveNewTabSettings } from '../../lib/pinned';
+import { SEARCH_ENGINES } from '../../lib/network-utils';
 import { APP_VERSION } from '../../lib/version';
 
 const { Text, Paragraph, Title } = Typography;
@@ -99,7 +107,7 @@ const examples: Record<MatchMode, string> = {
 };
 
 function OptionsPage() {
-  const [activeTabKey, setActiveTabKey] = useState('rules');
+  const [activeTabKey, setActiveTabKey] = useState('newtab');
   const [settings, update] = useState<Settings>(DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -134,6 +142,10 @@ function OptionsPage() {
   });
   const [aiCacheCount, setAiCacheCount] = useState(0);
 
+  // 工作台（新标签页）偏好
+  const [newTabSettings, setNewTabSettingsState] =
+    useState<NewTabSettings>(DEFAULT_NEWTAB_SETTINGS);
+
   useEffect(() => {
     getSettings()
       .then(update)
@@ -144,7 +156,14 @@ function OptionsPage() {
     getAiSettings().then(setAiSettingsState);
     checkAiCapabilities().then(setAiCapabilities);
     getAiCacheStats().then((s) => setAiCacheCount(s.count));
+    getNewTabSettings().then(setNewTabSettingsState);
   }, []);
+
+  const handleSaveNewTabSettings = async (patch: Partial<NewTabSettings>) => {
+    const next = await saveNewTabSettings(patch);
+    setNewTabSettingsState(next);
+    message.success('工作台配置已保存');
+  };
 
   const handleSaveAiSettings = async (patch: Partial<AiSettings>) => {
     const next = await saveAiSettings(patch);
@@ -453,6 +472,199 @@ function OptionsPage() {
             type="card"
             style={{ marginBottom: 20 }}
             items={[
+              {
+                key: 'newtab',
+                label: (
+                  <span>
+                    <AppstoreOutlined />
+                    工作台
+                  </span>
+                ),
+                children: (
+                  <div>
+                    {/* 图标来源 */}
+                    <Card
+                      title={
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>
+                            快捷方式图标来源
+                          </span>
+                          <span style={{ fontSize: 12, color: '#64748b', fontWeight: 'normal' }}>
+                            决定工作台上每个快捷方式显示什么图标
+                          </span>
+                        </div>
+                      }
+                      style={{
+                        marginBottom: 20,
+                        borderRadius: 12,
+                        borderColor: '#e2e8f0',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                      }}
+                    >
+                      <Radio.Group
+                        value={newTabSettings.iconMode}
+                        onChange={(e) =>
+                          void handleSaveNewTabSettings({ iconMode: e.target.value as IconMode })
+                        }
+                        style={{ width: '100%' }}
+                      >
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                            gap: 12,
+                          }}
+                        >
+                          {(
+                            [
+                              {
+                                value: 'browser' as IconMode,
+                                title: '浏览器图标（推荐）',
+                                desc: '读取 Chrome 本地图标库，零网络请求。未访问过的站点会显示浏览器默认占位图。',
+                              },
+                              {
+                                value: 'initials' as IconMode,
+                                title: '首字母图标',
+                                desc: '按名称本地生成渐变图标，任何站点都有稳定一致的观感。',
+                              },
+                            ] as const
+                          ).map((opt) => {
+                            const isChecked = newTabSettings.iconMode === opt.value;
+                            return (
+                              <div
+                                key={opt.value}
+                                onClick={() => {
+                                  if (!isChecked) {
+                                    void handleSaveNewTabSettings({ iconMode: opt.value });
+                                  }
+                                }}
+                                style={{
+                                  padding: '14px 16px',
+                                  borderRadius: 10,
+                                  border: isChecked ? '2px solid #4f46e5' : '1px solid #e2e8f0',
+                                  background: isChecked ? '#f5f3ff' : '#ffffff',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                }}
+                              >
+                                <Radio value={opt.value} style={{ fontWeight: 600 }}>
+                                  {opt.title}
+                                </Radio>
+                                <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>
+                                  {opt.desc}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </Radio.Group>
+                    </Card>
+
+                    {/* 书签区默认状态 */}
+                    <Card
+                      title={
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>
+                            书签区默认状态
+                          </span>
+                        </div>
+                      }
+                      style={{
+                        marginBottom: 20,
+                        borderRadius: 12,
+                        borderColor: '#e2e8f0',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 16,
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                            打开工作台时展开书签
+                          </div>
+                          <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+                            关闭后默认收起，只保留标题与筛选框。工作台上的「收起 / 展开」按钮会同步改这里。
+                          </div>
+                        </div>
+                        <Switch
+                          checked={newTabSettings.bookmarksExpanded}
+                          onChange={(checked) =>
+                            void handleSaveNewTabSettings({ bookmarksExpanded: checked })
+                          }
+                        />
+                      </div>
+                    </Card>
+
+                    {/* 默认模式与搜索引擎 */}
+                    <Card
+                      title={
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>
+                            默认模式与搜索引擎
+                          </span>
+                        </div>
+                      }
+                      style={{
+                        marginBottom: 20,
+                        borderRadius: 12,
+                        borderColor: '#e2e8f0',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                          gap: 16,
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+                            默认模式
+                          </div>
+                          <Select
+                            style={{ width: '100%' }}
+                            value={newTabSettings.profile}
+                            onChange={(v) =>
+                              void handleSaveNewTabSettings({ profile: v as ProfileMode })
+                            }
+                            options={[
+                              { value: 'work', label: '办公内网' },
+                              { value: 'home', label: '个人模式' },
+                            ]}
+                          />
+                          <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
+                            个人模式会隐藏内网地址，并优先使用个人模式的搜索引擎。
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+                            默认搜索引擎
+                          </div>
+                          <Select
+                            style={{ width: '100%' }}
+                            value={newTabSettings.defaultEngineId}
+                            onChange={(v) => void handleSaveNewTabSettings({ defaultEngineId: v })}
+                            options={SEARCH_ENGINES.map((e) => ({
+                              value: e.id,
+                              label: `${e.icon} ${e.name}（前缀 ${e.prefix}）`,
+                            }))}
+                          />
+                          <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
+                            两种模式下未单独记忆时的兜底搜索引擎。
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  </div>
+                ),
+              },
               {
                 key: 'rules',
                 label: (

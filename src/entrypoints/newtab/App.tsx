@@ -4,14 +4,12 @@ import {
   BookOutlined,
   CheckCircleFilled,
   ClockCircleOutlined,
-  CloseOutlined,
   CopyOutlined,
   DeleteOutlined,
   DownOutlined,
   EditOutlined,
   FolderOpenOutlined,
   GlobalOutlined,
-  HistoryOutlined,
   MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -19,27 +17,19 @@ import {
   SearchOutlined,
   SettingOutlined,
   SwapOutlined,
-  ThunderboltOutlined,
   UpOutlined,
 } from '@ant-design/icons';
 import {
   Button,
-  Card,
   ConfigProvider,
   Dropdown,
-  Empty,
   Form,
   Input,
   type InputRef,
   message,
   Modal,
-  Radio,
   Select,
-  Space,
-  Tag,
   theme,
-  Tooltip,
-  Typography,
 } from 'antd';
 import {
   filterBookmarkCards,
@@ -49,7 +39,6 @@ import {
 import type { BookmarkItem } from '@/lib/bookmarks';
 import {
   browserFaviconUrl,
-  formatLiveStatusGreeting,
   formatTimeGreeting,
   generateSvgFavicon,
   isIntranetHost,
@@ -66,16 +55,13 @@ import {
   DEFAULT_NEWTAB_SETTINGS,
   type NewTabSettings,
   type PinnedData,
-  type PinnedGroup,
   type PinnedItem,
-  type IconMode,
   type ProfileMode,
   type SearchEngine,
 } from '@/lib/newtab-types';
 import {
   addPinnedGroup,
   addPinnedItem,
-  deletePinnedGroup,
   deletePinnedItem,
   getNewTabSettings,
   getPinnedData,
@@ -94,16 +80,22 @@ import {
   generateMorningBriefing,
   naturalLanguageSearchMatch,
 } from '@/lib/ai-assistant';
-import {
-  getAiSettings,
-  type AiSettings,
-  DEFAULT_AI_SETTINGS,
-} from '@/lib/settings';
+import { getAiSettings, type AiSettings, DEFAULT_AI_SETTINGS } from '@/lib/settings';
 
-const { Text, Title } = Typography;
+/** 「继续上次」最多展示的入口数 */
+const RESUME_LIMIT = 3;
+/** 书签文件夹默认展示条数，超出折叠 */
+const BOOKMARK_PREVIEW_LIMIT = 5;
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
 
 export default function NewTabApp() {
-  // 主题检测
   const [isDark, setIsDark] = useState(() => {
     if (typeof window !== 'undefined' && window.matchMedia) {
       return window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -111,17 +103,11 @@ export default function NewTabApp() {
     return false;
   });
 
-  // 时钟问候语
   const [greetingInfo, setGreetingInfo] = useState(() => formatTimeGreeting());
 
-  // 固钉数据
-  const [pinnedData, setPinnedData] = useState<PinnedData>({
-    groups: [],
-    items: [],
-  });
+  const [pinnedData, setPinnedData] = useState<PinnedData>({ groups: [], items: [] });
   const [activeGroupId, setActiveGroupId] = useState<string>('all');
 
-  // 新标签页设置
   const [settings, setSettings] = useState<NewTabSettings>(DEFAULT_NEWTAB_SETTINGS);
 
   // 快捷方式表单：URL 预览 + 提示 + 名称建议
@@ -131,29 +117,22 @@ export default function NewTabApp() {
   const [shortcutHint, setShortcutHint] = useState('');
   const [suggestedTitle, setSuggestedTitle] = useState<TitleCandidate | null>(null);
 
-  // 当前已开标签页映射 (用于已开检测)
   const [openTabs, setOpenTabs] = useState<
     Array<{ id: number; url: string; title: string; windowId?: number }>
   >([]);
 
-  // 猜你想开智能推选
   const [recommendations, setRecommendations] = useState<RecommendedStation[]>([]);
 
-  // 书签看板状态
   const [bookmarkCards, setBookmarkCards] = useState<BookmarkFolderCard[]>([]);
   const [bookmarkSearch, setBookmarkSearch] = useState('');
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
   const [editingBookmark, setEditingBookmark] = useState<BookmarkItem | null>(null);
   const [bookmarkForm] = Form.useForm();
 
-  // 会话现场恢复
   const [recentSnapshot, setRecentSnapshot] = useState<SessionSnapshot | null>(null);
 
-  // 端侧 AI 设置与智能晨报
   const [aiSettings, setAiSettings] = useState<AiSettings>(DEFAULT_AI_SETTINGS);
-  const [morningBriefing, setMorningBriefing] = useState<string>('');
 
-  // 搜索框状态
   const [searchInput, setSearchInput] = useState('');
   const [activeEngine, setActiveEngine] = useState<SearchEngine>(SEARCH_ENGINES[0]);
   const [searchSuggestions, setSearchSuggestions] = useState<SearchItem[]>([]);
@@ -161,21 +140,17 @@ export default function NewTabApp() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef<InputRef>(null);
 
-  // 模态框状态
   const [itemModalVisible, setItemModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<PinnedItem | null>(null);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const [form] = Form.useForm();
   const [groupForm] = Form.useForm();
 
-  // 全键盘快捷键: 按 '/' 键自动聚焦搜索框，按 Escape 失焦
+  // 按 '/' 聚焦搜索框，Escape 失焦
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.key === '/' &&
-        document.activeElement?.tagName !== 'INPUT' &&
-        document.activeElement?.tagName !== 'TEXTAREA'
-      ) {
+      const tag = document.activeElement?.tagName;
+      if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
         e.preventDefault();
         searchInputRef.current?.focus();
       } else if (e.key === 'Escape') {
@@ -186,7 +161,6 @@ export default function NewTabApp() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // 监听系统深浅色切换
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
     const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -195,18 +169,14 @@ export default function NewTabApp() {
     return () => media.removeEventListener('change', handler);
   }, []);
 
-  // 时钟定时刷新
   useEffect(() => {
-    const timer = setInterval(() => {
-      setGreetingInfo(formatTimeGreeting());
-    }, 10000);
+    const timer = setInterval(() => setGreetingInfo(formatTimeGreeting()), 10000);
     return () => clearInterval(timer);
   }, []);
 
-  // 初始化加载数据
   useEffect(() => {
     async function loadInitialData() {
-      // 1. 优先读取持久化缓存，实现首屏 <30ms 极速直出
+      // 1. 先读持久化缓存，首屏直接出内容
       const [pData, nSettings, cachedRecs] = await Promise.all([
         getPinnedData(),
         getNewTabSettings(),
@@ -218,17 +188,16 @@ export default function NewTabApp() {
         setRecommendations(cachedRecs);
       }
 
-      // 1.1 根据当前工作/个人模式还原选中的搜索引擎
+      // 1.1 按当前模式还原搜索引擎
       const initialEngineId =
         nSettings.profile === 'home'
           ? nSettings.homeEngineId || nSettings.defaultEngineId
           : nSettings.workEngineId || nSettings.defaultEngineId;
-      const matchedEngine =
-        SEARCH_ENGINES.find((e) => e.id === initialEngineId) ||
-        SEARCH_ENGINES[0];
-      setActiveEngine(matchedEngine);
+      setActiveEngine(
+        SEARCH_ENGINES.find((e) => e.id === initialEngineId) || SEARCH_ENGINES[0],
+      );
 
-      // 2. 查询已开标签
+      // 2. 已开标签（用于「已打开」检测与搜索建议）
       let initialOpenTabs: Array<{ id: number; url: string; title: string; windowId?: number }> = [];
       if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
         try {
@@ -247,70 +216,54 @@ export default function NewTabApp() {
         }
       }
 
-      // 3. 空闲时异步刷新历史推荐并更新缓存 (零阻塞首屏渲染)
+      // 3. 空闲时刷新历史推荐
       refreshAndCacheRecommendations(8).then(async (fresh) => {
-        if (fresh && fresh.length > 0) {
-          setRecommendations(fresh);
+        if (!fresh || fresh.length === 0) return;
+        setRecommendations(fresh);
 
-          // 渐进增强：若启用了端侧 AI 且胶囊浓缩开启，异步微调标题
-          const aiSet = await getAiSettings();
-          if (aiSet.enabled && aiSet.capsuleSummarize) {
-            for (const rec of fresh) {
-              if (rec.capsule) {
-                summarizeDeepRouteTitle(rec.capsule.title, rec.capsule.url, aiSet).then((aiTitle) => {
-                  if (aiTitle) {
-                    setRecommendations((prev) =>
-                      prev.map((item) =>
-                        item.domain === rec.domain && item.capsule
-                          ? { ...item, capsule: { ...item.capsule, cleanTitle: aiTitle } }
-                          : item,
-                      ),
-                    );
-                  }
-                });
-              }
-            }
-          }
-        }
-      });
-
-      // 4. 读取书签平铺目录与最近会话快照
-      loadBookmarkCards().then((cards) => setBookmarkCards(cards));
-      const snapsPromise = getSnapshots();
-      snapsPromise.then((snaps) => {
-        if (snaps && snaps.length > 0) {
-          setRecentSnapshot(snaps[0]);
-        }
-      });
-
-      // 5. 立即计算基于真实时段与标签/快照的动态问候语 (0 毫秒首屏直出，彻底杜绝写死)
-      snapsPromise.then(async (snaps) => {
-        const snapCount = Array.isArray(snaps) ? snaps.length : 0;
-        const liveGreeting = formatLiveStatusGreeting(initialOpenTabs.length, snapCount);
-        setMorningBriefing(liveGreeting);
-
-        // 探测端侧 AI 配置，若可用且开启则由 Gemini Nano 渐进增强
+        // 渐进增强：开启端侧 AI 且胶囊浓缩时异步微调标题
         const aiSet = await getAiSettings();
-        setAiSettings(aiSet);
-        if (aiSet.enabled && aiSet.morningBriefing) {
-          const briefing = await generateMorningBriefing(initialOpenTabs.length, snapCount, aiSet);
-          if (briefing) {
-            setMorningBriefing(briefing);
+        if (aiSet.enabled && aiSet.capsuleSummarize) {
+          for (const rec of fresh) {
+            if (!rec.capsule) continue;
+            summarizeDeepRouteTitle(rec.capsule.title, rec.capsule.url, aiSet).then((aiTitle) => {
+              if (!aiTitle) return;
+              setRecommendations((prev) =>
+                prev.map((item) =>
+                  item.domain === rec.domain && item.capsule
+                    ? { ...item, capsule: { ...item.capsule, cleanTitle: aiTitle } }
+                    : item,
+                ),
+              );
+            });
           }
         }
       });
+
+      // 4. 书签目录与会话快照
+      loadBookmarkCards().then((cards) => setBookmarkCards(cards));
+      getSnapshots().then((snaps) => {
+        if (snaps && snaps.length > 0) setRecentSnapshot(snaps[0]);
+      });
+
+      // 5. 端侧 AI 配置
+      const aiSet = await getAiSettings();
+      setAiSettings(aiSet);
+      if (aiSet.enabled && aiSet.morningBriefing) {
+        void generateMorningBriefing(initialOpenTabs.length, 0, aiSet);
+      }
     }
     loadInitialData();
   }, []);
 
-  // 搜索输入解析
-  const parsedSearch = useMemo(() => {
-    return parseSearchQuery(searchInput, activeEngine.id);
-  }, [searchInput, activeEngine]);
+  const parsedSearch = useMemo(
+    () => parseSearchQuery(searchInput, activeEngine.id),
+    [searchInput, activeEngine],
+  );
 
   /**
-   * 图标来源解析。默认首字母 SVG（本地、零请求）；
-   * browser 模式用 Chrome 本地图标库，失败时回退到首字母 SVG。
+   * 图标来源解析。默认浏览器本地图标库（零请求）；
+   * 失败或未选中 browser 时回退到首字母 SVG。
    * 不做占位图检测 —— 未访问过的站点显示浏览器默认图属正常结果。
    */
   const iconFor = useCallback(
@@ -322,7 +275,7 @@ export default function NewTabApp() {
     [settings.iconMode],
   );
 
-  // 搜索建议与自然语言智能意图起跳 (严格内置 400ms 防抖)
+  // 搜索建议（400ms 防抖）
   useEffect(() => {
     if (!searchInput.trim()) {
       setSearchSuggestions([]);
@@ -338,12 +291,12 @@ export default function NewTabApp() {
         url: t.url,
         tabId: t.id,
         windowId: t.windowId,
-        domain: new URL(t.url || 'https://example.com').hostname,
+        domain: hostnameOf(t.url),
       }));
 
       const ranked = filterAndRankItems(items, searchInput.trim(), 'all', 6);
 
-      // 若启用了端侧 AI 自然语言意图起跳，且输入长度 >= 3，异步意图补全
+      // 端侧 AI 自然语言意图补全
       if (aiSettings.enabled && aiSettings.naturalLanguageJump && searchInput.trim().length >= 3) {
         try {
           const validCandidates = items.filter(
@@ -357,20 +310,19 @@ export default function NewTabApp() {
           if (matched.length > 0) {
             const aiItems: SearchItem[] = matched.map((m) => {
               const original = items.find((it) => it.url === m.url);
-              return original || {
-                id: `ai_${m.url}`,
-                kind: 'tab',
-                title: m.title,
-                url: m.url,
-                domain: new URL(m.url).hostname,
-              };
+              return (
+                original || {
+                  id: `ai_${m.url}`,
+                  kind: 'tab',
+                  title: m.title,
+                  url: m.url,
+                  domain: hostnameOf(m.url),
+                }
+              );
             });
-            // 归并去重
             const merged = [...aiItems];
             for (const r of ranked) {
-              if (!merged.some((m) => m.url === r.url)) {
-                merged.push(r);
-              }
+              if (!merged.some((m) => m.url === r.url)) merged.push(r);
             }
             setSearchSuggestions(merged.slice(0, 6));
             setSelectedSuggestionIndex(-1);
@@ -388,32 +340,33 @@ export default function NewTabApp() {
     return () => clearTimeout(timer);
   }, [searchInput, openTabs, aiSettings]);
 
-  // 导航打开链接逻辑
-  const handleOpenUrl = (targetUrl: string, inNewTab = false) => {
-    if (!targetUrl) return;
+  const handleOpenUrl = useCallback(
+    (targetUrl: string, inNewTab = false) => {
+      if (!targetUrl) return;
 
-    // 检查是否已有完全匹配的标签页
-    const foundTab = openTabs.find((t) => t.url === targetUrl);
-    if (foundTab && typeof chrome !== 'undefined' && chrome.tabs?.update) {
-      chrome.tabs.update(foundTab.id, { active: true });
-      if (foundTab.windowId !== undefined && chrome.windows?.update) {
-        chrome.windows.update(foundTab.windowId, { focused: true });
+      // 已有完全相同地址的标签页：直接切换，避免重复开
+      const foundTab = openTabs.find((t) => t.url === targetUrl);
+      if (foundTab && typeof chrome !== 'undefined' && chrome.tabs?.update) {
+        chrome.tabs.update(foundTab.id, { active: true });
+        if (foundTab.windowId !== undefined && chrome.windows?.update) {
+          chrome.windows.update(foundTab.windowId, { focused: true });
+        }
+        return;
       }
-      return;
-    }
 
-    if (inNewTab || settings.openInNewTab) {
-      if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
-        chrome.tabs.create({ url: targetUrl });
+      if (inNewTab || settings.openInNewTab) {
+        if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+          chrome.tabs.create({ url: targetUrl });
+        } else {
+          window.open(targetUrl, '_blank');
+        }
       } else {
-        window.open(targetUrl, '_blank');
+        window.location.href = targetUrl;
       }
-    } else {
-      window.location.href = targetUrl;
-    }
-  };
+    },
+    [openTabs, settings.openInNewTab],
+  );
 
-  // 激活搜索建议项
   const handleActivateSearchItem = (item: SearchItem) => {
     if (item.tabId && typeof chrome !== 'undefined' && chrome.tabs?.update) {
       chrome.tabs.update(item.tabId, { active: true });
@@ -425,11 +378,8 @@ export default function NewTabApp() {
     }
   };
 
-  // 键盘方向键切换建议项
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.nativeEvent.isComposing) {
-      return;
-    }
+    if (e.nativeEvent.isComposing) return;
     if (e.key === 'ArrowDown') {
       if (searchSuggestions.length > 0) {
         e.preventDefault();
@@ -449,14 +399,11 @@ export default function NewTabApp() {
     }
   };
 
-  // 回车提交搜索或直达 (支持键盘高亮建议直接跳转)
   const handleSearchSubmit = (e?: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e?.nativeEvent?.isComposing) {
-      return;
-    }
+    if (e?.nativeEvent?.isComposing) return;
     if (!searchInput.trim()) return;
 
-    // 1. 若当前用户通过方向键显式高亮选中了建议项，直接切换或打开
+    // 键盘高亮选中建议项时直接切换/打开
     if (
       selectedSuggestionIndex >= 0 &&
       selectedSuggestionIndex < searchSuggestions.length
@@ -470,83 +417,87 @@ export default function NewTabApp() {
       return;
     }
 
-    // 搜索模板跳转
     const engine = parsedSearch.engine || activeEngine;
-    const searchUrl = engine.urlTemplate.replace(
-      '%s',
-      encodeURIComponent(parsedSearch.cleanQuery),
+    handleOpenUrl(
+      engine.urlTemplate.replace('%s', encodeURIComponent(parsedSearch.cleanQuery)),
     );
-    handleOpenUrl(searchUrl);
   };
 
-  // 切换工作与个人模式（独立记忆搜索引擎、内网卡片过滤、分组自适应）
   const handleToggleProfile = async (newProfile: ProfileMode) => {
     const updated = await saveNewTabSettings({ profile: newProfile });
     setSettings(updated);
-    // 恢复对应模式下记忆的搜索引擎
     const targetEngineId =
       newProfile === 'home'
         ? updated.homeEngineId || updated.defaultEngineId
         : updated.workEngineId || updated.defaultEngineId;
-    const targetEngine =
-      SEARCH_ENGINES.find((e) => e.id === targetEngineId) || SEARCH_ENGINES[0];
-    setActiveEngine(targetEngine);
-    // 模式切换时自适应分组（如有个人/生活相关分组或工作分组）
+    setActiveEngine(SEARCH_ENGINES.find((e) => e.id === targetEngineId) || SEARCH_ENGINES[0]);
+
+    // 模式切换时自适应分组
     if (newProfile === 'home') {
-      const homeGroup = pinnedData.groups.find((g) =>
-        /生活|个人|常用|home|life/i.test(g.name),
-      );
+      const homeGroup = pinnedData.groups.find((g) => /生活|个人|常用|home|life/i.test(g.name));
       if (homeGroup) setActiveGroupId(homeGroup.id);
     } else {
-      const workGroup = pinnedData.groups.find((g) =>
-        /工作|开发|技术|work|dev/i.test(g.name),
-      );
+      const workGroup = pinnedData.groups.find((g) => /工作|开发|技术|work|dev/i.test(g.name));
       if (workGroup) setActiveGroupId(workGroup.id);
     }
   };
 
-  // 切换搜索引擎并同步记忆至对应模式
   const handleSelectEngine = async (engine: SearchEngine) => {
     setActiveEngine(engine);
     const updates =
-      settings.profile === 'home'
-        ? { homeEngineId: engine.id }
-        : { workEngineId: engine.id };
-    const updated = await saveNewTabSettings(updates);
-    setSettings(updated);
+      settings.profile === 'home' ? { homeEngineId: engine.id } : { workEngineId: engine.id };
+    setSettings(await saveNewTabSettings(updates));
   };
 
-  // 切换图标来源：首字母 SVG（默认）/ 浏览器本地图标库
-  const handleToggleIconMode = async (iconMode: IconMode) => {
-    const updated = await saveNewTabSettings({ iconMode });
-    setSettings(updated);
+  // 书签区展开/收起：即时生效并写回设置，下次打开沿用
+  const handleToggleBookmarks = async () => {
+    const next = !settings.bookmarksExpanded;
+    setSettings((prev) => ({ ...prev, bookmarksExpanded: next }));
+    setSettings(await saveNewTabSettings({ bookmarksExpanded: next }));
   };
 
   // 过滤当前分组卡片（个人模式下过滤内网卡片）
   const filteredItems = useMemo(() => {
     let list = pinnedData.items;
     if (settings.profile === 'home') {
-      list = list.filter((item) => {
-        let hostname = '';
-        try {
-          hostname = new URL(item.url).hostname;
-        } catch {
-          hostname = item.url;
-        }
-        return !isIntranetHost(hostname);
-      });
+      list = list.filter((item) => !isIntranetHost(hostnameOf(item.url)));
     }
     if (activeGroupId === 'all') return list;
     return list.filter((i) => i.groupId === activeGroupId);
   }, [pinnedData, activeGroupId, settings.profile]);
 
-  // 猜你想开：个人模式下过滤纯内网服务
-  const displayRecommendations = useMemo(() => {
-    if (settings.profile === 'home') {
-      return recommendations.filter((r) => !r.isIntranet);
+  // 「继续上次」：深层路由胶囊优先，其次会话快照；个人模式过滤内网
+  const resumeEntries = useMemo(() => {
+    const entries: Array<{
+      key: string;
+      title: string;
+      url?: string;
+      iconUrl?: string;
+      snapshot?: SessionSnapshot;
+    }> = [];
+
+    for (const rec of recommendations) {
+      if (!rec.capsule) continue;
+      if (settings.profile === 'home' && rec.isIntranet) continue;
+      entries.push({
+        key: `capsule_${rec.domain}`,
+        title: rec.capsule.cleanTitle,
+        url: rec.capsule.url,
+        iconUrl: rec.capsule.url,
+      });
+      if (entries.length >= RESUME_LIMIT) break;
     }
-    return recommendations;
-  }, [recommendations, settings.profile]);
+
+    if (recentSnapshot && recentSnapshot.tabs.length > 0 && entries.length < RESUME_LIMIT) {
+      entries.push({
+        key: `snapshot_${recentSnapshot.id}`,
+        title: `上次工作现场 · ${recentSnapshot.tabs.length} 个页面`,
+        snapshot: recentSnapshot,
+      });
+    }
+
+    return entries;
+  }, [recommendations, recentSnapshot, settings.profile]);
 
   // 快捷方式名称补全的状态机。持有请求编号/会话编号/名称来源，
   // 使异步回调在返回时读到的是**最新**状态而非闭包快照。
@@ -580,7 +531,6 @@ export default function NewTabApp() {
     [form],
   );
 
-  // 打开添加/编辑模态框
   const handleOpenItemModal = (item?: PinnedItem) => {
     // 开新会话：作废上一条所有在途请求，避免旧建议/旧提示串到这一条
     metaController.beginSession(item != null);
@@ -593,15 +543,12 @@ export default function NewTabApp() {
       form.resetFields();
       form.setFieldsValue({
         groupId:
-          activeGroupId === 'all'
-            ? pinnedData.groups[0]?.id || 'dev'
-            : activeGroupId,
+          activeGroupId === 'all' ? pinnedData.groups[0]?.id || 'dev' : activeGroupId,
       });
     }
     setItemModalVisible(true);
   };
 
-  /** 关闭弹窗：结束会话，作废在途请求 */
   const handleCloseItemModal = () => {
     metaController.endSession();
     setItemModalVisible(false);
@@ -622,7 +569,6 @@ export default function NewTabApp() {
     metaController.invalidate();
   }, [metaController]);
 
-  // 保存固钉卡片
   const handleSaveItem = async () => {
     try {
       const values = await form.validateFields();
@@ -648,30 +594,24 @@ export default function NewTabApp() {
           groupId: values.groupId,
         });
       }
-      const refreshed = await getPinnedData();
-      setPinnedData(refreshed);
-      // 保存成功即结束会话，作废在途请求
+      setPinnedData(await getPinnedData());
       handleCloseItemModal();
     } catch {
       // 表单校验失败
     }
   };
 
-  // 删除固钉卡片
   const handleDeleteItem = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     await deletePinnedItem(id);
-    const refreshed = await getPinnedData();
-    setPinnedData(refreshed);
+    setPinnedData(await getPinnedData());
   };
 
-  // 新增分组
   const handleSaveGroup = async () => {
     try {
       const values = await groupForm.validateFields();
       await addPinnedGroup(values.name);
-      const refreshed = await getPinnedData();
-      setPinnedData(refreshed);
+      setPinnedData(await getPinnedData());
       setGroupModalVisible(false);
       groupForm.resetFields();
     } catch {
@@ -680,27 +620,26 @@ export default function NewTabApp() {
   };
 
   const [messageApi, contextHolder] = message.useMessage();
-  const [snapshotDismissed, setSnapshotDismissed] = useState(false);
 
-  // 过滤书签目录卡片（全量检索）
-  const displayBookmarkCards = useMemo(() => {
-    return filterBookmarkCards(bookmarkCards, bookmarkSearch);
-  }, [bookmarkCards, bookmarkSearch]);
+  const displayBookmarkCards = useMemo(
+    () => filterBookmarkCards(bookmarkCards, bookmarkSearch),
+    [bookmarkCards, bookmarkSearch],
+  );
 
-  // 折叠/展开书签文件夹
+  const totalBookmarkCount = useMemo(
+    () => bookmarkCards.reduce((n, c) => n + c.totalCount, 0),
+    [bookmarkCards],
+  );
+
   const toggleFolderExpand = (folderId: string) => {
     setExpandedFolderIds((prev) => {
       const next = new Set(prev);
-      if (next.has(folderId)) {
-        next.delete(folderId);
-      } else {
-        next.add(folderId);
-      }
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
       return next;
     });
   };
 
-  // 后台静默打开书签
   const handleOpenBookmarkInBackground = (url: string) => {
     if (!url) return;
     if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
@@ -711,7 +650,6 @@ export default function NewTabApp() {
     }
   };
 
-  // 复制书签网址
   const handleCopyUrl = async (url: string) => {
     if (!url) return;
     try {
@@ -722,7 +660,6 @@ export default function NewTabApp() {
     }
   };
 
-  // 一键在后台打开该目录下所有书签
   const handleOpenFolderAll = (card: BookmarkFolderCard) => {
     const pool = card.allItems || card.items;
     const validItems = pool.filter((it) => it.url && !it.isInvalid);
@@ -741,7 +678,6 @@ export default function NewTabApp() {
     }
   };
 
-  // 保存修改的书签
   const handleSaveBookmark = async () => {
     if (!editingBookmark) return;
     try {
@@ -752,8 +688,7 @@ export default function NewTabApp() {
           url: String(values.url ?? '').trim(),
         });
         messageApi.success('书签修改成功');
-        const refreshed = await loadBookmarkCards();
-        setBookmarkCards(refreshed);
+        setBookmarkCards(await loadBookmarkCards());
       } else {
         messageApi.info('当前环境不支持直接更新 Chrome 书签');
       }
@@ -763,7 +698,6 @@ export default function NewTabApp() {
     }
   };
 
-  // 删除书签
   const handleDeleteBookmark = (item: BookmarkItem) => {
     Modal.confirm({
       title: '确认删除书签？',
@@ -775,8 +709,7 @@ export default function NewTabApp() {
         if (typeof chrome !== 'undefined' && chrome.bookmarks?.remove) {
           await chrome.bookmarks.remove(item.id);
           messageApi.success('书签已删除');
-          const refreshed = await loadBookmarkCards();
-          setBookmarkCards(refreshed);
+          setBookmarkCards(await loadBookmarkCards());
         } else {
           messageApi.info('当前环境不支持直接删除 Chrome 书签');
         }
@@ -784,726 +717,490 @@ export default function NewTabApp() {
     });
   };
 
-  // 一键恢复会话快照
-  const handleRestoreSnapshot = async (snapshot: SessionSnapshot) => {
+  const handleRestoreSnapshot = (snapshot: SessionSnapshot) => {
     if (!snapshot.tabs || snapshot.tabs.length === 0) return;
     if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
       for (const tab of snapshot.tabs) {
-        if (tab.url) {
-          chrome.tabs.create({ url: tab.url, active: false });
-        }
+        if (tab.url) chrome.tabs.create({ url: tab.url, active: false });
       }
       messageApi.success(`已在后台开启 ${snapshot.tabs.length} 个标签页`);
     } else {
       snapshot.tabs.slice(0, 5).forEach((t) => {
         if (t.url) window.open(t.url, '_blank');
       });
-      messageApi.success(`已恢复会话页面`);
+      messageApi.success('已恢复会话页面');
     }
   };
+
+  /** 单条书签的操作菜单，右键与「更多」按钮共用 */
+  const bookmarkMenuItems = (item: BookmarkItem) => [
+    {
+      key: 'open-new-tab',
+      icon: <GlobalOutlined />,
+      label: '在新标签页打开',
+      onClick: () => handleOpenUrl(item.url, true),
+    },
+    {
+      key: 'open-bg',
+      icon: <RocketOutlined />,
+      label: '后台静默打开',
+      onClick: () => handleOpenBookmarkInBackground(item.url),
+    },
+    {
+      key: 'copy-url',
+      icon: <CopyOutlined />,
+      label: '复制网址',
+      onClick: () => void handleCopyUrl(item.url),
+    },
+    { type: 'divider' as const },
+    {
+      key: 'edit',
+      icon: <EditOutlined />,
+      label: '修改书签',
+      onClick: () => {
+        setEditingBookmark(item);
+        bookmarkForm.setFieldsValue({ title: item.title, url: item.url });
+      },
+    },
+    {
+      key: 'delete',
+      icon: <DeleteOutlined />,
+      danger: true,
+      label: '删除书签',
+      onClick: () => handleDeleteBookmark(item),
+    },
+  ];
+
+  const groupChips = [
+    { id: 'all', name: '全部', count: pinnedData.items.length },
+    ...pinnedData.groups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      count: pinnedData.items.filter((i) => i.groupId === g.id).length,
+    })),
+  ];
 
   return (
     <ConfigProvider
       theme={{
         algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
-          colorPrimary: '#3b82f6',
+          colorPrimary: '#4f46e5',
           borderRadius: 8,
           fontFamily:
-            "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif",
+            "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', 'Microsoft YaHei', sans-serif",
         },
       }}
     >
       {contextHolder}
-      <div className="newtab-container">
-        {/* 顶部状态与模式切换栏 */}
-        <header className="newtab-header">
+      <div className="yt-shell">
+        {/* ---------- 顶部：时钟 / 模式 / 搜索 / 设置 ---------- */}
+        <header className="yt-top">
           <div>
-            <div className="greeting-time">{greetingInfo.timeStr}</div>
-            <div className="greeting-subtitle">
-              {greetingInfo.greeting} · {greetingInfo.dateStr}
+            <div className="yt-clock">{greetingInfo.timeStr}</div>
+            <div className="yt-meta">
+              <span>{greetingInfo.dateStr}</span>
+              <span className="sep" />
+              <span>
+                {greetingInfo.greeting} · 当前 <b>{openTabs.length}</b> 个活动页面
+              </span>
+              {recentSnapshot && recentSnapshot.tabs.length > 0 && (
+                <>
+                  <span className="sep" />
+                  <span>
+                    <b>{recentSnapshot.tabs.length}</b> 个未完工现场
+                  </span>
+                </>
+              )}
             </div>
           </div>
 
-          <Space direction="horizontal" size="middle">
-            <Radio.Group
-              value={settings.profile}
-              onChange={(e) => handleToggleProfile(e.target.value)}
-              buttonStyle="solid"
-              size="small"
-            >
-              <Radio.Button value="work">🏢 办公内网</Radio.Button>
-              <Radio.Button value="home">🏠 个人模式</Radio.Button>
-            </Radio.Group>
-
-            <Tooltip
-              title={
-                settings.iconMode === 'browser'
-                  ? '当前：浏览器图标（来自 Chrome 本地图标库）。未访问过的站点会显示浏览器默认图标。'
-                  : '当前：首字母图标（本地生成，零网络请求）'
-              }
-            >
-              <Radio.Group
-                value={settings.iconMode}
-                onChange={(e) => void handleToggleIconMode(e.target.value)}
-                buttonStyle="solid"
-                size="small"
-              >
-                <Radio.Button value="initials">首字母</Radio.Button>
-                <Radio.Button value="browser">浏览器图标</Radio.Button>
-              </Radio.Group>
-            </Tooltip>
-
-            <Tooltip title="打开 YiTab 控制中心">
-              <Button
-                type="text"
-                shape="circle"
-                icon={<SettingOutlined />}
-                onClick={() => {
-                  if (typeof chrome !== 'undefined' && chrome.runtime?.openOptionsPage) {
-                    chrome.runtime.openOptionsPage();
-                  } else {
-                    window.open('options.html', '_blank');
+          <div className="yt-top-actions">
+            <div className="yt-search">
+              <div className="yt-search-box">
+                <Dropdown
+                  menu={{
+                    items: SEARCH_ENGINES.map((e) => ({
+                      key: e.id,
+                      label: `${e.icon} ${e.name} [前缀: ${e.prefix}]`,
+                      onClick: () => void handleSelectEngine(e),
+                    })),
+                  }}
+                  trigger={['click']}
+                >
+                  <span className="yt-engine" title="切换搜索引擎">
+                    {activeEngine.icon} {activeEngine.name} <SwapOutlined style={{ fontSize: 10 }} />
+                  </span>
+                </Dropdown>
+                <Input
+                  ref={searchInputRef}
+                  autoFocus
+                  bordered={false}
+                  placeholder={
+                    parsedSearch.isAddress
+                      ? `⏎ 直达网络地址: ${parsedSearch.targetUrl}`
+                      : '搜索或输入网址'
                   }
-                }}
-              />
-            </Tooltip>
-          </Space>
-        </header>
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
+                  onKeyDown={handleSearchKeyDown}
+                  onPressEnter={handleSearchSubmit}
+                  style={{ fontSize: 13, padding: 0 }}
+                />
+                {!searchInput && <span className="yt-kbd">/</span>}
+              </div>
 
-        {/* ☀️ 晨间工作现场智能简报 */}
-        {morningBriefing && (
-          <div
-            style={{
-              maxWidth: 760,
-              width: '100%',
-              margin: '-12px auto 0',
-              padding: '8px 14px',
-              borderRadius: 8,
-              background: isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.06)',
-              border: '1px solid rgba(59, 130, 246, 0.2)',
-              color: isDark ? '#93c5fd' : '#2563eb',
-              fontSize: 12.5,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 10,
-            }}
-          >
-            <span>{morningBriefing}</span>
-            {recentSnapshot && (
-              <Button
-                type="link"
-                size="small"
-                style={{ fontSize: 11, padding: 0, height: 'auto', fontWeight: 600 }}
-                onClick={() => handleRestoreSnapshot(recentSnapshot)}
-              >
-                一键唤醒工作现场 ↗
-              </Button>
-            )}
-          </div>
-        )}
-
-        {/* 极简全能聚合搜索条 */}
-        <div className="search-section">
-          <Card
-            styles={{ body: { padding: '8px 12px' } }}
-            style={{
-              borderRadius: 12,
-              boxShadow: isSearchFocused
-                ? '0 6px 20px rgba(59, 130, 246, 0.15)'
-                : '0 2px 10px rgba(0, 0, 0, 0.04)',
-              border: isSearchFocused
-                ? '1px solid #3b82f6'
-                : isDark
-                  ? '1px solid #334155'
-                  : '1px solid #e2e8f0',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Space direction="horizontal" style={{ width: '100%' }}>
-              <Dropdown
-                menu={{
-                  items: SEARCH_ENGINES.map((e) => ({
-                    key: e.id,
-                    label: `${e.icon} ${e.name} [前缀: ${e.prefix}]`,
-                    onClick: () => handleSelectEngine(e),
-                  })),
-                }}
-                trigger={['click']}
-              >
-                <Button type="text" size="middle" style={{ padding: '0 8px', fontWeight: 600 }}>
-                  {activeEngine.icon} {activeEngine.name} <SwapOutlined style={{ fontSize: 11 }} />
-                </Button>
-              </Dropdown>
-
-              <Input
-                ref={searchInputRef}
-                autoFocus
-                bordered={false}
-                placeholder={
-                  parsedSearch.isAddress
-                    ? `⏎ 直达网络地址: ${parsedSearch.targetUrl}`
-                    : activeEngine.placeholder
-                }
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onFocus={() => setIsSearchFocused(true)}
-                onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
-                onKeyDown={handleSearchKeyDown}
-                onPressEnter={handleSearchSubmit}
-                style={{ fontSize: 15 }}
-                suffix={
-                  searchInput ? (
-                    <Button
-                      type="primary"
-                      size="small"
-                      icon={<SearchOutlined />}
-                      onClick={() => handleSearchSubmit()}
-                    >
-                      {parsedSearch.isAddress ? '直达' : '搜索'}
-                    </Button>
-                  ) : (
-                    <span
-                      style={{
-                        fontSize: 11,
-                        color: '#94a3b8',
-                        background: isDark ? '#334155' : '#f1f5f9',
-                        padding: '1px 6px',
-                        borderRadius: 4,
-                        userSelect: 'none',
-                      }}
-                    >
-                      / 聚焦
-                    </span>
-                  )
-                }
-              />
-            </Space>
-
-            {/* 搜索建议与已开标签快速直达 */}
-            {isSearchFocused && searchSuggestions.length > 0 && (
-              <div
-                style={{
-                  marginTop: 10,
-                  borderTop: isDark ? '1px solid #334155' : '1px solid #f1f5f9',
-                  paddingTop: 8,
-                }}
-              >
-                <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>
-                  已开标签智能匹配 (按上下键选择，回车或点击直接切换):
-                </div>
-                {searchSuggestions.map((item, index) => {
-                  const isSelected = index === selectedSuggestionIndex;
-                  return (
+              {isSearchFocused && searchSuggestions.length > 0 && (
+                <div className="yt-suggest">
+                  <div className="yt-suggest-hint">已开标签（上下键选择，回车切换）</div>
+                  {searchSuggestions.map((item, index) => (
                     <div
                       key={item.id}
+                      className="yt-suggest-item"
+                      role="option"
+                      aria-selected={index === selectedSuggestionIndex}
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleActivateSearchItem(item)}
                       onMouseEnter={() => setSelectedSuggestionIndex(index)}
-                      style={{
-                        padding: '6px 10px',
-                        borderRadius: 6,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                        background: isSelected
-                          ? isDark
-                            ? 'rgba(59, 130, 246, 0.25)'
-                            : 'rgba(59, 130, 246, 0.1)'
-                          : 'transparent',
-                        border: isSelected
-                          ? '1px solid #3b82f6'
-                          : '1px solid transparent',
-                      }}
                     >
-                      <Space direction="horizontal" size="small" style={{ overflow: 'hidden' }}>
-                        <Tag color={isSelected ? 'blue' : 'cyan'}>已开标签</Tag>
-                        <Text style={{ fontSize: 13, fontWeight: isSelected ? 600 : 500 }} ellipsis>
-                          {item.title}
-                        </Text>
-                      </Space>
-                      <Text type="secondary" style={{ fontSize: 11 }}>
-                        {item.domain} {isSelected ? '⏎ 切换' : '↗'}
-                      </Text>
+                      <span className="t">{item.title}</span>
+                      <span className="d">{item.domain}</span>
+                      <span className="d">{index === selectedSuggestionIndex ? '⏎' : '↗'}</span>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-        </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-        {/* 💡 猜你想开 (智能推选引擎 + 胶囊双态直达) */}
-        {displayRecommendations.length > 0 && (
-          <div className="recommendations-section">
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 12,
+            <div className="yt-seg" role="group" aria-label="模式">
+              <button
+                aria-pressed={settings.profile === 'work'}
+                onClick={() => void handleToggleProfile('work')}
+              >
+                办公内网
+              </button>
+              <button
+                aria-pressed={settings.profile === 'home'}
+                onClick={() => void handleToggleProfile('home')}
+              >
+                个人
+              </button>
+            </div>
+
+            <button
+              className="yt-icon-btn"
+              title="打开 YiTab 控制中心"
+              aria-label="设置"
+              onClick={() => {
+                if (typeof chrome !== 'undefined' && chrome.runtime?.openOptionsPage) {
+                  chrome.runtime.openOptionsPage();
+                } else {
+                  window.open('options.html', '_blank');
+                }
               }}
             >
-              <Title level={5} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <ThunderboltOutlined style={{ color: '#f59e0b' }} /> 猜你想开
-                <span style={{ fontSize: 11, fontWeight: 'normal', color: '#94a3b8' }}>
-                  基于 RFT 衰减模型与当前时段智能推荐
-                </span>
-              </Title>
-            </div>
-
-            <div className="recommendations-grid">
-              {displayRecommendations.map((rec) => {
-                return (
-                  <div
-                    key={`rec_${rec.domain}`}
-                    className="recommendation-card"
-                    onClick={() => {
-                      if (rec.isOpen && rec.openTabId && typeof chrome !== 'undefined') {
-                        chrome.tabs.update(rec.openTabId, { active: true });
-                        if (rec.openWindowId && chrome.windows?.update) {
-                          chrome.windows.update(rec.openWindowId, { focused: true });
-                        }
-                      } else {
-                        handleOpenUrl(rec.primaryUrl);
-                      }
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <img
-                        className="pinned-icon"
-                        src={iconFor(rec.primaryUrl, rec.title, 64).src}
-                        alt={rec.title}
-                        onError={(e) => {
-                          e.currentTarget.onerror = null;
-                          e.currentTarget.src = iconFor(rec.primaryUrl, rec.title, 64).fallback;
-                        }}
-                      />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div className="pinned-title">{rec.title}</div>
-                        <div className="pinned-url">{rec.domain}</div>
-                      </div>
-
-                      {rec.isOpen && (
-                        <Tooltip title="该站点已在后台窗口打开，点击直接切换">
-                          <Tag
-                            color="success"
-                            icon={<CheckCircleFilled />}
-                            style={{ margin: 0, padding: '0 4px', fontSize: 10 }}
-                          >
-                            已打开
-                          </Tag>
-                        </Tooltip>
-                      )}
-
-                      {rec.isIntranet && !rec.isOpen && (
-                        <Tag color="geekblue" style={{ margin: 0, padding: '0 4px', fontSize: 10 }}>
-                          内网
-                        </Tag>
-                      )}
-                    </div>
-
-                    {/* 深层路由恢复上下文微胶囊 */}
-                    {rec.capsule && (
-                      <div
-                        className="resume-capsule"
-                        title={`上次访问: ${rec.capsule.title}\n地址: ${rec.capsule.url}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenUrl(rec.capsule!.url);
-                        }}
-                      >
-                        <ClockCircleOutlined style={{ fontSize: 11 }} />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          继续上次: {rec.capsule.cleanTitle}
-                        </span>
-                        <span style={{ fontSize: 10, opacity: 0.8 }}>↗</span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+              <SettingOutlined style={{ fontSize: 17 }} />
+            </button>
           </div>
-        )}
+        </header>
 
-        {/* 固钉工作台 (Pinned Matrix) */}
-        <div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 14,
-            }}
-          >
-            <Space direction="horizontal" size="middle">
-              <Title level={5} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <AppstoreOutlined style={{ color: '#3b82f6' }} /> 固钉工作台
-              </Title>
-              <Radio.Group
-                value={activeGroupId}
-                onChange={(e) => setActiveGroupId(e.target.value)}
-                size="small"
-              >
-                <Radio.Button value="all">全部 ({pinnedData.items.length})</Radio.Button>
-                {pinnedData.groups.map((g) => {
-                  const count = pinnedData.items.filter((i) => i.groupId === g.id).length;
-                  return (
-                    <Radio.Button key={g.id} value={g.id}>
-                      {g.name} ({count})
-                    </Radio.Button>
-                  );
-                })}
-              </Radio.Group>
-            </Space>
+        {/* ---------- 分组条 ---------- */}
+        <div className="yt-groupbar">
+          {groupChips.map((g) => (
+            <button
+              key={g.id}
+              className="yt-gchip"
+              aria-current={activeGroupId === g.id}
+              onClick={() => setActiveGroupId(g.id)}
+            >
+              {g.name}
+              <span className="n">{g.count}</span>
+            </button>
+          ))}
+          <span className="spacer" />
+          <button className="yt-text-btn" onClick={() => setGroupModalVisible(true)}>
+            ＋ 新建分组
+          </button>
+          <button className="yt-text-btn accent" onClick={() => handleOpenItemModal()}>
+            ＋ 添加快捷方式
+          </button>
+        </div>
 
-            <Space direction="horizontal" size="small">
-              <Button
-                size="small"
-                type="dashed"
-                icon={<PlusOutlined />}
-                onClick={() => setGroupModalVisible(true)}
-              >
-                新建分组
-              </Button>
-              <Button
-                size="small"
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => handleOpenItemModal()}
-              >
-                添加快捷方式
-              </Button>
-            </Space>
+        {/* ---------- 快捷方式磁贴 ---------- */}
+        {filteredItems.length === 0 ? (
+          <div className="yt-empty">
+            <p>「{groupChips.find((g) => g.id === activeGroupId)?.name}」还没有快捷方式。</p>
+            <button className="yt-btn" onClick={() => handleOpenItemModal()}>
+              <PlusOutlined /> 添加快捷方式
+            </button>
           </div>
+        ) : (
+          <div className="yt-tiles">
+            {filteredItems.map((item) => {
+              const hostname = hostnameOf(item.url);
+              const isIntranet = isIntranetHost(hostname);
+              const isOpen = openTabs.some((t) => t.url === item.url);
+              const icon = iconFor(item.url, item.title, 64);
 
-          {filteredItems.length === 0 ? (
-            <Card style={{ borderRadius: 10, textAlign: 'center', padding: '30px 0' }}>
-              <Empty description="该分组暂无固钉快捷应用">
-                <Button type="primary" size="small" onClick={() => handleOpenItemModal()}>
-                  立即添加第一个应用
-                </Button>
-              </Empty>
-            </Card>
-          ) : (
-            <div className="pinned-grid">
-              {filteredItems.map((item) => {
-                let hostname = '';
-                try {
-                  hostname = new URL(item.url).hostname;
-                } catch {
-                  hostname = item.url;
-                }
-
-                const isIntranet = isIntranetHost(hostname);
-                const isOpen = openTabs.some((t) => t.url === item.url);
-
-                return (
-                  <div
-                    key={item.id}
-                    className="pinned-card"
-                    onClick={() => handleOpenUrl(item.url)}
-                  >
+              return (
+                <div
+                  key={item.id}
+                  className="yt-tile"
+                  title={`${item.title}\n${item.url}`}
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => handleOpenUrl(item.url)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleOpenUrl(item.url);
+                    }
+                  }}
+                >
+                  <span className={`icon${settings.iconMode === 'browser' ? ' real' : ''}`}>
                     <img
-                      className="pinned-icon"
-                      src={iconFor(item.url, item.title, 64).src}
-                      alt={item.title}
+                      src={icon.src}
+                      alt=""
                       onError={(e) => {
-                        // 失败时自愈为优雅的矢量 SVG Favicon
                         e.currentTarget.onerror = null;
-                        e.currentTarget.src = iconFor(item.url, item.title, 64).fallback;
+                        e.currentTarget.src = icon.fallback;
                       }}
                     />
+                    {isOpen && <span className="dot open" title="已在后台打开" />}
+                    {!isOpen && isIntranet && <span className="dot intranet" title="内网地址" />}
+                  </span>
+                  <span className="label">{item.title}</span>
+                  <button
+                    className="more"
+                    title="编辑 / 删除"
+                    aria-label="更多操作"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenItemModal(item);
+                    }}
+                  >
+                    <MoreOutlined style={{ fontSize: 12 }} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
-                    <div className="pinned-info">
-                      <div className="pinned-title">{item.title}</div>
-                      <div className="pinned-url">{hostname || item.url}</div>
-                    </div>
-
-                    {isOpen && (
-                      <Tooltip title="当前标签页已在后台打开，点击直接激活">
-                        <Tag
-                          color="success"
-                          icon={<CheckCircleFilled />}
-                          style={{ margin: 0, padding: '0 4px', fontSize: 10 }}
-                        >
-                          已打开
-                        </Tag>
-                      </Tooltip>
-                    )}
-
-                    {isIntranet && !isOpen && (
-                      <Tag color="geekblue" style={{ margin: 0, padding: '0 4px', fontSize: 10 }}>
-                        内网
-                      </Tag>
-                    )}
-
-                    <div
-                      style={{
-                        position: 'absolute',
-                        right: 8,
-                        top: 8,
-                        display: 'none',
+        {/* ---------- 继续上次 ---------- */}
+        {resumeEntries.length > 0 && (
+          <div className="yt-resume">
+            <span className="cap">继续上次</span>
+            {resumeEntries.map((entry) => {
+              const icon = entry.iconUrl
+                ? iconFor(entry.iconUrl, entry.title, 32)
+                : null;
+              return (
+                <button
+                  key={entry.key}
+                  className="yt-chip"
+                  title={entry.url || entry.title}
+                  onClick={() => {
+                    if (entry.snapshot) handleRestoreSnapshot(entry.snapshot);
+                    else if (entry.url) handleOpenUrl(entry.url);
+                  }}
+                >
+                  {icon ? (
+                    <img
+                      src={icon.src}
+                      alt=""
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = icon.fallback;
                       }}
-                      className="pinned-actions"
-                    >
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<EditOutlined />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenItemModal(item);
-                        }}
-                      />
-                      <Button
-                        type="text"
-                        danger
-                        size="small"
-                        icon={<DeleteOutlined />}
-                        onClick={(e) => handleDeleteItem(item.id, e)}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                    />
+                  ) : (
+                    <ClockCircleOutlined style={{ fontSize: 12 }} />
+                  )}
+                  <span>{entry.title}</span>
+                  <span className="u">↗</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-        {/* 📑 书签看板 (Bookmarks Board) */}
+        {/* ---------- 书签 ---------- */}
         {bookmarkCards.length > 0 && (
-          <div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 14,
-              }}
-            >
-              <Title level={5} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <BookOutlined style={{ color: '#10b981' }} /> 书签看板
-                <span style={{ fontSize: 11, fontWeight: 'normal', color: '#94a3b8' }}>
-                  按常用目录聚合速览
-                </span>
-              </Title>
-
-              <Input
-                placeholder="快速筛选书签或目录..."
-                prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
-                value={bookmarkSearch}
-                onChange={(e) => setBookmarkSearch(e.target.value)}
-                allowClear
-                size="small"
-                style={{ width: 220, borderRadius: 6 }}
-              />
+          <section className="yt-bookmarks">
+            <div className="yt-bm-head">
+              <span className="yt-bm-title">
+                <BookOutlined /> 书签
+                <span className="n">{totalBookmarkCount} 项</span>
+              </span>
+              <label className="yt-bm-search">
+                <SearchOutlined style={{ fontSize: 12 }} />
+                <input
+                  placeholder="筛选书签"
+                  aria-label="筛选书签"
+                  value={bookmarkSearch}
+                  onChange={(e) => setBookmarkSearch(e.target.value)}
+                />
+              </label>
+              <span className="spacer" />
+              <button
+                className="yt-bm-toggle"
+                aria-expanded={settings.bookmarksExpanded}
+                onClick={() => void handleToggleBookmarks()}
+              >
+                <span>{settings.bookmarksExpanded ? '收起' : '展开'}</span>
+                <DownOutlined style={{ fontSize: 11 }} />
+              </button>
             </div>
 
-            {displayBookmarkCards.length === 0 ? (
-              <Card style={{ borderRadius: 10, textAlign: 'center', padding: '20px 0' }}>
-                <Empty description="未找到匹配的书签项" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              </Card>
-            ) : (
-              <div className="bookmark-matrix-grid">
-                {displayBookmarkCards.map((card) => {
-                  const isSearching = Boolean(bookmarkSearch.trim());
-                  const isExpanded = expandedFolderIds.has(card.id);
-                  const itemsToRender = isSearching
-                    ? card.items
-                    : isExpanded
-                      ? card.allItems || card.items
-                      : card.items;
+            {settings.bookmarksExpanded && (
+              <div className="yt-bm-panel">
+                {displayBookmarkCards.length === 0 ? (
+                  <div className="yt-empty" style={{ marginTop: 16 }}>
+                    <p>没有匹配「{bookmarkSearch}」的书签。</p>
+                  </div>
+                ) : (
+                  displayBookmarkCards.map((card) => {
+                    const isSearching = Boolean(bookmarkSearch.trim());
+                    const isExpanded = expandedFolderIds.has(card.id);
+                    const pool = card.allItems || card.items;
+                    const itemsToRender = isSearching
+                      ? card.items
+                      : isExpanded
+                        ? pool
+                        : pool.slice(0, BOOKMARK_PREVIEW_LIMIT);
+                    const hiddenCount = pool.length - itemsToRender.length;
 
-                  return (
-                    <div key={card.id} className="bookmark-folder-card">
-                      <div className="bookmark-folder-header">
-                        <Space direction="horizontal" size="small" style={{ overflow: 'hidden' }}>
-                          <FolderOpenOutlined style={{ color: '#f59e0b', fontSize: 15 }} />
-                          <Text strong style={{ fontSize: 13 }} ellipsis>
+                    return (
+                      <div key={card.id} className="yt-bm-folder">
+                        <div className="yt-bm-folder-head">
+                          <span className="fname">
+                            <FolderOpenOutlined style={{ fontSize: 13 }} />
                             {card.name}
-                          </Text>
-                        </Space>
-                        <Space direction="horizontal" size="small">
-                          <Tag style={{ margin: 0, fontSize: 10 }}>{card.totalCount} 项</Tag>
-                          <Tooltip title="在后台一键打开该目录下全部书签">
-                            <Button
-                              type="text"
-                              size="small"
-                              style={{ padding: '0 4px', height: 22, fontSize: 11, color: '#10b981' }}
-                              icon={<RocketOutlined />}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenFolderAll(card);
-                              }}
-                            >
-                              全部打开
-                            </Button>
-                          </Tooltip>
-                        </Space>
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        {itemsToRender.map((item) => {
-                          const bookmarkMenuItems = [
-                            {
-                              key: 'open-new-tab',
-                              icon: <GlobalOutlined />,
-                              label: '在新标签页打开',
-                              onClick: () => handleOpenUrl(item.url, true),
-                            },
-                            {
-                              key: 'open-bg',
-                              icon: <RocketOutlined />,
-                              label: '后台静默打开',
-                              onClick: () => handleOpenBookmarkInBackground(item.url),
-                            },
-                            {
-                              key: 'copy-url',
-                              icon: <CopyOutlined />,
-                              label: '复制网址',
-                              onClick: () => handleCopyUrl(item.url),
-                            },
-                            {
-                              type: 'divider' as const,
-                            },
-                            {
-                              key: 'edit',
-                              icon: <EditOutlined />,
-                              label: '修改书签',
-                              onClick: () => {
-                                setEditingBookmark(item);
-                                bookmarkForm.setFieldsValue({
-                                  title: item.title,
-                                  url: item.url,
-                                });
-                              },
-                            },
-                            {
-                              key: 'delete',
-                              icon: <DeleteOutlined />,
-                              danger: true,
-                              label: '删除书签',
-                              onClick: () => handleDeleteBookmark(item),
-                            },
-                          ];
-
-                          return (
-                            <Dropdown
-                              key={item.id}
-                              menu={{ items: bookmarkMenuItems }}
-                              trigger={['contextMenu']}
-                            >
-                              <div
-                                className="bookmark-link-item"
-                                onClick={() => handleOpenUrl(item.url)}
-                                title={`${item.title}\n${item.url}\n(右键呼出书签操作菜单)`}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden', flex: 1 }}>
-                                  <img
-                                    src={iconFor(item.url, item.title, 32).src}
-                                    alt=""
-                                    style={{ width: 14, height: 14, borderRadius: 2, flexShrink: 0 }}
-                                    onError={(e) => {
-                                      e.currentTarget.onerror = null;
-                                      e.currentTarget.src = iconFor(item.url, item.title, 32).fallback;
-                                    }}
-                                  />
-                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {item.title}
-                                  </span>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, marginLeft: 6 }}>
-                                  <span className="bookmark-domain-text">
-                                    {item.domain}
-                                  </span>
-                                  <Dropdown menu={{ items: bookmarkMenuItems }} trigger={['click']}>
-                                    <Button
-                                      type="text"
-                                      size="small"
-                                      className="bookmark-item-more-btn"
-                                      icon={<MoreOutlined style={{ fontSize: 12 }} />}
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                  </Dropdown>
-                                </div>
-                              </div>
-                            </Dropdown>
-                          );
-                        })}
-                      </div>
-
-                      {card.totalCount > 6 && !isSearching && (
-                        <div
-                          className="bookmark-folder-expand-btn"
-                          onClick={() => toggleFolderExpand(card.id)}
-                        >
-                          {isExpanded ? (
-                            <Space size={4}>
-                              <UpOutlined style={{ fontSize: 10 }} />
-                              <span>收起</span>
-                            </Space>
-                          ) : (
-                            <Space size={4}>
-                              <DownOutlined style={{ fontSize: 10 }} />
-                              <span>展开更多 (共 {card.totalCount} 项)</span>
-                            </Space>
-                          )}
+                          </span>
+                          <span className="fn">{card.totalCount}</span>
+                          <span className="spacer" />
+                          <button
+                            className="yt-bm-openall"
+                            title="在后台打开该目录下全部书签"
+                            onClick={() => handleOpenFolderAll(card)}
+                          >
+                            <RocketOutlined style={{ fontSize: 11 }} /> 全部打开
+                          </button>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
+
+                        <div className="yt-bm-links">
+                          {itemsToRender.map((item) => {
+                            const icon = iconFor(item.url, item.title, 32);
+                            return (
+                              <Dropdown
+                                key={item.id}
+                                menu={{ items: bookmarkMenuItems(item) }}
+                                trigger={['contextMenu']}
+                              >
+                                <div
+                                  className="yt-bm-row"
+                                  title={`${item.title}\n${item.url}\n(右键呼出更多操作)`}
+                                  onClick={() => handleOpenUrl(item.url)}
+                                >
+                                  <span className="fi">
+                                    <img
+                                      src={icon.src}
+                                      alt=""
+                                      onError={(e) => {
+                                        e.currentTarget.onerror = null;
+                                        e.currentTarget.src = icon.fallback;
+                                      }}
+                                    />
+                                  </span>
+                                  <span className="bt">{item.title}</span>
+                                  <span className="bd">{item.domain}</span>
+                                  <span className="bacts">
+                                    <button
+                                      className="yt-bact"
+                                      title="在新标签页打开"
+                                      aria-label="在新标签页打开"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenUrl(item.url, true);
+                                      }}
+                                    >
+                                      <GlobalOutlined style={{ fontSize: 12 }} />
+                                    </button>
+                                    <button
+                                      className="yt-bact"
+                                      title="复制网址"
+                                      aria-label="复制网址"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void handleCopyUrl(item.url);
+                                      }}
+                                    >
+                                      <CopyOutlined style={{ fontSize: 12 }} />
+                                    </button>
+                                    <button
+                                      className="yt-bact"
+                                      title="修改书签"
+                                      aria-label="修改书签"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingBookmark(item);
+                                        bookmarkForm.setFieldsValue({
+                                          title: item.title,
+                                          url: item.url,
+                                        });
+                                      }}
+                                    >
+                                      <EditOutlined style={{ fontSize: 12 }} />
+                                    </button>
+                                    <Dropdown
+                                      menu={{ items: bookmarkMenuItems(item) }}
+                                      trigger={['click']}
+                                    >
+                                      <button
+                                        className="yt-bact"
+                                        title="更多操作"
+                                        aria-label="更多操作"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <MoreOutlined style={{ fontSize: 12 }} />
+                                      </button>
+                                    </Dropdown>
+                                  </span>
+                                </div>
+                              </Dropdown>
+                            );
+                          })}
+                        </div>
+
+                        {hiddenCount > 0 && (
+                          <button
+                            className="yt-bm-more-row"
+                            onClick={() => toggleFolderExpand(card.id)}
+                          >
+                            还有 {hiddenCount} 项 · 展开
+                          </button>
+                        )}
+                        {isExpanded && pool.length > BOOKMARK_PREVIEW_LIMIT && (
+                          <button
+                            className="yt-bm-more-row"
+                            onClick={() => toggleFolderExpand(card.id)}
+                          >
+                            <UpOutlined style={{ fontSize: 10 }} /> 收起
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
               </div>
             )}
-          </div>
+          </section>
         )}
 
-        {/* 🗂️ 会话现场恢复栏 (Session Resume Bar) */}
-        {recentSnapshot && !snapshotDismissed && recentSnapshot.tabs.length > 0 && (
-          <div className="session-resume-bar">
-            <Space direction="horizontal" size="middle">
-              <RocketOutlined style={{ color: '#3b82f6', fontSize: 18 }} />
-              <div>
-                <Text strong style={{ fontSize: 13.5 }}>
-                  上次工作现场: {recentSnapshot.name}
-                </Text>
-                <div style={{ fontSize: 11.5, color: '#94a3b8' }}>
-                  包含 {recentSnapshot.tabs.length} 个页面快照 · 保存于{' '}
-                  {new Date(recentSnapshot.createdAt).toLocaleDateString()}{' '}
-                  {new Date(recentSnapshot.createdAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </div>
-              </div>
-            </Space>
-
-            <Space direction="horizontal" size="small">
-              <Button
-                type="primary"
-                size="small"
-                icon={<RocketOutlined />}
-                onClick={() => handleRestoreSnapshot(recentSnapshot)}
-              >
-                一键恢复现场 ({recentSnapshot.tabs.length})
-              </Button>
-              <Tooltip title="不再提示本次快照">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<CloseOutlined />}
-                  onClick={() => setSnapshotDismissed(true)}
-                />
-              </Tooltip>
-            </Space>
-          </div>
-        )}
-
-        {/* 添加/编辑固钉模态框 */}
+        {/* ---------- 模态框 ---------- */}
         <Modal
           title={editingItem ? '编辑快捷方式' : '添加快捷方式'}
           open={itemModalVisible}
@@ -1521,11 +1218,9 @@ export default function NewTabApp() {
               rules={[{ required: true, message: '请输入网址' }]}
               extra={
                 shortcutHint ? (
-                  <span style={{ fontSize: 12, color: '#64748b' }}>{shortcutHint}</span>
+                  <span style={{ fontSize: 12 }}>{shortcutHint}</span>
                 ) : shortcutPreview ? (
-                  <span style={{ fontSize: 12, color: '#94a3b8' }}>
-                    将保存为 {shortcutPreview}
-                  </span>
+                  <span style={{ fontSize: 12 }}>将保存为 {shortcutPreview}</span>
                 ) : null
               }
             >
@@ -1546,7 +1241,7 @@ export default function NewTabApp() {
               />
             </Form.Item>
             {suggestedTitle && (
-              <div style={{ marginTop: -8, marginBottom: 16, fontSize: 12, color: '#64748b' }}>
+              <div style={{ marginTop: -8, marginBottom: 16, fontSize: 12 }}>
                 建议名称（来自
                 {suggestedTitle.source === 'tab'
                   ? '当前标签'
@@ -1574,18 +1269,14 @@ export default function NewTabApp() {
               rules={[{ required: true, message: '请选择分组' }]}
             >
               <Select
-                options={pinnedData.groups.map((g) => ({
-                  value: g.id,
-                  label: g.name,
-                }))}
+                options={pinnedData.groups.map((g) => ({ value: g.id, label: g.name }))}
               />
             </Form.Item>
           </Form>
         </Modal>
 
-        {/* 添加分组模态框 */}
         <Modal
-          title="新建应用分组"
+          title="新建分组"
           open={groupModalVisible}
           onOk={handleSaveGroup}
           onCancel={() => setGroupModalVisible(false)}
@@ -1604,7 +1295,6 @@ export default function NewTabApp() {
           </Form>
         </Modal>
 
-        {/* 修改书签模态框 */}
         <Modal
           title="修改 Chrome 收藏夹书签"
           open={editingBookmark !== null}
