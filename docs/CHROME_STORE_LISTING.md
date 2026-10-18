@@ -10,7 +10,7 @@
   `YiTab 一签 - 标签页智能去重与效率套件`
   *(英文备用：`YiTab - Smart Tab Deduplication & Launcher`)*
 - **简短说明（Summary / Short Description - 不超过 132 字符）**：
-  - 中文：`打开重复网页时智能识别并切换或页内确认；内置 Alt+K 极速搜索面板、新标签页启动器与书签健康去重。`
+  - 中文：`打开重复网页时智能识别并切换或页内确认；内置 Alt+K 极速搜索面板、新标签页工作台与书签健康去重。`
   - 英文：`Detect duplicate tabs, switch instantly or confirm with in-page banner. Features Alt+K launcher and bookmark deduplication.`
 - **主要类别（Category）**：
   `Productivity`（效率 / 生产力）
@@ -50,7 +50,7 @@ YiTab 让你的 Chrome 恢复清爽高效：
 - 毫秒级联合检索打开中的标签页、书签以及历史记录，键盘上下键极速跳转。
 - 支持批量复制标签为 Markdown 格式列表、按域名自动一键分组（Tab Groups）。
 
-3. 极速新标签页启动器（Smart Launcher）
+3. 新标签页工作台（Smart Launcher）
 - 模块化书签矩阵：按文件夹层级优雅归类，快速展开。
 - 常开工作现场胶囊（Session Resume）：智能识别深层工作流路由，一键找回上下文。
 - 零延迟秒级打开，无任何臃肿广告。
@@ -87,7 +87,7 @@ Tired of tab clutter? Frequently reopening duplicate GitHub PRs, Jira tickets, d
 - Millisecond multi-token search across open tabs, bookmarks, and history.
 - One-click export open tabs as Markdown lists or cluster tabs into neat Chrome Tab Groups.
 
-3. Smart Launcher New Tab
+3. Smart Launcher New Tab Workspace
 - Beautiful bookmarks matrix organized by folder hierarchy.
 - Session resume capsules for deep workflow routes.
 - Zero bloat, instant startup, and clean dark/light themes.
@@ -125,12 +125,12 @@ Tired of tab clutter? Frequently reopening duplicate GitHub PRs, Jira tickets, d
 ### 4. `bookmarks`
 - **英文（推荐直接填入）**：
   > Required to index and display bookmarks in the Alt+K Global Command Palette, power the New Tab launcher matrix, and perform local duplicate bookmark health diagnostics.
-- **中文含义**：用于在 Alt+K 全局命令面板和新标签页中快速检索书签，以及提供本地书签去重诊断功能。
+- **中文含义**：用于在 Alt+K 全局命令面板和工作台中快速检索书签，以及提供本地书签去重诊断功能。
 
 ### 5. `history`
 - **英文（推荐直接填入）**：
   > Required to retrieve recent browsing visits strictly to display the "Recent Session Resume" capsule on the New Tab page, allowing users to restore unfinished workflow tabs.
-- **中文含义**：用于在新标签页展示“工作现场恢复胶囊”，方便用户一键重新唤出最近的高频工作流页面。
+- **中文含义**：用于在工作台展示“工作现场恢复胶囊”，方便用户一键重新唤出最近的高频工作流页面。
 
 ### 6. `tabGroups`
 - **英文（推荐直接填入）**：
