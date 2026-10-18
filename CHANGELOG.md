@@ -8,6 +8,27 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-18
+
+### 🌓 全界面深色适配与三态手动切换 (Multi-Surface Dark Theme & Manual Mode)
+
+#### 1. 全局设计令牌与 AntD 5 动态算法
+- 抽象统一语义化颜色令牌（`theme-tokens.ts`），建立 `canvas`、`surface`、`hairline`、`ink` 等中性阶梯体系。
+- 扩展页面接入 Ant Design 5 动态主题算法（`theme.defaultAlgorithm` / `theme.darkAlgorithm`），移除数百处浅色写死硬编码，消除深色下的反白与高亮度底色残留。
+
+#### 2. 三态手动切换与跨上下文状态同步
+- 状态持久化于 `chrome.storage.sync`（`yitab_theme_mode`），支持 `light`（浅色）、`dark`（深色）、`system`（跟随系统，默认）。
+- 控制中心（Options）右上角提供三态下拉；工作台（NewTab）、控制弹窗（Popup）、拦截确认页（Confirm）提供循环单键按钮。
+- 通过 `storage.onChanged` 与 `matchMedia` 双通道监听，实现多标签页、独立窗口与 Shadow DOM 浮窗之间的即时联动同步。
+
+#### 3. 隔离层 Shadow DOM 浮窗样式重构
+- SPA 路由轻量提示（Toast）与全局命令面板（Alt+K / Cmd+K Palette）改用 `:host([data-theme='dark'])` 属性选择器驱动样式。
+- 确保用户显式选择浅色模式时，浮窗不会被系统的深色偏好错误覆盖。
+
+#### 4. README 预览截图全量更新
+- 重构自动化捕获脚本（`capture-previews.mjs`），使用 Chrome for Testing 重新生成全部 7 个核心界面的高分辨率截图。
+- 产生 14 张产物（7 浅色 + 7 深色），并在 `README.md` 中采用 GitHub 原生 `<picture>` 标签实现深浅色自动适配呈现。
+
 ## [1.2.2] - 2026-10-18
 
 ### 🐛 快捷方式删除入口修复 (Shortcut Delete Regression)
