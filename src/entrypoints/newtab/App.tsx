@@ -625,7 +625,8 @@ export default function NewTabApp() {
     }
   };
 
-  const [messageApi, contextHolder] = message.useMessage();
+  const [messageApi, messageContextHolder] = message.useMessage();
+  const [modal, modalContextHolder] = Modal.useModal();
 
   const displayBookmarkCards = useMemo(
     () => filterBookmarkCards(bookmarkCards, bookmarkSearch),
@@ -705,7 +706,7 @@ export default function NewTabApp() {
   };
 
   const handleDeleteBookmark = (item: BookmarkItem) => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认删除书签？',
       content: `确定从 Chrome 收藏夹中永久删除「${item.title}」吗？`,
       okText: '删除',
@@ -744,26 +745,36 @@ export default function NewTabApp() {
       key: 'open-new-tab',
       icon: <GlobalOutlined />,
       label: '在新标签页打开',
-      onClick: () => handleOpenUrl(item.url, true),
+      onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
+        domEvent?.stopPropagation();
+        handleOpenUrl(item.url, true);
+      },
     },
     {
       key: 'open-bg',
       icon: <RocketOutlined />,
       label: '后台静默打开',
-      onClick: () => handleOpenBookmarkInBackground(item.url),
+      onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
+        domEvent?.stopPropagation();
+        handleOpenBookmarkInBackground(item.url);
+      },
     },
     {
       key: 'copy-url',
       icon: <CopyOutlined />,
       label: '复制网址',
-      onClick: () => void handleCopyUrl(item.url),
+      onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
+        domEvent?.stopPropagation();
+        void handleCopyUrl(item.url);
+      },
     },
     { type: 'divider' as const },
     {
       key: 'edit',
       icon: <EditOutlined />,
       label: '修改书签',
-      onClick: () => {
+      onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
+        domEvent?.stopPropagation();
         setEditingBookmark(item);
         bookmarkForm.setFieldsValue({ title: item.title, url: item.url });
       },
@@ -773,7 +784,10 @@ export default function NewTabApp() {
       icon: <DeleteOutlined />,
       danger: true,
       label: '删除书签',
-      onClick: () => handleDeleteBookmark(item),
+      onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
+        domEvent?.stopPropagation();
+        handleDeleteBookmark(item);
+      },
     },
   ];
 
@@ -798,7 +812,8 @@ export default function NewTabApp() {
         },
       }}
     >
-      {contextHolder}
+      {messageContextHolder}
+      {modalContextHolder}
       <div className="yt-shell">
         {/* ---------- 顶部：时钟 / 模式 / 搜索 / 设置 ---------- */}
         <header className="yt-top">
@@ -1141,7 +1156,16 @@ export default function NewTabApp() {
                                 <div
                                   className="yt-bm-row"
                                   title={`${item.title}\n${item.url}\n(右键呼出更多操作)`}
-                                  onClick={() => handleOpenUrl(item.url)}
+                                  onClick={(e) => {
+                                    if (
+                                      (e.target as HTMLElement)?.closest(
+                                        '.bacts, .ant-dropdown, .ant-dropdown-menu-item, .ant-dropdown-menu',
+                                      )
+                                    ) {
+                                      return;
+                                    }
+                                    handleOpenUrl(item.url);
+                                  }}
                                 >
                                   <span className="fi">
                                     <img
