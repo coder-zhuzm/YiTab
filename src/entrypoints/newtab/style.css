@@ -447,29 +447,51 @@ input {
   background: var(--ink-3);
 }
 
-.yt-tile .more {
+/* 磁贴操作：悬停时右上角浮出，不占布局 */
+.yt-tile .tile-actions {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 3px;
+  right: 3px;
+  display: none;
+  gap: 1px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+.yt-tile:hover .tile-actions,
+.yt-tile:focus-within .tile-actions,
+.yt-tile .tile-actions.pinned {
+  display: flex;
+}
+
+.yt-tile .tile-act {
   width: 22px;
   height: 22px;
-  display: none;
+  display: grid;
   place-items: center;
   border: 0;
-  border-radius: 6px;
-  background: var(--surface);
+  border-radius: 5px;
+  background: none;
   color: var(--ink-3);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   cursor: pointer;
 }
 
-.yt-tile:hover .more,
-.yt-tile:focus-within .more {
-  display: grid;
+.yt-tile .tile-act:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
 }
 
-.yt-tile .more:hover {
-  color: var(--ink);
+.yt-tile .tile-act.danger:hover {
+  background: #fde8e8;
+  color: var(--danger);
+}
+
+@media (prefers-color-scheme: dark) {
+  .yt-tile .tile-act.danger:hover {
+    background: #3a1f22;
+  }
 }
 
 /* ---------- 继续上次 ---------- */

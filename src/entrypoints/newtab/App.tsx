@@ -28,6 +28,7 @@ import {
   type InputRef,
   message,
   Modal,
+  Popconfirm,
   Select,
   theme,
 } from 'antd';
@@ -126,6 +127,9 @@ export default function NewTabApp() {
   const [bookmarkCards, setBookmarkCards] = useState<BookmarkFolderCard[]>([]);
   const [bookmarkSearch, setBookmarkSearch] = useState('');
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
+  // 正在确认删除的磁贴。Popconfirm 渲染在 body 上，鼠标移过去时磁贴失去 :hover，
+  // 操作按钮会 display:none 导致锚点消失、气泡跟着关闭。用它把按钮钉住。
+  const [confirmingItemId, setConfirmingItemId] = useState<string | null>(null);
   const [editingBookmark, setEditingBookmark] = useState<BookmarkItem | null>(null);
   const [bookmarkForm] = Form.useForm();
 
@@ -601,9 +605,9 @@ export default function NewTabApp() {
     }
   };
 
-  const handleDeleteItem = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    await deletePinnedItem(id);
+  /** 删除快捷方式。确认交给调用处的 Popconfirm，鼠标无需离开按钮 */
+  const handleDeleteItem = async (item: PinnedItem) => {
+    await deletePinnedItem(item.id);
     setPinnedData(await getPinnedData());
   };
 
@@ -951,10 +955,16 @@ export default function NewTabApp() {
                   title={`${item.title}\n${item.url}`}
                   role="link"
                   tabIndex={0}
-                  onClick={() => handleOpenUrl(item.url)}
+                  onClick={() => {
+                    // 确认气泡挂在 body 上，React 事件仍会冒泡到这里；
+                    // 有气泡打开时忽略，避免点「删除」顺带把页面导航走。
+                    if (confirmingItemId) return;
+                    handleOpenUrl(item.url);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
+                      if (confirmingItemId) return;
                       handleOpenUrl(item.url);
                     }
                   }}
@@ -972,17 +982,41 @@ export default function NewTabApp() {
                     {!isOpen && isIntranet && <span className="dot intranet" title="内网地址" />}
                   </span>
                   <span className="label">{item.title}</span>
-                  <button
-                    className="more"
-                    title="编辑 / 删除"
-                    aria-label="更多操作"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenItemModal(item);
-                    }}
-                  >
-                    <MoreOutlined style={{ fontSize: 12 }} />
-                  </button>
+                  <span className={`tile-actions${confirmingItemId === item.id ? ' pinned' : ''}`}>
+                    <button
+                      className="tile-act"
+                      title="编辑快捷方式"
+                      aria-label="编辑快捷方式"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenItemModal(item);
+                      }}
+                    >
+                      <EditOutlined style={{ fontSize: 12 }} />
+                    </button>
+                    <Popconfirm
+                      title="删除这个快捷方式？"
+                      description={item.title}
+                      okText="删除"
+                      okButtonProps={{ danger: true }}
+                      cancelText="取消"
+                      open={confirmingItemId === item.id}
+                      onOpenChange={(open) => setConfirmingItemId(open ? item.id : null)}
+                      onConfirm={() => {
+                        setConfirmingItemId(null);
+                        void handleDeleteItem(item);
+                      }}
+                    >
+                      <button
+                        className="tile-act danger"
+                        title="删除快捷方式"
+                        aria-label="删除快捷方式"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <DeleteOutlined style={{ fontSize: 12 }} />
+                      </button>
+                    </Popconfirm>
+                  </span>
                 </div>
               );
             })}
