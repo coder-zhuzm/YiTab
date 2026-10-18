@@ -8,6 +8,25 @@
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-10-18
+
+### 🐛 快捷方式删除入口修复 (Shortcut Delete Regression)
+
+#### 1. 删除功能整体丢失
+- **问题**：磁贴重写时把「编辑 + 删除」两个按钮收成一个 `more` 按钮，且只接了编辑。`handleDeleteItem` 定义了却无任何调用点，用户无法删除快捷方式。`tsc` 未开 `noUnusedLocals`，编译期不报错。
+- **修复**：磁贴悬停恢复两个独立操作按钮（编辑 / 删除）。
+
+#### 2. 确认气泡打开即关闭
+- **问题**：Popconfirm 渲染在 `body` 上，鼠标移过去时磁贴失去 `:hover`，操作按钮 `display:none`，锚点消失导致气泡立即关闭，确认按钮点不到。
+- **修复**：新增 `confirmingItemId` 状态，气泡打开期间给操作区加 `.pinned` 强制可见。
+
+#### 3. 点「删除」顺带导航走
+- **问题**：气泡虽挂在 `body`，React 事件仍沿组件树冒泡到磁贴 `onClick`，点确认会把页面导航到该快捷方式地址（实测 `location.href` 变为 `https://github.com/`）。
+- **修复**：磁贴 `onClick` / `onKeyDown` 在有气泡打开时直接返回。
+
+#### 4. 确认方式改为 Popconfirm
+- 不使用 Modal：鼠标无需从按钮移开即可确认，减少一次定位成本。
+
 ## [1.2.1] - 2026-10-18
 
 ### 🎨 工作台视觉重构与配置项落地 (Workspace Visual Redesign)
