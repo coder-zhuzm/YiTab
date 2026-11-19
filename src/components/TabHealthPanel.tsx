@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { Button, Card, Popconfirm, Tag, Tooltip, Typography } from 'antd';
+import { useEffect, useState } from 'react';
+import { Button, Card, Popconfirm, Select, Switch, Tag, Tooltip, Typography } from 'antd';
 import type { MessageInstance } from 'antd/es/message/interface';
-import { CameraOutlined, ReloadOutlined, RestOutlined } from '@ant-design/icons';
+import { CameraOutlined, ClockCircleOutlined, ReloadOutlined, RestOutlined } from '@ant-design/icons';
 import {
   sendToBackground,
   type ArchiveInactiveTabsResponse,
@@ -9,6 +9,12 @@ import {
 } from '@/lib/messaging';
 import type { TabHealthReport } from '@/lib/tab-health';
 import type { ThemeTokens } from '@/lib/theme-tokens';
+import {
+  DEFAULT_AUTO_DISCARD_SETTINGS,
+  getAutoDiscardSettings,
+  saveAutoDiscardSettings,
+  type AutoDiscardSettings,
+} from '@/lib/settings';
 
 const { Text, Paragraph } = Typography;
 
@@ -31,6 +37,23 @@ export function TabHealthPanel({
 }: TabHealthPanelProps) {
   const [discardLoading, setDiscardLoading] = useState(false);
   const [archiveLoading, setArchiveLoading] = useState(false);
+  const [autoDiscard, setAutoDiscard] = useState<AutoDiscardSettings>(DEFAULT_AUTO_DISCARD_SETTINGS);
+
+  useEffect(() => {
+    if (variant === 'full') {
+      void getAutoDiscardSettings().then(setAutoDiscard);
+    }
+  }, [variant]);
+
+  const handleSaveAutoDiscard = async (patch: Partial<AutoDiscardSettings>) => {
+    const next = await saveAutoDiscardSettings(patch);
+    setAutoDiscard(next);
+    messageApi.success(
+      next.enabled
+        ? `已开启定时自动休眠（闲置 ${next.idleMinutes} 分钟后释放内存）`
+        : '已关闭定时自动休眠',
+    );
+  };
 
   const handleDiscard = async () => {
     setDiscardLoading(true);
@@ -316,6 +339,55 @@ export function TabHealthPanel({
             </Button>
           </Tooltip>
         </Popconfirm>
+      </div>
+
+      {/* 定时自动休眠策略 */}
+      <div
+        style={{
+          marginTop: 18,
+          paddingTop: 16,
+          borderTop: `1px solid ${tk.hairline}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 14, color: tk.ink }}>
+            <ClockCircleOutlined style={{ color: tk.accentInk }} />
+            <span>定时自动休眠闲置标签</span>
+            {autoDiscard.enabled && (
+              <Tag color="green" style={{ margin: 0, fontSize: 11 }}>
+                运行中
+              </Tag>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: tk.ink3, marginTop: 4 }}>
+            后台标签超过设定时间未激活时自动释放内存（当前活动页、发声页、固定页与白名单站点始终受保护）。
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Select
+            size="small"
+            value={autoDiscard.idleMinutes}
+            disabled={!autoDiscard.enabled}
+            onChange={(val) => void handleSaveAutoDiscard({ idleMinutes: val })}
+            style={{ width: 120 }}
+            options={[
+              { value: 15, label: '闲置 15 分钟' },
+              { value: 30, label: '闲置 30 分钟' },
+              { value: 45, label: '闲置 45 分钟' },
+              { value: 60, label: '闲置 1 小时' },
+              { value: 120, label: '闲置 2 小时' },
+            ]}
+          />
+          <Switch
+            checked={autoDiscard.enabled}
+            onChange={(checked) => void handleSaveAutoDiscard({ enabled: checked })}
+          />
+        </div>
       </div>
     </Card>
   );

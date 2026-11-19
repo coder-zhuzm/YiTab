@@ -50,6 +50,11 @@ export default defineContentScript({
       } else if (msg && msg.type === 'yitab_toggle_palette') {
         toggleCommandPalette();
         sendResponse({ ok: true });
+      } else if (msg && msg.type === 'yitab_show_notice') {
+        if (msg.message) {
+          showStatusNotice(String(msg.message));
+        }
+        sendResponse({ ok: true });
       } else if (msg && msg.type === 'yitab_copy_to_clipboard') {
         navigator.clipboard
           .writeText(msg.text || '')

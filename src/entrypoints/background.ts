@@ -1,5 +1,7 @@
 import { browser } from 'wxt/browser';
 import {
+  AUTO_DISCARD_STORAGE_KEY,
+  getAutoDiscardSettings,
   getDedupPausedUntil,
   getSettings,
   normalizeDomain,
@@ -7,6 +9,7 @@ import {
   watchSettings,
   type Settings,
 } from '@/lib/settings';
+import { formatCleanMarkdownLink, stripTrackingParams } from '@/lib/clean-url';
 import {
   INTERNAL_URL_RE,
   matchDuplicate,
@@ -52,6 +55,7 @@ import {
   isEligibleForDiscard,
 } from '@/lib/tab-health';
 import { navigationCoordinator } from '@/lib/coordinator';
+import { addPinnedItemIfAbsent, getPinnedData, STORAGE_PINNED_KEY } from '@/lib/pinned';
 import type { BackgroundRequest } from '@/lib/messaging';
 
 const ALLOW_TTL = 8000;
@@ -74,6 +78,224 @@ const tabStates = new Map<number, TabState>();
 
 export default defineBackground(() => {
   watchSettings();
+
+  // 右键菜单：单一顶层入口（YiTab 一签 ▶ 分组固定 + 干净链接复制），两级直达不嵌套
+  const MENU_ROOT = 'yitab-pin-root';
+  const MENU_SEP = 'yitab-menu-sep';
+  const MENU_COPY_CLEAN = 'yitab-copy-clean-url';
+  const MENU_COPY_MD = 'yitab-copy-clean-md';
+  let menuBuildQueue: Promise<void> = Promise.resolve();
+
+  const createMenuItem = (props: chrome.contextMenus.CreateProperties): Promise<void> =>
+    new Promise((resolve) => {
+      chrome.contextMenus.create(props, () => {
+        if (chrome.runtime.lastError) {
+          console.warn('[YiTab] contextMenus.create warning:', props.id, chrome.runtime.lastError.message);
+        }
+        resolve();
+      });
+    });
+
+  const rebuildPinContextMenus = () => {
+    if (!chrome.contextMenus) return;
+    menuBuildQueue = menuBuildQueue
+      .then(async () => {
+        await new Promise<void>((resolve) => {
+          chrome.contextMenus.removeAll(() => {
+            if (chrome.runtime.lastError) {
+              console.warn('[YiTab] contextMenus.removeAll warning:', chrome.runtime.lastError.message);
+            }
+            resolve();
+          });
+        });
+        const pinned = await getPinnedData();
+        const groups = pinned.groups;
+        const contexts: [chrome.contextMenus.ContextType, ...chrome.contextMenus.ContextType[]] = [
+          'page',
+          'link',
+          'selection',
+          'image',
+        ];
+
+        await createMenuItem({
+          id: MENU_ROOT,
+          title: 'YiTab 一签',
+          contexts,
+          documentUrlPatterns: ['http://*/*', 'https://*/*'],
+        });
+
+        for (const g of groups) {
+          await createMenuItem({
+            id: `${MENU_ROOT}::${g.id}`,
+            parentId: MENU_ROOT,
+            title: `固定到「${g.name}」`,
+            contexts,
+          });
+        }
+
+        await createMenuItem({
+          id: MENU_SEP,
+          parentId: MENU_ROOT,
+          type: 'separator',
+          contexts,
+        });
+
+        await createMenuItem({
+          id: MENU_COPY_CLEAN,
+          parentId: MENU_ROOT,
+          title: '复制干净链接（去追踪参数）',
+          contexts,
+        });
+
+        await createMenuItem({
+          id: MENU_COPY_MD,
+          parentId: MENU_ROOT,
+          title: '复制为 Markdown 链接',
+          contexts,
+        });
+      })
+      .catch((e) => {
+        console.warn('[YiTab] Failed to rebuild contextMenus:', e);
+      });
+  };
+
+  rebuildPinContextMenus();
+  chrome.runtime.onInstalled?.addListener(() => rebuildPinContextMenus());
+  chrome.runtime.onStartup?.addListener(() => rebuildPinContextMenus());
+  chrome.storage?.onChanged?.addListener((changes, area) => {
+    if (area === 'local' && STORAGE_PINNED_KEY in changes) {
+      rebuildPinContextMenus();
+    }
+    if (area === 'sync' && AUTO_DISCARD_STORAGE_KEY in changes) {
+      void syncAutoDiscardAlarm();
+    }
+  });
+
+  // 定时自动休眠闲置标签调度器
+  const AUTO_DISCARD_ALARM = 'yitab-auto-discard';
+  const tabLastActiveAt = new Map<number, number>();
+
+  const seedActiveTimestamps = async () => {
+    try {
+      const tabs = await chrome.tabs.query({});
+      const now = Date.now();
+      for (const t of tabs) {
+        if (t.id != null && !tabLastActiveAt.has(t.id)) {
+          tabLastActiveAt.set(t.id, t.lastAccessed ?? now);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const syncAutoDiscardAlarm = async () => {
+    if (!chrome.alarms) return;
+    try {
+      const cfg = await getAutoDiscardSettings();
+      if (cfg.enabled) {
+        chrome.alarms.create(AUTO_DISCARD_ALARM, { periodInMinutes: 5 });
+      } else {
+        await chrome.alarms.clear(AUTO_DISCARD_ALARM);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  void seedActiveTimestamps();
+  void syncAutoDiscardAlarm();
+  chrome.runtime.onInstalled?.addListener(() => void syncAutoDiscardAlarm());
+  chrome.runtime.onStartup?.addListener(() => {
+    void seedActiveTimestamps();
+    void syncAutoDiscardAlarm();
+  });
+
+  chrome.tabs.onActivated?.addListener(({ tabId }) => {
+    tabLastActiveAt.set(tabId, Date.now());
+  });
+  chrome.tabs.onCreated?.addListener((tab) => {
+    if (tab.id != null) tabLastActiveAt.set(tab.id, Date.now());
+  });
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    tabLastActiveAt.delete(tabId);
+  });
+
+  chrome.alarms?.onAlarm?.addListener(async (alarm) => {
+    if (alarm.name !== AUTO_DISCARD_ALARM) return;
+    const cfg = await getAutoDiscardSettings();
+    if (!cfg.enabled) return;
+    const settings = await getSettings();
+    const thresholdMs = cfg.idleMinutes * 60 * 1000;
+    const now = Date.now();
+    const tabs = await chrome.tabs.query({}).catch(() => []);
+    for (const t of tabs) {
+      if (t.id == null || !t.url) continue;
+      if (!isEligibleForDiscard(t)) continue;
+      if (inWhitelist(t.url, settings.whitelist)) continue;
+      const lastActive = tabLastActiveAt.get(t.id) ?? t.lastAccessed ?? now;
+      if (now - lastActive >= thresholdMs) {
+        await chrome.tabs.discard(t.id).catch(() => {});
+      }
+    }
+  });
+
+  chrome.contextMenus?.onClicked?.addListener(async (info, tab) => {
+    const menuId = String(info.menuItemId || '');
+    const isLink = Boolean(info.linkUrl);
+    const url = isLink ? info.linkUrl || '' : tab?.url || info.pageUrl || '';
+    if (!url || !/^https?:\/\//i.test(url)) return;
+
+    const title = isLink
+      ? (info.selectionText || '').trim() || (() => {
+          try {
+            return new URL(url).hostname.replace(/^www\./i, '');
+          } catch {
+            return url;
+          }
+        })()
+      : (tab?.title || '').trim() || url;
+
+    if (menuId === MENU_COPY_CLEAN) {
+      const cleanUrl = stripTrackingParams(url);
+      if (tab?.id != null) {
+        chrome.tabs
+          .sendMessage(tab.id, {
+            type: 'yitab_copy_to_clipboard',
+            text: cleanUrl,
+            message: '已复制干净链接（已清理追踪参数）',
+          })
+          .catch(() => {});
+      }
+      return;
+    }
+
+    if (menuId === MENU_COPY_MD) {
+      const md = formatCleanMarkdownLink(title, url);
+      if (tab?.id != null) {
+        chrome.tabs
+          .sendMessage(tab.id, {
+            type: 'yitab_copy_to_clipboard',
+            text: md,
+            message: '已复制为 Markdown 链接',
+          })
+          .catch(() => {});
+      }
+      return;
+    }
+
+    if (!menuId.startsWith(`${MENU_ROOT}::`)) return;
+
+    const groupId = menuId.split('::')[1];
+    const res = await addPinnedItemIfAbsent({ title, url, groupId });
+    const notice = res.added
+      ? `已固定「${res.item.title}」到「${res.groupName}」`
+      : `「${res.item.title}」已在工作台「${res.groupName}」中`;
+
+    if (tab?.id != null) {
+      chrome.tabs.sendMessage(tab.id, { type: 'yitab_show_notice', message: notice }).catch(() => {});
+    }
+  });
 
   // 1. 整页导航（地址栏、书签、新标签等真实提交的整页加载）
   chrome.webNavigation.onCommitted.addListener((details) => {
@@ -882,6 +1104,56 @@ async function executeActionCommand(
   const win =
     windowId ??
     (await chrome.windows?.getLastFocused({ populate: false }).catch(() => null))?.id;
+
+  if (action === 'pin_current_tab') {
+    const activeTabs = await chrome.tabs
+      .query(win != null ? { active: true, windowId: win } : { active: true, currentWindow: true })
+      .catch(() => []);
+    const active = activeTabs[0];
+    if (!active?.url || !/^https?:\/\//i.test(active.url)) {
+      return '当前页面不是可固定的网页地址';
+    }
+    const res = await addPinnedItemIfAbsent({
+      title: active.title || active.url,
+      url: active.url,
+    });
+    return res.added
+      ? `已固定「${res.item.title}」到工作台「${res.groupName}」`
+      : `「${res.item.title}」已在工作台「${res.groupName}」中`;
+  }
+
+  if (action === 'copy_clean_url' || action === 'copy_clean_markdown') {
+    const activeTabs = await chrome.tabs
+      .query(win != null ? { active: true, windowId: win } : { active: true, currentWindow: true })
+      .catch(() => []);
+    const active = activeTabs[0];
+    if (!active?.url || !/^https?:\/\//i.test(active.url)) {
+      return '当前页面不是可复制的网页地址';
+    }
+    const copyText =
+      action === 'copy_clean_markdown'
+        ? formatCleanMarkdownLink(active.title || active.url, active.url)
+        : stripTrackingParams(active.url);
+    return {
+      copyText,
+      message:
+        action === 'copy_clean_markdown'
+          ? '已复制当前页为 Markdown 链接'
+          : '已复制干净链接（已清理追踪参数）',
+    };
+  }
+
+  if (action === 'mute_audible_tabs') {
+    const allTabs = await chrome.tabs.query({}).catch(() => []);
+    let mutedCount = 0;
+    for (const t of allTabs) {
+      if (t.id != null && t.audible && !t.mutedInfo?.muted) {
+        await chrome.tabs.update(t.id, { muted: true }).catch(() => {});
+        mutedCount++;
+      }
+    }
+    return mutedCount > 0 ? `已静音 ${mutedCount} 个发声标签` : '当前没有正在发声的标签页';
+  }
 
   if (action === 'auto_group') {
     if (win != null && chrome.tabs?.group) {

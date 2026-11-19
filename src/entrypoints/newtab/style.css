@@ -446,6 +446,61 @@ input {
   filter: invert(1);
 }
 
+/* 添加快捷方式弹窗：快速候选芯片栏 */
+.yt-quickpick {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+}
+
+.yt-quickpick-title {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  margin-bottom: 8px;
+}
+
+.yt-quickpick-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.yt-quickpick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.yt-quickpick-chip:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.yt-quickpick-chip .tag {
+  flex: none;
+  font-size: 10px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.yt-quickpick-chip .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
 .yt-tile .label {
   font-size: 12.5px;
   line-height: 1.35;

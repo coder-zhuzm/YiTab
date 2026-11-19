@@ -35,6 +35,38 @@ export interface ActionCommand {
 /** 内置全局快捷指令库 */
 export const ACTION_COMMANDS: ActionCommand[] = [
   {
+    id: 'cmd:pin_current_tab',
+    action: 'pin_current_tab',
+    title: '固定当前页面到工作台',
+    description: '将当前浏览的网页一键添加到 YiTab 工作台快捷方式',
+    keywords: ['pin', 'shortcut', 'guding', 'kuaijiefangshi', 'shoucang', '固定', '快捷方式', '工作台', '添加'],
+    icon: 'pin',
+  },
+  {
+    id: 'cmd:copy_clean_url',
+    action: 'copy_clean_url',
+    title: '复制当前页干净链接（去追踪参数）',
+    description: '自动剥离 utm_*、spm、fbclid 等追踪噪音并复制到剪贴板',
+    keywords: ['copy', 'clean', 'url', 'link', 'utm', 'fuzhi', 'ganjing', '复制', '干净', '链接', '去参数'],
+    icon: 'url',
+  },
+  {
+    id: 'cmd:copy_clean_markdown',
+    action: 'copy_clean_markdown',
+    title: '复制当前页为 Markdown 链接',
+    description: '将当前页整理为 [标题](干净URL) 格式并复制到剪贴板',
+    keywords: ['copy', 'markdown', 'md', 'link', 'fuzhi', '复制', '链接'],
+    icon: 'markdown',
+  },
+  {
+    id: 'cmd:mute_audible_tabs',
+    action: 'mute_audible_tabs',
+    title: '一键静音所有发声标签',
+    description: '快速将所有正在播放音视频的标签页静音（开会救场）',
+    keywords: ['mute', 'audio', 'sound', 'jingyin', '静音', '声音', '开会'],
+    icon: 'mute',
+  },
+  {
     id: 'cmd:auto_group',
     action: 'auto_group',
     title: '按域名智能归拢标签',

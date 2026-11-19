@@ -180,3 +180,57 @@ export async function setDedupPausedUntil(untilMs: number): Promise<number> {
   return normalized;
 }
 
+/** 闲置标签定时自动休眠配置 */
+export interface AutoDiscardSettings {
+  enabled: boolean;
+  /** 后台未激活超过多少分钟后自动休眠（默认 45 分钟） */
+  idleMinutes: number;
+}
+
+export const DEFAULT_AUTO_DISCARD_SETTINGS: AutoDiscardSettings = {
+  enabled: false,
+  idleMinutes: 45,
+};
+
+export const AUTO_DISCARD_STORAGE_KEY = 'yitab_auto_discard_settings';
+
+export async function getAutoDiscardSettings(): Promise<AutoDiscardSettings> {
+  if (typeof chrome === 'undefined' || !chrome.storage?.sync) {
+    return { ...DEFAULT_AUTO_DISCARD_SETTINGS };
+  }
+  try {
+    const res = await chrome.storage.sync.get(AUTO_DISCARD_STORAGE_KEY);
+    const saved = res[AUTO_DISCARD_STORAGE_KEY] as Partial<AutoDiscardSettings> | undefined;
+    if (saved && typeof saved === 'object') {
+      const idleMinutes =
+        typeof saved.idleMinutes === 'number' && saved.idleMinutes >= 5 && saved.idleMinutes <= 1440
+          ? Math.round(saved.idleMinutes)
+          : DEFAULT_AUTO_DISCARD_SETTINGS.idleMinutes;
+      return {
+        enabled: saved.enabled === true,
+        idleMinutes,
+      };
+    }
+  } catch {
+    // fallback
+  }
+  return { ...DEFAULT_AUTO_DISCARD_SETTINGS };
+}
+
+export async function saveAutoDiscardSettings(
+  patch: Partial<AutoDiscardSettings>,
+): Promise<AutoDiscardSettings> {
+  const cur = await getAutoDiscardSettings();
+  const next: AutoDiscardSettings = {
+    enabled: typeof patch.enabled === 'boolean' ? patch.enabled : cur.enabled,
+    idleMinutes:
+      typeof patch.idleMinutes === 'number' && patch.idleMinutes >= 5 && patch.idleMinutes <= 1440
+        ? Math.round(patch.idleMinutes)
+        : cur.idleMinutes,
+  };
+  if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
+    await chrome.storage.sync.set({ [AUTO_DISCARD_STORAGE_KEY]: next });
+  }
+  return next;
+}
+

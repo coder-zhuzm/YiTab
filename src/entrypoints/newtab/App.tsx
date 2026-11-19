@@ -12,6 +12,8 @@ import {
   GlobalOutlined,
   MoreOutlined,
   PlusOutlined,
+  PushpinFilled,
+  PushpinOutlined,
   ReloadOutlined,
   RocketOutlined,
   SearchOutlined,
@@ -63,13 +65,16 @@ import {
 import {
   addPinnedGroup,
   addPinnedItem,
+  addPinnedItemIfAbsent,
   deletePinnedGroup,
   deletePinnedItem,
+  findPinnedByUrl,
   getNewTabSettings,
   getPinnedData,
   renamePinnedGroup,
   reorderPinnedItems,
   saveNewTabSettings,
+  STORAGE_PINNED_KEY,
   updatePinnedItem,
 } from '@/lib/pinned';
 import {
@@ -299,11 +304,24 @@ export default function NewTabApp() {
     chrome.tabs.onRemoved?.addListener(syncTabs);
     chrome.tabs.onUpdated?.addListener(syncTabs);
     document.addEventListener('visibilitychange', onVisibility);
+
+    // 同步来自 Popup / 右键菜单 / 命令面板的新增快捷方式
+    const onStorageChanged = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      area: string,
+    ) => {
+      if (area === 'local' && STORAGE_PINNED_KEY in changes) {
+        void getPinnedData().then(setPinnedData);
+      }
+    };
+    chrome.storage?.onChanged?.addListener(onStorageChanged);
+
     return () => {
       if (timer) clearTimeout(timer);
       chrome.tabs.onCreated?.removeListener(syncTabs);
       chrome.tabs.onRemoved?.removeListener(syncTabs);
       chrome.tabs.onUpdated?.removeListener(syncTabs);
+      chrome.storage?.onChanged?.removeListener(onStorageChanged);
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
@@ -628,7 +646,7 @@ export default function NewTabApp() {
     [form],
   );
 
-  const handleOpenItemModal = (item?: PinnedItem) => {
+  const handleOpenItemModal = (item?: PinnedItem, prefillUrl?: string) => {
     // 开新会话：作废上一条所有在途请求，避免旧建议/旧提示串到这一条
     metaController.beginSession(item != null);
 
@@ -639,11 +657,94 @@ export default function NewTabApp() {
       setEditingItem(null);
       form.resetFields();
       form.setFieldsValue({
+        url: prefillUrl || undefined,
         groupId:
           activeGroupId === 'all' ? pinnedData.groups[0]?.id || 'dev' : activeGroupId,
       });
     }
     setItemModalVisible(true);
+    if (!item && prefillUrl) {
+      setTimeout(() => void metaController.onUrlBlur(), 0);
+    }
+  };
+
+  // 工作台空白处 Cmd+V / Ctrl+V 粘贴网址直接弹出预填添加框
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (itemModalVisible || groupModalVisible || editingBookmark !== null) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const text = e.clipboardData?.getData('text')?.trim() || '';
+      if (!text) return;
+      const resolved = resolveShortcutUrl(text);
+      if (resolved.ok) {
+        e.preventDefault();
+        handleOpenItemModal(undefined, resolved.url);
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [itemModalVisible, groupModalVisible, editingBookmark, activeGroupId, pinnedData.groups]);
+
+  // 添加弹窗顶部快速候选（当前已开标签 + 历史推荐，自动排除已在工作台的站点）
+  const quickPickCandidates = useMemo(() => {
+    const list: Array<{ key: string; title: string; url: string; source: 'tab' | 'rec' }> = [];
+    const seen = new Set<string>();
+    for (const t of openTabs) {
+      if (!/^https?:\/\//i.test(t.url)) continue;
+      if (findPinnedByUrl(pinnedData, t.url)) continue;
+      if (seen.has(t.url)) continue;
+      seen.add(t.url);
+      list.push({ key: `tab_${t.id}`, title: t.title || hostnameOf(t.url), url: t.url, source: 'tab' });
+      if (list.length >= 6) return list;
+    }
+    for (const rec of recommendations) {
+      const recUrl = rec.primaryUrl;
+      if (!/^https?:\/\//i.test(recUrl)) continue;
+      if (findPinnedByUrl(pinnedData, recUrl)) continue;
+      if (seen.has(recUrl)) continue;
+      seen.add(recUrl);
+      list.push({ key: `rec_${rec.domain}`, title: rec.title || rec.domain, url: recUrl, source: 'rec' });
+      if (list.length >= 6) return list;
+    }
+    return list;
+  }, [openTabs, recommendations, pinnedData]);
+
+  // 书签行一键固定到工作台
+  const handlePinBookmark = async (bm: BookmarkItem) => {
+    const groupId = activeGroupId === 'all' ? pinnedData.groups[0]?.id : activeGroupId;
+    const res = await addPinnedItemIfAbsent({ title: bm.title, url: bm.url, groupId });
+    setPinnedData(await getPinnedData());
+    if (res.added) {
+      messageApi.success(`已固定「${res.item.title}」到「${res.groupName}」`);
+    } else {
+      messageApi.info(`「${res.item.title}」已在工作台「${res.groupName}」中`);
+    }
+  };
+
+  // 书签目录一键导入为工作台分组
+  const handleImportFolderAsGroup = async (card: BookmarkFolderCard) => {
+    const pool = (card.allItems || card.items).filter(
+      (it) => it.url && !it.isInvalid && /^https?:\/\//i.test(it.url),
+    );
+    if (pool.length === 0) {
+      messageApi.warning('该目录下没有可导入的有效网页书签');
+      return;
+    }
+    const existingGroup = pinnedData.groups.find((g) => g.name === card.name);
+    const group = existingGroup ?? (await addPinnedGroup(card.name));
+    let addedCount = 0;
+    for (const bm of pool.slice(0, 24)) {
+      const res = await addPinnedItemIfAbsent({ title: bm.title, url: bm.url, groupId: group.id });
+      if (res.added) addedCount++;
+    }
+    setPinnedData(await getPinnedData());
+    setActiveGroupId(group.id);
+    if (addedCount > 0) {
+      messageApi.success(`已将「${card.name}」的 ${addedCount} 个书签导入到工作台`);
+    } else {
+      messageApi.info(`「${card.name}」中的书签均已在工作台`);
+    }
   };
 
   const handleCloseItemModal = () => {
@@ -876,56 +977,70 @@ export default function NewTabApp() {
   };
 
   /** 单条书签的操作菜单，右键与「更多」按钮共用 */
-  const bookmarkMenuItems = (item: BookmarkItem) => [
-    {
-      key: 'open-new-tab',
-      icon: <GlobalOutlined />,
-      label: '在新标签页打开',
-      onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
-        domEvent?.stopPropagation();
-        handleOpenUrl(item.url, true);
+  const bookmarkMenuItems = (item: BookmarkItem) => {
+    const alreadyPinned = Boolean(findPinnedByUrl(pinnedData, item.url));
+    return [
+      {
+        key: 'pin-to-newtab',
+        icon: alreadyPinned ? <PushpinFilled /> : <PushpinOutlined />,
+        label: alreadyPinned ? '已在工作台' : '固定到工作台',
+        disabled: alreadyPinned,
+        onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
+          domEvent?.stopPropagation();
+          void handlePinBookmark(item);
+        },
       },
-    },
-    {
-      key: 'open-bg',
-      icon: <RocketOutlined />,
-      label: '后台静默打开',
-      onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
-        domEvent?.stopPropagation();
-        handleOpenBookmarkInBackground(item.url);
+      { type: 'divider' as const },
+      {
+        key: 'open-new-tab',
+        icon: <GlobalOutlined />,
+        label: '在新标签页打开',
+        onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
+          domEvent?.stopPropagation();
+          handleOpenUrl(item.url, true);
+        },
       },
-    },
-    {
-      key: 'copy-url',
-      icon: <CopyOutlined />,
-      label: '复制网址',
-      onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
-        domEvent?.stopPropagation();
-        void handleCopyUrl(item.url);
+      {
+        key: 'open-bg',
+        icon: <RocketOutlined />,
+        label: '后台静默打开',
+        onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
+          domEvent?.stopPropagation();
+          handleOpenBookmarkInBackground(item.url);
+        },
       },
-    },
-    { type: 'divider' as const },
-    {
-      key: 'edit',
-      icon: <EditOutlined />,
-      label: '修改书签',
-      onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
-        domEvent?.stopPropagation();
-        setEditingBookmark(item);
-        bookmarkForm.setFieldsValue({ title: item.title, url: item.url });
+      {
+        key: 'copy-url',
+        icon: <CopyOutlined />,
+        label: '复制网址',
+        onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
+          domEvent?.stopPropagation();
+          void handleCopyUrl(item.url);
+        },
       },
-    },
-    {
-      key: 'delete',
-      icon: <DeleteOutlined />,
-      danger: true,
-      label: '删除书签',
-      onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
-        domEvent?.stopPropagation();
-        handleDeleteBookmark(item);
+      { type: 'divider' as const },
+      {
+        key: 'edit',
+        icon: <EditOutlined />,
+        label: '修改书签',
+        onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
+          domEvent?.stopPropagation();
+          setEditingBookmark(item);
+          bookmarkForm.setFieldsValue({ title: item.title, url: item.url });
+        },
       },
-    },
-  ];
+      {
+        key: 'delete',
+        icon: <DeleteOutlined />,
+        danger: true,
+        label: '删除书签',
+        onClick: ({ domEvent }: { domEvent?: React.SyntheticEvent }) => {
+          domEvent?.stopPropagation();
+          handleDeleteBookmark(item);
+        },
+      },
+    ];
+  };
 
   const groupChips = [
     { id: 'all', name: '全部', count: visiblePinnedItems.length },
@@ -1316,6 +1431,13 @@ export default function NewTabApp() {
                           <span className="spacer" />
                           <button
                             className="yt-bm-openall"
+                            title="将该目录下书签一键导入为工作台快捷方式分组"
+                            onClick={() => void handleImportFolderAsGroup(card)}
+                          >
+                            <PushpinOutlined style={{ fontSize: 11 }} /> 导入为分组
+                          </button>
+                          <button
+                            className="yt-bm-openall"
                             title="在后台打开该目录下全部书签"
                             onClick={() => handleOpenFolderAll(card)}
                           >
@@ -1352,6 +1474,21 @@ export default function NewTabApp() {
                                   <span className="bt">{item.title}</span>
                                   <span className="bd">{item.domain}</span>
                                   <span className="bacts">
+                                    <button
+                                      className="yt-bact"
+                                      title={findPinnedByUrl(pinnedData, item.url) ? '已在工作台' : '固定到工作台'}
+                                      aria-label="固定到工作台"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void handlePinBookmark(item);
+                                      }}
+                                    >
+                                      {findPinnedByUrl(pinnedData, item.url) ? (
+                                        <PushpinFilled style={{ fontSize: 12, color: 'var(--accent)' }} />
+                                      ) : (
+                                        <PushpinOutlined style={{ fontSize: 12 }} />
+                                      )}
+                                    </button>
                                     <button
                                       className="yt-bact"
                                       title="在新标签页打开"
@@ -1445,6 +1582,34 @@ export default function NewTabApp() {
           destroyOnHidden
         >
           <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+            {!editingItem && quickPickCandidates.length > 0 && (
+              <div className="yt-quickpick">
+                <div className="yt-quickpick-title">
+                  从已开标签 / 常用站点快速填入（点击即填）
+                </div>
+                <div className="yt-quickpick-list">
+                  {quickPickCandidates.map((cand) => (
+                    <button
+                      key={cand.key}
+                      type="button"
+                      className="yt-quickpick-chip"
+                      title={cand.url}
+                      onClick={() => {
+                        form.setFieldsValue({ url: cand.url, title: cand.title });
+                        metaController.onTitleInput();
+                        const resolved = resolveShortcutUrl(cand.url);
+                        setShortcutPreview(resolved.ok ? resolved.url : cand.url);
+                        setShortcutHint('');
+                        setSuggestedTitle(null);
+                      }}
+                    >
+                      <span className="tag">{cand.source === 'tab' ? '标签' : '常用'}</span>
+                      <span className="name">{cand.title}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {/* URL 前置：先填地址，名称才可自动补全 */}
             <Form.Item
               name="url"

@@ -19,6 +19,10 @@ export default defineConfig({
       // 读取 Chrome 本地图标库（_favicon），零网络请求。
       // 权限警告已被已有的 tabs 权限覆盖，不新增用户可见警告。
       'favicon',
+      // 右键菜单快捷固定当前页/链接到工作台（无用户可见权限警告）。
+      'contextMenus',
+      // 定时自动休眠闲置标签调度（无用户可见权限警告）。
+      'alarms',
     ],
     omnibox: {
       keyword: 'tab',

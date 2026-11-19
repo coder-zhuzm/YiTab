@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   ConfigProvider,
+  Dropdown,
   Empty,
   Input,
   message,
@@ -32,6 +33,8 @@ import {
   PauseCircleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
+  PushpinFilled,
+  PushpinOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
   SearchOutlined,
@@ -68,6 +71,13 @@ import {
 } from '@/lib/settings';
 import { hostOf, inWhitelist, MODE_LABELS, resolveRule, stripWww } from '@/lib/match';
 import {
+  addPinnedItemIfAbsent,
+  deletePinnedItem,
+  findPinnedByUrl,
+  getPinnedData,
+} from '@/lib/pinned';
+import type { PinnedData } from '@/lib/newtab-types';
+import {
   analyzeTabsByDomain,
   deleteSnapshot,
   formatTabsExport,
@@ -94,8 +104,10 @@ function PopupApp() {
   const [loading, setLoading] = useState(true);
   const [activeTabKey, setActiveTabKey] = useState('organize');
 
-  // 当前站点去重策略与暂停状态
+  // 当前站点去重策略、固定状态与暂停状态
   const [activeTabUrl, setActiveTabUrl] = useState('');
+  const [activeTabTitle, setActiveTabTitle] = useState('');
+  const [pinnedData, setPinnedData] = useState<PinnedData>({ groups: [], items: [] });
   const [dedupSettings, setDedupSettings] = useState<Settings>(DEFAULTS);
   const [pausedUntil, setPausedUntil] = useState(0);
 
@@ -198,11 +210,12 @@ function PopupApp() {
   const refreshCurrentWindow = async () => {
     setLoading(true);
     try {
-      const [tabsRes, healthRes, settingsRes, pausedRes, activeTabs] = await Promise.all([
+      const [tabsRes, healthRes, settingsRes, pausedRes, pData, activeTabs] = await Promise.all([
         sendToBackground<GetCurrentWindowTabsResponse>({ type: 'getCurrentWindowTabs' }),
         sendToBackground<GetTabHealthResponse>({ type: 'getTabHealth' }),
         getSettings(),
         getDedupPausedUntil(),
+        getPinnedData(),
         chrome.tabs?.query ? chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []) : Promise.resolve([]),
       ]);
       if (tabsRes.ok) {
@@ -213,7 +226,9 @@ function PopupApp() {
       }
       setDedupSettings(settingsRes);
       setPausedUntil(pausedRes);
+      setPinnedData(pData);
       setActiveTabUrl(activeTabs[0]?.url || '');
+      setActiveTabTitle(activeTabs[0]?.title || '');
       const snaps = await getSnapshots();
       setSnapshots(snaps);
     } catch (e) {
@@ -234,6 +249,32 @@ function PopupApp() {
   );
   const isDedupPaused = pausedUntil > Date.now();
   const pausedRemainMin = isDedupPaused ? Math.max(1, Math.ceil((pausedUntil - Date.now()) / 60000)) : 0;
+  const pinnedCurrentItem = useMemo(
+    () => (activeTabUrl ? findPinnedByUrl(pinnedData, activeTabUrl) : undefined),
+    [pinnedData, activeTabUrl],
+  );
+
+  const handlePinCurrentToGroup = async (groupId: string) => {
+    if (!activeTabUrl || !/^https?:\/\//i.test(activeTabUrl)) return;
+    const res = await addPinnedItemIfAbsent({
+      title: activeTabTitle || activeHost || activeTabUrl,
+      url: activeTabUrl,
+      groupId,
+    });
+    setPinnedData(await getPinnedData());
+    if (res.added) {
+      messageApi.success(`已固定到工作台「${res.groupName}」`);
+    } else {
+      messageApi.info(`已在工作台「${res.groupName}」中`);
+    }
+  };
+
+  const handleUnpinCurrent = async () => {
+    if (!pinnedCurrentItem) return;
+    await deletePinnedItem(pinnedCurrentItem.id);
+    setPinnedData(await getPinnedData());
+    messageApi.success('已从工作台取消固定');
+  };
 
   const handleToggleCurrentWhitelist = async () => {
     if (!activeHost) return;
@@ -571,7 +612,40 @@ function PopupApp() {
             )}
           </div>
 
-          <Space size={4} style={{ flexShrink: 0 }}>
+          <Space size={2} style={{ flexShrink: 0 }}>
+            {activeHost && (
+              pinnedCurrentItem ? (
+                <Tooltip title="已固定到工作台（点击取消固定）">
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<PushpinFilled style={{ color: tk.accentInk, fontSize: 12 }} />}
+                    onClick={() => void handleUnpinCurrent()}
+                    style={{ height: 24, padding: '0 6px' }}
+                  />
+                </Tooltip>
+              ) : (
+                <Dropdown
+                  trigger={['click']}
+                  menu={{
+                    items: pinnedData.groups.map((g) => ({
+                      key: g.id,
+                      label: `固定到「${g.name}」`,
+                      onClick: () => void handlePinCurrentToGroup(g.id),
+                    })),
+                  }}
+                >
+                  <Tooltip title="固定当前页到工作台">
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<PushpinOutlined style={{ color: tk.ink3, fontSize: 12 }} />}
+                      style={{ height: 24, padding: '0 6px' }}
+                    />
+                  </Tooltip>
+                </Dropdown>
+              )
+            )}
             {!isDedupPaused && activeHost && (
               <Button
                 size="small"

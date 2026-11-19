@@ -6,8 +6,38 @@ import type {
 } from './newtab-types.ts';
 import { DEFAULT_NEWTAB_SETTINGS } from './newtab-types.ts';
 
-const STORAGE_PINNED_KEY = 'yitab_pinned_data';
+export const STORAGE_PINNED_KEY = 'yitab_pinned_data';
 const STORAGE_NEWTAB_SETTINGS_KEY = 'yitab_newtab_settings';
+
+/** 归一化快捷方式 URL 用于去重比对（忽略追踪参数与根路径尾斜杠） */
+export function normalizePinnedUrl(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl.trim());
+    if (!/^https?:$/i.test(u.protocol)) return rawUrl.trim();
+    const cleaned = new URL(u.href);
+    for (const k of [...cleaned.searchParams.keys()]) {
+      if (
+        k.toLowerCase().startsWith('utm_') ||
+        k === 'gclid' ||
+        k === 'fbclid' ||
+        k === 'spm'
+      ) {
+        cleaned.searchParams.delete(k);
+      }
+    }
+    const pathname = cleaned.pathname === '/' ? '' : cleaned.pathname.replace(/\/+$/, '');
+    return `${cleaned.protocol.toLowerCase()}//${cleaned.host.toLowerCase()}${pathname}${cleaned.search}${cleaned.hash}`;
+  } catch {
+    return rawUrl.trim();
+  }
+}
+
+/** 按归一化 URL 查找是否已在工作台固定 */
+export function findPinnedByUrl(data: PinnedData, url: string): PinnedItem | undefined {
+  if (!url) return undefined;
+  const target = normalizePinnedUrl(url);
+  return data.items.find((i) => normalizePinnedUrl(i.url) === target);
+}
 
 /** 初始预设固钉分组 */
 export const DEFAULT_PINNED_GROUPS: PinnedGroup[] = [
@@ -98,6 +128,51 @@ export async function addPinnedItem(
   data.items.push(newItem);
   await savePinnedData(data);
   return newItem;
+}
+
+/**
+ * 新增固钉卡片（带去重检测，供右键菜单 / Popup / 书签提拔 / 命令面板共用）
+ */
+export async function addPinnedItemIfAbsent(input: {
+  title: string;
+  url: string;
+  groupId?: string;
+}): Promise<{ added: boolean; item: PinnedItem; groupName: string }> {
+  const data = await getPinnedData();
+  const existing = findPinnedByUrl(data, input.url);
+  if (existing) {
+    const groupName =
+      data.groups.find((g) => g.id === existing.groupId)?.name ??
+      data.groups[0]?.name ??
+      '默认分组';
+    return { added: false, item: existing, groupName };
+  }
+
+  const targetGroup =
+    (input.groupId ? data.groups.find((g) => g.id === input.groupId) : undefined) ??
+    data.groups[0];
+  const groupId = targetGroup?.id ?? 'dev';
+  const groupName = targetGroup?.name ?? '常用研发工具';
+
+  const cleanTitle = input.title.trim() || (() => {
+    try {
+      return new URL(input.url).hostname.replace(/^www\./i, '');
+    } catch {
+      return input.url;
+    }
+  })();
+
+  const newItem: PinnedItem = {
+    id: `pin_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    title: cleanTitle,
+    url: input.url.trim(),
+    groupId,
+    createdAt: Date.now(),
+  };
+
+  data.items.push(newItem);
+  await savePinnedData(data);
+  return { added: true, item: newItem, groupName };
 }
 
 /**
