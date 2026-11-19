@@ -442,6 +442,10 @@ input {
   display: block;
 }
 
+.yt-favicon-invert {
+  filter: invert(1);
+}
+
 .yt-tile .label {
   font-size: 12.5px;
   line-height: 1.35;

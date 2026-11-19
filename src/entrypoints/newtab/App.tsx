@@ -86,6 +86,7 @@ import {
 import { getAiSettings, type AiSettings, DEFAULT_AI_SETTINGS } from '@/lib/settings';
 import { applyThemeToDocument, useThemeMode } from '@/lib/theme-mode';
 import { ThemeModeButton } from '@/components/ThemeToggle';
+import { AdaptiveFavicon } from '@/components/AdaptiveFavicon';
 
 /** 「继续上次」最多展示的入口数 */
 const RESUME_LIMIT = 3;
@@ -1181,14 +1182,7 @@ export default function NewTabApp() {
                   }}
                 >
                   <span className={`icon${settings.iconMode === 'browser' ? ' real' : ''}`}>
-                    <img
-                      src={icon.src}
-                      alt=""
-                      onError={(e) => {
-                        e.currentTarget.onerror = null;
-                        e.currentTarget.src = icon.fallback;
-                      }}
-                    />
+                    <AdaptiveFavicon src={icon.src} fallback={icon.fallback} isDark={isDark} />
                     {isOpen && <span className="dot open" title="已在后台打开" />}
                     {!isOpen && isIntranet && <span className="dot intranet" title="内网地址" />}
                   </span>
@@ -1253,14 +1247,7 @@ export default function NewTabApp() {
                   }}
                 >
                   {icon ? (
-                    <img
-                      src={icon.src}
-                      alt=""
-                      onError={(e) => {
-                        e.currentTarget.onerror = null;
-                        e.currentTarget.src = icon.fallback;
-                      }}
-                    />
+                    <AdaptiveFavicon src={icon.src} fallback={icon.fallback} isDark={isDark} />
                   ) : (
                     <ClockCircleOutlined style={{ fontSize: 12 }} />
                   )}
@@ -1360,14 +1347,7 @@ export default function NewTabApp() {
                                   }}
                                 >
                                   <span className="fi">
-                                    <img
-                                      src={icon.src}
-                                      alt=""
-                                      onError={(e) => {
-                                        e.currentTarget.onerror = null;
-                                        e.currentTarget.src = icon.fallback;
-                                      }}
-                                    />
+                                    <AdaptiveFavicon src={icon.src} fallback={icon.fallback} isDark={isDark} />
                                   </span>
                                   <span className="bt">{item.title}</span>
                                   <span className="bd">{item.domain}</span>
