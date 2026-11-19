@@ -26,8 +26,8 @@ export default defineConfig({
     commands: {
       'toggle-palette': {
         suggested_key: {
-          default: 'Alt+K',
-          mac: 'Command+K',
+          default: 'Alt+Shift+K',
+          mac: 'Command+Shift+K',
         },
         description: '唤出全局命令与标签搜索面板',
       },

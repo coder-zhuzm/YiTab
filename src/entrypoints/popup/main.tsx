@@ -7,6 +7,7 @@ import {
   ConfigProvider,
   Empty,
   Input,
+  message,
   Popconfirm,
   Radio,
   Space,
@@ -79,6 +80,7 @@ const { Text, Paragraph } = Typography;
 function PopupApp() {
   const { isDark, mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const { tk } = useThemeTokens(isDark);
+  const [messageApi, messageContextHolder] = message.useMessage();
 
   // 让原生控件与页面底色跟随主题，避免首帧闪白
   useEffect(() => applyThemeToDocument(isDark, tk.canvas), [isDark, tk.canvas]);
@@ -171,7 +173,7 @@ function PopupApp() {
         }
       }
       if (res?.message) {
-        alert(res.message);
+        messageApi.success(res.message);
       }
       refreshCurrentWindow();
       performSearch(searchQuery, searchKind);
@@ -238,13 +240,13 @@ function PopupApp() {
         minCount: 2,
       });
       if (res.ok && res.createdGroupsCount > 0) {
-        alert(`已成功创建 ${res.createdGroupsCount} 个分组，归拢 ${res.groupedTabsCount} 个标签页！`);
+        messageApi.success(`已创建 ${res.createdGroupsCount} 个分组，归拢 ${res.groupedTabsCount} 个标签页`);
       } else {
-        alert('未找到需要聚合的同域名标签（同域名需 ≥ 2 个标签）');
+        messageApi.info('未找到可聚合的同域名标签（单域名需 ≥ 2 个标签）');
       }
       refreshCurrentWindow();
     } catch {
-      alert('自动归拢失败，请确认浏览器支持标签分组');
+      messageApi.error('自动归拢失败，请确认浏览器支持标签分组');
     }
   };
 
@@ -255,11 +257,11 @@ function PopupApp() {
         type: 'ungroupAllTabs',
       });
       if (res.ok) {
-        alert(`已成功解散当前窗口的标签分组（共 ${res.ungroupedCount} 个标签）`);
+        messageApi.success(`已解散当前窗口的标签分组（共 ${res.ungroupedCount} 个标签）`);
       }
       refreshCurrentWindow();
     } catch {
-      alert('解散分组失败');
+      messageApi.error('解散分组失败');
     }
   };
 
@@ -271,13 +273,13 @@ function PopupApp() {
         type: 'discardTabs',
       });
       if (res.ok && res.discardedCount > 0) {
-        alert(`已成功休眠 ${res.discardedCount} 个闲置标签，估算释放约 ${res.freedMemoryMb}MB 内存！`);
+        messageApi.success(`已休眠 ${res.discardedCount} 个闲置标签，估算释放约 ${res.freedMemoryMb}MB 内存`);
       } else {
-        alert('当前没有符合条件的闲置标签（播放中、固定或活动标签受保护）');
+        messageApi.info('当前没有符合条件的闲置标签（播放中、固定或活动标签受保护）');
       }
       refreshCurrentWindow();
     } catch {
-      alert('休眠标签操作失败');
+      messageApi.error('休眠标签操作失败');
     } finally {
       setDiscardLoading(false);
     }
@@ -291,13 +293,13 @@ function PopupApp() {
         type: 'archiveInactiveTabs',
       });
       if (res.ok && res.archivedCount > 0) {
-        alert(`已成功归档 ${res.archivedCount} 个闲置标签并关闭！快照已保存为：「${res.snapshotName}」`);
+        messageApi.success(`已归档 ${res.archivedCount} 个闲置标签并关闭，快照：「${res.snapshotName}」`);
       } else {
-        alert('当前没有需要沉淀归档的闲置标签');
+        messageApi.info('当前没有需要沉淀归档的闲置标签');
       }
       refreshCurrentWindow();
     } catch {
-      alert('沉淀归档操作失败');
+      messageApi.error('沉淀归档操作失败');
     } finally {
       setArchiveLoading(false);
     }
@@ -313,7 +315,7 @@ function PopupApp() {
       if (res.ok && res.report) {
         setBookmarkReport(res.report);
       } else if (res.error) {
-        alert(res.error);
+        messageApi.error(res.error);
       }
     } catch (e) {
       console.warn('Scan bookmarks failed:', e);
@@ -335,11 +337,11 @@ function PopupApp() {
         bookmarkIds: deleteIds,
       });
       if (res.ok) {
-        alert(`已成功清理 ${res.removedCount} 个多余重复书签，已保留推荐项！`);
+        messageApi.success(`已清理 ${res.removedCount} 个多余重复书签，保留推荐项`);
         await scanBookmarks();
       }
     } catch {
-      alert('清理书签失败');
+      messageApi.error('清理书签失败');
     } finally {
       setBookmarkCleaning(false);
     }
@@ -356,7 +358,7 @@ function PopupApp() {
         await scanBookmarks();
       }
     } catch {
-      alert('删除书签失败');
+      messageApi.error('删除书签失败');
     }
   };
 
@@ -377,7 +379,7 @@ function PopupApp() {
         URL.revokeObjectURL(url);
       }
     } catch {
-      alert('导出书签备份失败');
+      messageApi.error('导出书签备份失败');
     }
   };
 
@@ -460,13 +462,20 @@ function PopupApp() {
       theme={{
         algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
-          colorPrimary: '#4f46e5',
+          colorPrimary: tk.accent,
           borderRadius: 8,
           fontFamily:
             '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif',
         },
+        components: {
+          Tabs: {
+            itemSelectedColor: tk.accentInk,
+            inkBarColor: tk.accentInk,
+          },
+        },
       }}
     >
+      {messageContextHolder}
       <div style={{ padding: '14px 16px', background: tk.canvas, minHeight: 520, boxSizing: 'border-box' }}>
         {/* Header */}
         <div
@@ -546,15 +555,13 @@ function PopupApp() {
           activeKey={activeTabKey}
           onChange={setActiveTabKey}
           size="small"
+          tabBarGutter={18}
+          centered
           items={[
             {
               key: 'organize',
-              label: (
-                <span>
-                  <AppstoreOutlined />
-                  标签治理
-                </span>
-              ),
+              icon: <AppstoreOutlined />,
+              label: '治理',
               children: (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {/* 1. 域名智能归拢卡片 */}
@@ -613,7 +620,7 @@ function PopupApp() {
                                 }}
                               />
                               {item.domain}{' '}
-                              <strong style={{ color: '#4f46e5' }}>({item.count})</strong>
+                              <strong style={{ color: tk.accentInk }}>({item.count})</strong>
                             </Tag>
                           ))}
                         </div>
@@ -641,8 +648,6 @@ function PopupApp() {
                         icon={<AppstoreOutlined />}
                         onClick={handleAutoGroup}
                         style={{
-                          background: 'linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)',
-                          border: 'none',
                           fontWeight: 600,
                           height: 34,
                         }}
@@ -702,7 +707,7 @@ function PopupApp() {
                     >
                       <span>已休眠: <strong style={{ color: tk.ink }}>{tabHealth?.discardedCount ?? 0}</strong></span>
                       <span>发声/保护: <strong style={{ color: tk.ink }}>{(tabHealth?.audibleCount ?? 0) + (tabHealth?.pinnedCount ?? 0)}</strong></span>
-                      <span>可休眠: <strong style={{ color: '#4f46e5' }}>{tabHealth?.eligibleDiscardCount ?? 0}</strong></span>
+                      <span>可休眠: <strong style={{ color: tk.accentInk }}>{tabHealth?.eligibleDiscardCount ?? 0}</strong></span>
                     </div>
 
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -717,17 +722,25 @@ function PopupApp() {
                           一键休眠闲置
                         </Button>
                       </Tooltip>
-                      <Tooltip title="将闲置标签暂存为快照并安全关闭，彻底清理标签栏">
-                        <Button
-                          block
-                          icon={<CameraOutlined />}
-                          loading={archiveLoading}
-                          onClick={handleArchiveInactiveTabs}
-                          style={{ height: 34, fontWeight: 500 }}
-                        >
-                          沉淀归档并关闭
-                        </Button>
-                      </Tooltip>
+                      <Popconfirm
+                        title="确认沉淀归档并关闭闲置标签？"
+                        description={`将保存快照后关闭当前窗口的 ${tabHealth?.eligibleDiscardCount ?? 0} 个闲置标签（播放中、固定和活动标签受保护）。`}
+                        onConfirm={handleArchiveInactiveTabs}
+                        okText="归档并关闭"
+                        cancelText="取消"
+                        disabled={!tabHealth?.eligibleDiscardCount}
+                      >
+                        <Tooltip title="将闲置标签暂存为快照并安全关闭，彻底清理标签栏">
+                          <Button
+                            block
+                            icon={<CameraOutlined />}
+                            loading={archiveLoading}
+                            style={{ height: 34, fontWeight: 500 }}
+                          >
+                            沉淀归档并关闭
+                          </Button>
+                        </Tooltip>
+                      </Popconfirm>
                     </div>
                   </Card>
                 </div>
@@ -735,17 +748,13 @@ function PopupApp() {
             },
             {
               key: 'search',
-              label: (
-                <span>
-                  <SearchOutlined />
-                  快速检索
-                </span>
-              ),
+              icon: <SearchOutlined />,
+              label: '检索',
               children: (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <Input
                     prefix={<SearchOutlined style={{ color: tk.ink3 }} />}
-                    placeholder="搜索标签、书签或快捷指令 (Alt+K 随时唤出)"
+                    placeholder="搜索标签、书签或快捷指令"
                     allowClear
                     value={searchQuery}
                     onChange={(e) => handleSearchInputChange(e.target.value)}
@@ -830,7 +839,7 @@ function PopupApp() {
                               boxShadow: tk.shadowCard,
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = '#4f46e5';
+                              e.currentTarget.style.borderColor = tk.accent;
                               e.currentTarget.style.background = tk.surfaceHover;
                             }}
                             onMouseLeave={(e) => {
@@ -859,7 +868,7 @@ function PopupApp() {
                                   onError={(e) => (e.currentTarget.style.display = 'none')}
                                 />
                               ) : item.kind === 'command' ? (
-                                <ThunderboltOutlined style={{ fontSize: 13, color: '#4f46e5' }} />
+                                <ThunderboltOutlined style={{ fontSize: 13, color: tk.accentInk }} />
                               ) : (
                                 <span style={{ fontSize: 12 }}>🌐</span>
                               )}
@@ -871,7 +880,7 @@ function PopupApp() {
                                 ellipsis
                                 style={{
                                   fontSize: 13,
-                                  color: item.active ? '#4f46e5' : '#1e293b',
+                                  color: item.active ? tk.accentInk : tk.ink,
                                   display: 'block',
                                 }}
                               >
@@ -915,15 +924,14 @@ function PopupApp() {
             },
             {
               key: 'bookmarks',
+              icon: <BookOutlined />,
               label: (
-                <span>
-                  <BookOutlined />
-                  书签健康
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  书签
                   {bookmarkReport && bookmarkReport.redundantCount > 0 && (
                     <Badge
                       count={bookmarkReport.redundantCount}
                       style={{
-                        marginLeft: 4,
                         backgroundColor: '#ef4444',
                         boxShadow: 'none',
                       }}
@@ -976,7 +984,7 @@ function PopupApp() {
                       >
                         <span>总书签: <strong style={{ color: tk.ink }}>{bookmarkReport.totalBookmarks}</strong></span>
                         <span>文件夹: <strong style={{ color: tk.ink }}>{bookmarkReport.totalFolders}</strong></span>
-                        <span>重复组: <strong style={{ color: '#4f46e5' }}>{bookmarkReport.duplicateGroupCount}</strong></span>
+                        <span>重复组: <strong style={{ color: tk.accentInk }}>{bookmarkReport.duplicateGroupCount}</strong></span>
                         <span>可清理: <strong style={{ color: '#ef4444' }}>{bookmarkReport.redundantCount}</strong></span>
                       </div>
                     ) : (
@@ -1149,17 +1157,16 @@ function PopupApp() {
             },
             {
               key: 'snapshots',
+              icon: <CameraOutlined />,
               label: (
-                <span>
-                  <CameraOutlined />
-                  会话快照
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  快照
                   {snapshots.length > 0 && (
                     <Badge
                       count={snapshots.length}
                       style={{
-                        marginLeft: 4,
                         backgroundColor: tk.accentSoft,
-                        color: '#4f46e5',
+                        color: tk.accentInk,
                         boxShadow: 'none',
                       }}
                     />
@@ -1262,7 +1269,7 @@ function PopupApp() {
                                   <Button
                                     size="small"
                                     type="text"
-                                    icon={<ExportOutlined style={{ color: '#4f46e5' }} />}
+                                    icon={<ExportOutlined style={{ color: tk.accentInk }} />}
                                     onClick={() => handleRestoreSnapshot(snap, true)}
                                   />
                                 </Tooltip>
@@ -1329,7 +1336,7 @@ function PopupApp() {
                                       href={t.url}
                                       target="_blank"
                                       rel="noreferrer"
-                                      style={{ fontSize: 11, color: '#4f46e5' }}
+                                      style={{ fontSize: 11, color: tk.accentInk }}
                                     >
                                       打开
                                     </a>

@@ -29,6 +29,10 @@ export interface ThemeTokens {
   shadowCard: string;
   /** 吸顶栏投影 */
   shadowSticky: string;
+  /** 品牌主色（按钮背景、边框强调） */
+  accent: string;
+  /** 品牌文字色（深色模式下提亮以满足 WCAG AA 对比度） */
+  accentInk: string;
   /** 选中态浅底（对应浅色 #f5f3ff / #eef2ff） */
   accentSoft: string;
   /** 选中态描边 */
@@ -66,6 +70,8 @@ export const LIGHT_TOKENS: ThemeTokens = {
   stickyBorder: 'rgba(226, 232, 240, 0.8)',
   shadowCard: '0 1px 3px rgba(0, 0, 0, 0.04)',
   shadowSticky: '0 4px 20px -2px rgba(15, 23, 42, 0.05)',
+  accent: '#4f46e5',
+  accentInk: '#4f46e5',
   accentSoft: '#f5f3ff',
   accentBorder: '#ddd6fe',
   successSoft: '#f0fdf4',
@@ -94,6 +100,8 @@ export const DARK_TOKENS: ThemeTokens = {
   stickyBorder: 'rgba(52, 58, 68, 0.8)',
   shadowCard: '0 1px 3px rgba(0, 0, 0, 0.4)',
   shadowSticky: '0 4px 20px -2px rgba(0, 0, 0, 0.5)',
+  accent: '#6366f1',
+  accentInk: '#818cf8',
   accentSoft: '#23243a',
   accentBorder: '#3b3d63',
   successSoft: '#12261f',

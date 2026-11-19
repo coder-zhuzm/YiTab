@@ -31,6 +31,7 @@ import {
   FolderOpenOutlined,
   ReloadOutlined,
   RestOutlined,
+  RobotOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
   ThunderboltOutlined,
@@ -113,6 +114,7 @@ const examples: Record<MatchMode, string> = {
 function OptionsPage() {
   const { isDark, mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const { tk } = useThemeTokens(isDark);
+  const [messageApi, messageContextHolder] = message.useMessage();
 
   // 让原生控件与页面底色跟随主题，避免首帧闪白
   useEffect(() => applyThemeToDocument(isDark, tk.canvas), [isDark, tk.canvas]);
@@ -171,19 +173,19 @@ function OptionsPage() {
   const handleSaveNewTabSettings = async (patch: Partial<NewTabSettings>) => {
     const next = await saveNewTabSettings(patch);
     setNewTabSettingsState(next);
-    message.success('工作台配置已保存');
+    messageApi.success('工作台配置已保存');
   };
 
   const handleSaveAiSettings = async (patch: Partial<AiSettings>) => {
     const next = await saveAiSettings(patch);
     setAiSettingsState(next);
-    message.success('端侧 AI 配置已保存');
+    messageApi.success('端侧 AI 配置已保存');
   };
 
   const handleClearAiCache = async () => {
     await clearAiCache();
     setAiCacheCount(0);
-    message.success('已成功清空本地端侧 AI 推理缓存');
+    messageApi.success('已清空本地端侧 AI 推理缓存');
   };
 
   const fetchTabHealth = async () => {
@@ -207,7 +209,7 @@ function OptionsPage() {
       if (res && res.ok && res.report) {
         setBookmarkReport(res.report);
       } else if (res?.error) {
-        alert(res.error);
+        messageApi.error(res.error);
       }
     } catch (e) {
       console.warn('Scan bookmarks failed:', e);
@@ -228,11 +230,11 @@ function OptionsPage() {
         bookmarkIds: deleteIds,
       });
       if (res.ok) {
-        alert(`已成功清理 ${res.removedCount} 个多余重复书签，已保留推荐项！`);
+        messageApi.success(`已清理 ${res.removedCount} 个多余重复书签，保留推荐项`);
         await scanBookmarks();
       }
     } catch {
-      alert('清理书签失败');
+      messageApi.error('清理书签失败');
     } finally {
       setBookmarkCleaning(false);
     }
@@ -248,7 +250,7 @@ function OptionsPage() {
         await scanBookmarks();
       }
     } catch {
-      alert('删除书签失败');
+      messageApi.error('删除书签失败');
     }
   };
 
@@ -268,7 +270,7 @@ function OptionsPage() {
         URL.revokeObjectURL(url);
       }
     } catch {
-      alert('导出书签备份失败');
+      messageApi.error('导出书签备份失败');
     }
   };
 
@@ -277,13 +279,13 @@ function OptionsPage() {
     try {
       const res = await sendToBackground<DiscardTabsResponse>({ type: 'discardTabs' });
       if (res.ok && res.discardedCount > 0) {
-        alert(`已成功休眠 ${res.discardedCount} 个闲置标签，估算释放约 ${res.freedMemoryMb}MB 内存！`);
+        messageApi.success(`已休眠 ${res.discardedCount} 个闲置标签，估算释放约 ${res.freedMemoryMb}MB 内存`);
       } else {
-        alert('当前没有符合条件的闲置标签（播放中、固定或活动标签受保护）');
+        messageApi.info('当前没有符合条件的闲置标签（播放中、固定或活动标签受保护）');
       }
       fetchTabHealth();
     } catch {
-      alert('休眠标签操作失败');
+      messageApi.error('休眠标签操作失败');
     } finally {
       setDiscardLoading(false);
     }
@@ -296,13 +298,13 @@ function OptionsPage() {
         type: 'archiveInactiveTabs',
       });
       if (res.ok && res.archivedCount > 0) {
-        alert(`已成功归档 ${res.archivedCount} 个闲置标签并关闭！快照已保存为：「${res.snapshotName}」`);
+        messageApi.success(`已归档 ${res.archivedCount} 个闲置标签并关闭，快照：「${res.snapshotName}」`);
       } else {
-        alert('当前没有需要沉淀归档的闲置标签');
+        messageApi.info('当前没有需要沉淀归档的闲置标签');
       }
       fetchTabHealth();
     } catch {
-      alert('沉淀归档操作失败');
+      messageApi.error('沉淀归档操作失败');
     } finally {
       setArchiveLoading(false);
     }
@@ -389,15 +391,21 @@ function OptionsPage() {
       theme={{
         algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
-          colorPrimary: '#4f46e5',
+          colorPrimary: tk.accent,
           borderRadius: 8,
           fontFamily:
             '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif',
           colorBgContainer: tk.surface,
           colorBorderSecondary: tk.hairline,
         },
+        components: {
+          Tabs: {
+            itemSelectedColor: tk.accentInk,
+          },
+        },
       }}
     >
+      {messageContextHolder}
       <div style={{ minHeight: '100vh', background: tk.canvas, padding: '36px 20px 64px' }}>
         <div style={{ maxWidth: 880, margin: '0 auto' }}>
           {/* 页面主标题与状态条 */}
@@ -485,12 +493,8 @@ function OptionsPage() {
             items={[
               {
                 key: 'newtab',
-                label: (
-                  <span>
-                    <AppstoreOutlined />
-                    工作台
-                  </span>
-                ),
+                icon: <AppstoreOutlined />,
+                label: '工作台',
                 children: (
                   <div>
                     {/* 图标来源 */}
@@ -571,12 +575,12 @@ function OptionsPage() {
                       </Radio.Group>
                     </Card>
 
-                    {/* 书签区默认状态 */}
+                    {/* 书签区与打开方式 */}
                     <Card
                       title={
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 16, fontWeight: 600, color: tk.ink }}>
-                            书签区默认状态
+                            书签区与打开方式
                           </span>
                         </div>
                       }
@@ -607,6 +611,33 @@ function OptionsPage() {
                           checked={newTabSettings.bookmarksExpanded}
                           onChange={(checked) =>
                             void handleSaveNewTabSettings({ bookmarksExpanded: checked })
+                          }
+                        />
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 16,
+                          marginTop: 16,
+                          paddingTop: 16,
+                          borderTop: `1px solid ${tk.hairline}`,
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                            点击快捷方式或书签时在新标签页打开
+                          </div>
+                          <div style={{ fontSize: 12, color: tk.ink3, marginTop: 4 }}>
+                            开启后，点击工作台上的快捷方式、书签或执行搜索时默认在新标签页打开，保留工作台本身。
+                          </div>
+                        </div>
+                        <Switch
+                          checked={newTabSettings.openInNewTab}
+                          onChange={(checked) =>
+                            void handleSaveNewTabSettings({ openInNewTab: checked })
                           }
                         />
                       </div>
@@ -678,12 +709,8 @@ function OptionsPage() {
               },
               {
                 key: 'rules',
-                label: (
-                  <span>
-                    <SettingOutlined />
-                    去重拦截策略
-                  </span>
-                ),
+                icon: <SettingOutlined />,
+                label: '去重拦截策略',
                 children: (
                   <div>
                     {/* 1. 重复判定粒度（全局默认） */}
@@ -1309,19 +1336,35 @@ function OptionsPage() {
                         ))}
                       </div>
                     </Card>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 8 }}>
+                      <Popconfirm
+                        title="恢复去重默认设置？"
+                        description="将清除所有自定义网站规则和白名单域名，恢复去重策略至初始状态。"
+                        onConfirm={async () => {
+                          if (await save(DEFAULTS)) clearEditor();
+                        }}
+                        okText="确认恢复"
+                        cancelText="取消"
+                      >
+                        <Button danger disabled={disabled}>
+                          恢复去重默认设置
+                        </Button>
+                      </Popconfirm>
+                    </div>
                   </div>
                 ),
               },
               {
                 key: 'bookmarks',
+                icon: <BookOutlined />,
                 label: (
-                  <span>
-                    <BookOutlined />
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     书签健康与生态治理
                     {bookmarkReport && bookmarkReport.redundantCount > 0 && (
                       <Badge
                         count={bookmarkReport.redundantCount}
-                        style={{ marginLeft: 6, backgroundColor: '#ef4444' }}
+                        style={{ backgroundColor: '#ef4444' }}
                       />
                     )}
                   </span>
@@ -1353,15 +1396,15 @@ function OptionsPage() {
                               递归扫描全部收藏夹，按路径深度、标题质量和历史添加时间智能推荐最佳保留项
                             </span>
                           </div>
-                          <Button
-                            type="primary"
-                            icon={<ReloadOutlined />}
-                            loading={bookmarkScanning}
-                            onClick={scanBookmarks}
-                            style={{ background: '#4f46e5' }}
-                          >
-                            {bookmarkReport ? '重新扫描书签' : '开始扫描书签'}
-                          </Button>
+                          {bookmarkReport && (
+                            <Button
+                              icon={<ReloadOutlined />}
+                              loading={bookmarkScanning}
+                              onClick={scanBookmarks}
+                            >
+                              重新扫描书签
+                            </Button>
+                          )}
                         </div>
                       }
                       style={{
@@ -1502,14 +1545,13 @@ function OptionsPage() {
                       ) : (
                         <div style={{ textAlign: 'center', padding: '30px 0' }}>
                           <Paragraph type="secondary" style={{ fontSize: 14, marginBottom: 16 }}>
-                            尚未扫描书签树。点击上方按钮开始检测重复与异常书签。
+                            尚未扫描书签树。点击下方按钮开始检测重复与异常书签。
                           </Paragraph>
                           <Button
                             type="primary"
                             icon={<BookOutlined />}
                             loading={bookmarkScanning}
                             onClick={scanBookmarks}
-                            style={{ background: '#4f46e5' }}
                           >
                             开始全量书签检测
                           </Button>
@@ -1700,12 +1742,8 @@ function OptionsPage() {
               },
               {
                 key: 'tabs',
-                label: (
-                  <span>
-                    <RestOutlined />
-                    闲置休眠与内存治理
-                  </span>
-                ),
+                icon: <RestOutlined />,
+                label: '闲置休眠与内存治理',
                 children: (
                   <div>
                     <Card
@@ -1836,14 +1874,14 @@ function OptionsPage() {
                             border: `1px solid ${tk.accentBorder}`,
                           }}
                         >
-                          <Text type="secondary" style={{ fontSize: 12, color: '#5b21b6' }}>
+                          <Text type="secondary" style={{ fontSize: 12, color: tk.accentInk }}>
                             可释放内存估算
                           </Text>
                           <div
                             style={{
                               fontSize: 22,
                               fontWeight: 700,
-                              color: '#7c3aed',
+                              color: tk.accentInk,
                               marginTop: 4,
                             }}
                           >
@@ -1866,22 +1904,30 @@ function OptionsPage() {
                             icon={<RestOutlined />}
                             loading={discardLoading}
                             onClick={handleDiscardTabs}
-                            style={{ background: '#4f46e5', fontWeight: 600 }}
+                            style={{ fontWeight: 600 }}
                           >
                             一键休眠所有闲置标签
                           </Button>
                         </Tooltip>
 
-                        <Tooltip title="将闲置标签暂存为一个新快照，并从标签栏中安全关闭，彻底还给您清爽的窗口">
-                          <Button
-                            icon={<CameraOutlined />}
-                            loading={archiveLoading}
-                            onClick={handleArchiveTabs}
-                            style={{ fontWeight: 500 }}
-                          >
-                            一键沉淀归档并安全关闭闲置标签
-                          </Button>
-                        </Tooltip>
+                        <Popconfirm
+                          title="确认沉淀归档并关闭闲置标签？"
+                          description={`将先保存快照，再安全关闭当前窗口的 ${tabHealth?.eligibleDiscardCount ?? 0} 个闲置标签（播放中、固定和活动标签受保护）。`}
+                          onConfirm={handleArchiveTabs}
+                          okText="归档并关闭"
+                          cancelText="取消"
+                          disabled={!tabHealth?.eligibleDiscardCount}
+                        >
+                          <Tooltip title="将闲置标签暂存为一个新快照，并从标签栏中安全关闭，彻底还给您清爽的窗口">
+                            <Button
+                              icon={<CameraOutlined />}
+                              loading={archiveLoading}
+                              style={{ fontWeight: 500 }}
+                            >
+                              一键沉淀归档并安全关闭闲置标签
+                            </Button>
+                          </Tooltip>
+                        </Popconfirm>
                       </div>
                     </Card>
                   </div>
@@ -1889,12 +1935,8 @@ function OptionsPage() {
               },
               {
                 key: 'ai',
-                label: (
-                  <span>
-                    <ThunderboltOutlined />
-                    端侧智能与资源管控 (AI)
-                  </span>
-                ),
+                icon: <ThunderboltOutlined />,
+                label: '端侧智能与资源管控 (AI)',
                 children: (
                   <div>
                     {/* 全局总开关与环境探测卡片 */}
@@ -1902,8 +1944,9 @@ function OptionsPage() {
                       title={
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <RobotOutlined style={{ color: tk.accentInk, fontSize: 16 }} />
                             <span style={{ fontSize: 16, fontWeight: 600, color: tk.ink }}>
-                              🤖 Chrome Built-in AI 端侧模型引擎
+                              Chrome Built-in AI 端侧模型引擎
                             </span>
                             {aiCapabilities.modelReady ? (
                               <Tag color="success">Gemini Nano 端侧模型就绪</Tag>
@@ -1975,52 +2018,43 @@ function OptionsPage() {
                           />
                         </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: 0.65 }}>
                           <div>
-                            <div style={{ fontWeight: 600, fontSize: 14, color: tk.ink }}>
-                              跨域名任务语义聚类与智能命名 (Cross-Domain Auto-Grouping)
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 14, color: tk.ink }}>
+                              <span>跨域名任务语义聚类与智能命名 (Cross-Domain Auto-Grouping)</span>
+                              <Tag style={{ margin: 0, fontSize: 11 }}>规划中</Tag>
                             </div>
                             <div style={{ fontSize: 12, color: tk.ink3 }}>
                               将跨站点的同一任务页面（Jira工单、GitLab代码、本地开发端口）自动归并为统一工作流标签组
                             </div>
                           </div>
-                          <Switch
-                            disabled={!aiSettings.enabled}
-                            checked={aiSettings.taskAutoGrouping}
-                            onChange={(checked) => handleSaveAiSettings({ taskAutoGrouping: checked })}
-                          />
+                          <Switch disabled checked={false} />
                         </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: 0.65 }}>
                           <div>
-                            <div style={{ fontWeight: 600, fontSize: 14, color: tk.ink }}>
-                              晨间工作现场智能简报 (Morning Standup Briefing)
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 14, color: tk.ink }}>
+                              <span>晨间工作现场智能简报 (Morning Standup Briefing)</span>
+                              <Tag style={{ margin: 0, fontSize: 11 }}>规划中</Tag>
                             </div>
                             <div style={{ fontSize: 12, color: tk.ink3 }}>
                               每日早晨在新标签页生成一行未完任务与待审 PR 概览，支持一键断点续传
                             </div>
                           </div>
-                          <Switch
-                            disabled={!aiSettings.enabled}
-                            checked={aiSettings.morningBriefing}
-                            onChange={(checked) => handleSaveAiSettings({ morningBriefing: checked })}
-                          />
+                          <Switch disabled checked={false} />
                         </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: 0.65 }}>
                           <div>
-                            <div style={{ fontWeight: 600, fontSize: 14, color: tk.ink }}>
-                              书签空闲时智能语义打标 (Smart Bookmarks Tagging)
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 14, color: tk.ink }}>
+                              <span>书签空闲时智能语义打标 (Smart Bookmarks Tagging)</span>
+                              <Tag style={{ margin: 0, fontSize: 11 }}>规划中</Tag>
                             </div>
                             <div style={{ fontSize: 12, color: tk.ink3 }}>
                               在浏览器空闲时自动分析根目录书签并打标；涉及遍历扫描，默认保持关闭以节约算力
                             </div>
                           </div>
-                          <Switch
-                            disabled={!aiSettings.enabled}
-                            checked={aiSettings.bookmarkSmartTagging}
-                            onChange={(checked) => handleSaveAiSettings({ bookmarkSmartTagging: checked })}
-                          />
+                          <Switch disabled checked={false} />
                         </div>
                       </div>
                     </Card>
@@ -2031,7 +2065,7 @@ function OptionsPage() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <SafetyCertificateOutlined style={{ color: '#10b981' }} />
                           <span style={{ fontSize: 16, fontWeight: 600, color: tk.ink }}>
-                            🛡️ 端侧 AI 资源开销治理防线
+                            端侧 AI 资源开销治理防线
                           </span>
                         </div>
                       }
@@ -2087,30 +2121,16 @@ function OptionsPage() {
             ]}
           />
 
-          {/* 底部重置操作 */}
+          {/* 底部版本栏 */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
+              justifyContent: 'flex-end',
               paddingTop: 12,
               borderTop: `1px solid ${tk.hairline}`,
             }}
           >
-            <Popconfirm
-              title="恢复默认设置？"
-              description="将清除所有自定义网站规则和白名单域名，恢复至初始状态。"
-              onConfirm={async () => {
-                if (await save(DEFAULTS)) clearEditor();
-              }}
-              okText="确认恢复"
-              cancelText="取消"
-            >
-              <Button danger disabled={disabled}>
-                恢复默认
-              </Button>
-            </Popconfirm>
-
             <Text type="secondary" style={{ fontSize: 12 }}>
               YiTab 一签 · {APP_VERSION}
             </Text>

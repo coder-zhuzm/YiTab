@@ -5,3 +5,5 @@ stats.html
 *.zip
 .DS_Store
 .claude/worktrees/
+.agents/
+skills-lock.json

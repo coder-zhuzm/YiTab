@@ -78,7 +78,6 @@ import { filterAndRankItems, type SearchItem } from '@/lib/search';
 import { getSnapshots, type SessionSnapshot } from '@/lib/snapshots';
 import {
   summarizeDeepRouteTitle,
-  generateMorningBriefing,
   naturalLanguageSearchMatch,
 } from '@/lib/ai-assistant';
 import { getAiSettings, type AiSettings, DEFAULT_AI_SETTINGS } from '@/lib/settings';
@@ -255,9 +254,6 @@ export default function NewTabApp() {
       // 5. 端侧 AI 配置
       const aiSet = await getAiSettings();
       setAiSettings(aiSet);
-      if (aiSet.enabled && aiSet.morningBriefing) {
-        void generateMorningBriefing(initialOpenTabs.length, 0, aiSet);
-      }
     }
     loadInitialData();
   }, []);
@@ -791,12 +787,20 @@ export default function NewTabApp() {
     },
   ];
 
+  const visiblePinnedItems = useMemo(
+    () =>
+      settings.profile === 'home'
+        ? pinnedData.items.filter((item) => !isIntranetHost(hostnameOf(item.url)))
+        : pinnedData.items,
+    [pinnedData.items, settings.profile],
+  );
+
   const groupChips = [
-    { id: 'all', name: '全部', count: pinnedData.items.length },
+    { id: 'all', name: '全部', count: visiblePinnedItems.length },
     ...pinnedData.groups.map((g) => ({
       id: g.id,
       name: g.name,
-      count: pinnedData.items.filter((i) => i.groupId === g.id).length,
+      count: visiblePinnedItems.filter((i) => i.groupId === g.id).length,
     })),
   ];
 
@@ -805,7 +809,7 @@ export default function NewTabApp() {
       theme={{
         algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
-          colorPrimary: '#4f46e5',
+          colorPrimary: isDark ? '#6366f1' : '#4f46e5',
           borderRadius: 8,
           fontFamily:
             "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', 'Microsoft YaHei', sans-serif",
@@ -820,19 +824,13 @@ export default function NewTabApp() {
           <div>
             <div className="yt-clock">{greetingInfo.timeStr}</div>
             <div className="yt-meta">
-              <span>{greetingInfo.dateStr}</span>
-              <span className="sep" />
+              <span>{greetingInfo.dateStr} · {greetingInfo.greeting}</span>
               <span>
-                {greetingInfo.greeting} · 当前 <b>{openTabs.length}</b> 个活动页面
+                当前 <b>{openTabs.length}</b> 个活动页面
+                {recentSnapshot && recentSnapshot.tabs.length > 0 && (
+                  <> · <b>{recentSnapshot.tabs.length}</b> 个未完工现场</>
+                )}
               </span>
-              {recentSnapshot && recentSnapshot.tabs.length > 0 && (
-                <>
-                  <span className="sep" />
-                  <span>
-                    <b>{recentSnapshot.tabs.length}</b> 个未完工现场
-                  </span>
-                </>
-              )}
             </div>
           </div>
 
@@ -856,7 +854,7 @@ export default function NewTabApp() {
                 <Input
                   ref={searchInputRef}
                   autoFocus
-                  bordered={false}
+                  variant="borderless"
                   placeholder={
                     parsedSearch.isAddress
                       ? `⏎ 直达网络地址: ${parsedSearch.targetUrl}`
@@ -1270,7 +1268,7 @@ export default function NewTabApp() {
           onCancel={handleCloseItemModal}
           okText="保存"
           cancelText="取消"
-          destroyOnClose
+          destroyOnHidden
         >
           <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
             {/* URL 前置：先填地址，名称才可自动补全 */}
@@ -1344,7 +1342,7 @@ export default function NewTabApp() {
           onCancel={() => setGroupModalVisible(false)}
           okText="创建"
           cancelText="取消"
-          destroyOnClose
+          destroyOnHidden
         >
           <Form form={groupForm} layout="vertical" style={{ marginTop: 16 }}>
             <Form.Item
@@ -1364,7 +1362,7 @@ export default function NewTabApp() {
           onCancel={() => setEditingBookmark(null)}
           okText="保存修改"
           cancelText="取消"
-          destroyOnClose
+          destroyOnHidden
         >
           <Form form={bookmarkForm} layout="vertical" style={{ marginTop: 16 }}>
             <Form.Item

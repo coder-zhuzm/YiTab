@@ -55,7 +55,7 @@ export default defineContentScript({
           .writeText(msg.text || '')
           .then(() => {
             if (msg.message) {
-              alert(msg.message);
+              showStatusNotice(String(msg.message));
             }
           })
           .catch((err) => {
@@ -64,23 +64,76 @@ export default defineContentScript({
         sendResponse({ ok: true });
       }
     });
-
-    // 2. 页面内全局快捷键监听 (Alt+K / Cmd+K)
-    window.addEventListener(
-      'keydown',
-      (e) => {
-        // Alt+K or Cmd+K
-        const isCmdOrAlt = e.altKey || (e.metaKey && !e.ctrlKey);
-        if (isCmdOrAlt && (e.key === 'k' || e.key === 'K')) {
-          e.preventDefault();
-          e.stopPropagation();
-          toggleCommandPalette();
-        }
-      },
-      true,
-    );
   },
 });
+
+/* ==========================================================================
+   Part 0: 轻量状态气泡 (替代原生 alert，不抢焦点)
+   ========================================================================== */
+
+let noticeContainer: HTMLElement | null = null;
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showStatusNotice(text: string) {
+  if (noticeTimer) {
+    clearTimeout(noticeTimer);
+    noticeTimer = null;
+  }
+  if (!noticeContainer) {
+    noticeContainer = document.createElement('div');
+    noticeContainer.id = 'yitab-status-notice-root';
+    noticeContainer.style.position = 'fixed';
+    noticeContainer.style.top = '18px';
+    noticeContainer.style.left = '50%';
+    noticeContainer.style.transform = 'translateX(-50%)';
+    noticeContainer.style.zIndex = '2147483647';
+    noticeContainer.style.pointerEvents = 'none';
+    document.documentElement.appendChild(noticeContainer);
+  }
+  applyThemeTo(noticeContainer);
+  const shadow = noticeContainer.shadowRoot ?? noticeContainer.attachShadow({ mode: 'open' });
+  shadow.innerHTML = `
+    <style>
+      :host { all: initial; display: block; }
+      .pill {
+        background: #ffffff;
+        color: #14161b;
+        border: 1px solid #e3e6ec;
+        box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.16);
+        border-radius: 999px;
+        padding: 8px 16px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 13px;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        white-space: nowrap;
+      }
+      :host([data-theme='dark']) .pill {
+        background: #16181d;
+        color: #e8eaee;
+        border-color: #262a31;
+        box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.55);
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #10b981;
+        flex: none;
+      }
+    </style>
+    <div class="pill" role="status"><span class="dot"></span><span>${escapeHtml(text)}</span></div>
+  `;
+  noticeTimer = setTimeout(() => {
+    if (noticeContainer && noticeContainer.parentNode) {
+      noticeContainer.parentNode.removeChild(noticeContainer);
+      noticeContainer = null;
+    }
+    noticeTimer = null;
+  }, 2600);
+}
 
 /* ==========================================================================
    Part 1: 单页应用路由重复提示 (SPA In-Page Toast)
@@ -138,9 +191,9 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
       :host([data-theme='dark']) .tab-title { color: #e2e8f0; }
 
       :host([data-theme='dark']) .reason-tag {
-        background: rgba(99, 102, 241, 0.2);
-        color: #c7d2fe;
-        border-color: rgba(99, 102, 241, 0.3);
+        background: transparent;
+        color: #94a3b8;
+        border-color: transparent;
       }
 
       :host([data-theme='dark']) .btn-secondary {
@@ -270,14 +323,14 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
       }
       
       .reason-tag {
-        display: inline-block;
-        background: #eef2ff;
-        color: #4338ca;
-        font-size: 11px;
-        font-weight: 500;
-        padding: 1px 7px;
-        border-radius: 4px;
-        border: 1px solid rgba(99, 102, 241, 0.2);
+        display: block;
+        background: transparent;
+        color: #64748b;
+        font-size: 11.5px;
+        font-weight: 400;
+        padding: 0;
+        border: none;
+        line-height: 1.4;
       }
       
       .actions {
@@ -959,7 +1012,7 @@ function openCommandPalette() {
           }
         }
         if (res.message) {
-          alert(res.message);
+          showStatusNotice(String(res.message));
         }
       }
       return;
