@@ -63,9 +63,12 @@ import {
 import {
   addPinnedGroup,
   addPinnedItem,
+  deletePinnedGroup,
   deletePinnedItem,
   getNewTabSettings,
   getPinnedData,
+  renamePinnedGroup,
+  reorderPinnedItems,
   saveNewTabSettings,
   updatePinnedItem,
 } from '@/lib/pinned';
@@ -140,7 +143,7 @@ export default function NewTabApp() {
 
   const [searchInput, setSearchInput] = useState('');
   const [activeEngine, setActiveEngine] = useState<SearchEngine>(SEARCH_ENGINES[0]);
-  const [searchSuggestions, setSearchSuggestions] = useState<SearchItem[]>([]);
+  const [aiSearchSuggestions, setAiSearchSuggestions] = useState<SearchItem[]>([]);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<number>(-1);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef<InputRef>(null);
@@ -148,6 +151,9 @@ export default function NewTabApp() {
   const [itemModalVisible, setItemModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<PinnedItem | null>(null);
   const [groupModalVisible, setGroupModalVisible] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<{ id: string; name: string } | null>(null);
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
   const [form] = Form.useForm();
   const [groupForm] = Form.useForm();
 
@@ -258,6 +264,49 @@ export default function NewTabApp() {
     loadInitialData();
   }, []);
 
+  // 实时同步已开标签（tabs 事件节流 + 页面重新可见时刷新）
+  useEffect(() => {
+    if (typeof chrome === 'undefined' || !chrome.tabs?.query) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const syncTabs = () => {
+      if (timer) return;
+      timer = setTimeout(async () => {
+        timer = null;
+        try {
+          const tabs = await chrome.tabs.query({});
+          setOpenTabs(
+            tabs
+              .filter((t) => t.id && t.url)
+              .map((t) => ({
+                id: t.id!,
+                url: t.url!,
+                title: t.title || '',
+                windowId: t.windowId,
+              })),
+          );
+        } catch {
+          // ignore
+        }
+      }, 250);
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') syncTabs();
+    };
+
+    chrome.tabs.onCreated?.addListener(syncTabs);
+    chrome.tabs.onRemoved?.addListener(syncTabs);
+    chrome.tabs.onUpdated?.addListener(syncTabs);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      if (timer) clearTimeout(timer);
+      chrome.tabs.onCreated?.removeListener(syncTabs);
+      chrome.tabs.onRemoved?.removeListener(syncTabs);
+      chrome.tabs.onUpdated?.removeListener(syncTabs);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
+
   const parsedSearch = useMemo(
     () => parseSearchQuery(searchInput, activeEngine.id),
     [searchInput, activeEngine],
@@ -277,70 +326,115 @@ export default function NewTabApp() {
     [settings.iconMode],
   );
 
-  // 搜索建议（400ms 防抖）
+  // 个人模式下过滤内网后的可见快捷方式
+  const visiblePinnedItems = useMemo(
+    () =>
+      settings.profile === 'home'
+        ? pinnedData.items.filter((item) => !isIntranetHost(hostnameOf(item.url)))
+        : pinnedData.items,
+    [pinnedData.items, settings.profile],
+  );
+
+  // 本地毫秒级全能聚合搜索（已开标签 + 快捷方式 + 书签，零防抖即时出结果）
+  const localSearchSuggestions = useMemo(() => {
+    const q = searchInput.trim();
+    if (!q) return [];
+
+    const tabItems: SearchItem[] = openTabs.map((t) => ({
+      id: `tab_${t.id}`,
+      kind: 'tab',
+      title: t.title,
+      url: t.url,
+      tabId: t.id,
+      windowId: t.windowId,
+      domain: hostnameOf(t.url),
+    }));
+
+    const pinnedSearchItems: SearchItem[] = visiblePinnedItems.map((p) => ({
+      id: `pin_${p.id}`,
+      kind: 'bookmark',
+      title: p.title,
+      url: p.url,
+      domain: hostnameOf(p.url),
+      groupTitle: '快捷方式',
+    }));
+
+    const bookmarkSearchItems: SearchItem[] = [];
+    for (const card of bookmarkCards) {
+      const pool = card.allItems || card.items;
+      for (const bm of pool) {
+        if (!bm.url || bm.isInvalid) continue;
+        bookmarkSearchItems.push({
+          id: `bm_${bm.id}`,
+          kind: 'bookmark',
+          title: bm.title,
+          url: bm.url,
+          domain: bm.domain || hostnameOf(bm.url),
+          groupTitle: card.name,
+        });
+      }
+    }
+
+    return filterAndRankItems(
+      [...tabItems, ...pinnedSearchItems, ...bookmarkSearchItems],
+      q,
+      'all',
+      8,
+    );
+  }, [searchInput, openTabs, visiblePinnedItems, bookmarkCards]);
+
+  // 端侧 AI 自然语言意图补全（仅 AI 开启且输入 ≥ 3 字时走 400ms 防抖异步增强）
   useEffect(() => {
-    if (!searchInput.trim()) {
-      setSearchSuggestions([]);
-      setSelectedSuggestionIndex(-1);
+    const q = searchInput.trim();
+    setSelectedSuggestionIndex(-1);
+    if (!q || !aiSettings.enabled || !aiSettings.naturalLanguageJump || q.length < 3) {
+      setAiSearchSuggestions([]);
       return;
     }
 
     const timer = setTimeout(async () => {
-      const items: SearchItem[] = openTabs.map((t) => ({
-        id: `tab_${t.id}`,
-        kind: 'tab',
-        title: t.title,
-        url: t.url,
-        tabId: t.id,
-        windowId: t.windowId,
-        domain: hostnameOf(t.url),
-      }));
-
-      const ranked = filterAndRankItems(items, searchInput.trim(), 'all', 6);
-
-      // 端侧 AI 自然语言意图补全
-      if (aiSettings.enabled && aiSettings.naturalLanguageJump && searchInput.trim().length >= 3) {
-        try {
-          const validCandidates = items.filter(
-            (it): it is SearchItem & { url: string } => Boolean(it.url),
-          );
-          const matched = await naturalLanguageSearchMatch(
-            searchInput.trim(),
-            validCandidates,
-            aiSettings,
-          );
-          if (matched.length > 0) {
-            const aiItems: SearchItem[] = matched.map((m) => {
-              const original = items.find((it) => it.url === m.url);
-              return (
-                original || {
-                  id: `ai_${m.url}`,
-                  kind: 'tab',
-                  title: m.title,
-                  url: m.url,
-                  domain: hostnameOf(m.url),
-                }
-              );
-            });
-            const merged = [...aiItems];
-            for (const r of ranked) {
-              if (!merged.some((m) => m.url === r.url)) merged.push(r);
+      const tabItems: Array<SearchItem & { url: string }> = openTabs
+        .filter((t) => Boolean(t.url))
+        .map((t) => ({
+          id: `tab_${t.id}`,
+          kind: 'tab',
+          title: t.title,
+          url: t.url,
+          tabId: t.id,
+          windowId: t.windowId,
+          domain: hostnameOf(t.url),
+        }));
+      try {
+        const matched = await naturalLanguageSearchMatch(q, tabItems, aiSettings);
+        const aiItems: SearchItem[] = matched.map((m) => {
+          const original = tabItems.find((it) => it.url === m.url);
+          return (
+            original || {
+              id: `ai_${m.url}`,
+              kind: 'tab',
+              title: m.title,
+              url: m.url,
+              domain: hostnameOf(m.url),
             }
-            setSearchSuggestions(merged.slice(0, 6));
-            setSelectedSuggestionIndex(-1);
-            return;
-          }
-        } catch {
-          // ignore
-        }
+          );
+        });
+        setAiSearchSuggestions(aiItems);
+      } catch {
+        setAiSearchSuggestions([]);
       }
-
-      setSearchSuggestions(ranked);
-      setSelectedSuggestionIndex(-1);
     }, 400);
 
     return () => clearTimeout(timer);
   }, [searchInput, openTabs, aiSettings]);
+
+  const searchSuggestions = useMemo(() => {
+    if (aiSearchSuggestions.length === 0) return localSearchSuggestions;
+    const merged = [...aiSearchSuggestions];
+    for (const r of localSearchSuggestions) {
+      if (!merged.some((m) => m.url && m.url === r.url)) merged.push(r);
+    }
+    return merged.slice(0, 8);
+  }, [aiSearchSuggestions, localSearchSuggestions]);
 
   const handleOpenUrl = useCallback(
     (targetUrl: string, inNewTab = false) => {
@@ -609,16 +703,61 @@ export default function NewTabApp() {
     setPinnedData(await getPinnedData());
   };
 
+  const handleOpenGroupModal = (group?: { id: string; name: string }) => {
+    if (group) {
+      setEditingGroup(group);
+      groupForm.setFieldsValue({ name: group.name });
+    } else {
+      setEditingGroup(null);
+      groupForm.resetFields();
+    }
+    setGroupModalVisible(true);
+  };
+
   const handleSaveGroup = async () => {
     try {
       const values = await groupForm.validateFields();
-      await addPinnedGroup(values.name);
+      if (editingGroup) {
+        await renamePinnedGroup(editingGroup.id, values.name);
+        messageApi.success('分组已重命名');
+      } else {
+        await addPinnedGroup(values.name);
+      }
       setPinnedData(await getPinnedData());
       setGroupModalVisible(false);
+      setEditingGroup(null);
       groupForm.resetFields();
     } catch {
       // 校验失败
     }
+  };
+
+  const handleDeleteGroup = (group: { id: string; name: string }) => {
+    if (pinnedData.groups.length <= 1) {
+      messageApi.warning('至少需要保留一个分组');
+      return;
+    }
+    modal.confirm({
+      title: `删除分组「${group.name}」？`,
+      content: '该分组下的快捷方式会自动移入第一个分组，不会丢失。',
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        await deletePinnedGroup(group.id);
+        setPinnedData(await getPinnedData());
+        if (activeGroupId === group.id) setActiveGroupId('all');
+        messageApi.success('分组已删除');
+      },
+    });
+  };
+
+  const handleDropTile = async (targetId: string) => {
+    if (!draggingItemId || draggingItemId === targetId) return;
+    await reorderPinnedItems(draggingItemId, targetId);
+    setPinnedData(await getPinnedData());
+    setDraggingItemId(null);
+    setDragOverItemId(null);
   };
 
   const [messageApi, messageContextHolder] = message.useMessage();
@@ -787,14 +926,6 @@ export default function NewTabApp() {
     },
   ];
 
-  const visiblePinnedItems = useMemo(
-    () =>
-      settings.profile === 'home'
-        ? pinnedData.items.filter((item) => !isIntranetHost(hostnameOf(item.url)))
-        : pinnedData.items,
-    [pinnedData.items, settings.profile],
-  );
-
   const groupChips = [
     { id: 'all', name: '全部', count: visiblePinnedItems.length },
     ...pinnedData.groups.map((g) => ({
@@ -873,22 +1004,33 @@ export default function NewTabApp() {
 
               {isSearchFocused && searchSuggestions.length > 0 && (
                 <div className="yt-suggest">
-                  <div className="yt-suggest-hint">已开标签（上下键选择，回车切换）</div>
-                  {searchSuggestions.map((item, index) => (
-                    <div
-                      key={item.id}
-                      className="yt-suggest-item"
-                      role="option"
-                      aria-selected={index === selectedSuggestionIndex}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => handleActivateSearchItem(item)}
-                      onMouseEnter={() => setSelectedSuggestionIndex(index)}
-                    >
-                      <span className="t">{item.title}</span>
-                      <span className="d">{item.domain}</span>
-                      <span className="d">{index === selectedSuggestionIndex ? '⏎' : '↗'}</span>
-                    </div>
-                  ))}
+                  <div className="yt-suggest-hint">已开标签 · 快捷方式 · 书签（↑↓ 选择，回车直达）</div>
+                  {searchSuggestions.map((item, index) => {
+                    const kindLabel =
+                      item.kind === 'tab'
+                        ? '标签'
+                        : item.id.startsWith('pin_')
+                          ? '快捷'
+                          : '书签';
+                    return (
+                      <div
+                        key={item.id}
+                        className="yt-suggest-item"
+                        role="option"
+                        aria-selected={index === selectedSuggestionIndex}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handleActivateSearchItem(item)}
+                        onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                      >
+                        <span className={`yt-suggest-tag ${item.kind === 'tab' ? 'tab' : ''}`}>
+                          {kindLabel}
+                        </span>
+                        <span className="t">{item.title}</span>
+                        <span className="d">{item.domain}</span>
+                        <span className="d">{index === selectedSuggestionIndex ? '⏎' : '↗'}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -929,19 +1071,49 @@ export default function NewTabApp() {
 
         {/* ---------- 分组条 ---------- */}
         <div className="yt-groupbar">
-          {groupChips.map((g) => (
-            <button
-              key={g.id}
-              className="yt-gchip"
-              aria-current={activeGroupId === g.id}
-              onClick={() => setActiveGroupId(g.id)}
-            >
-              {g.name}
-              <span className="n">{g.count}</span>
-            </button>
-          ))}
+          {groupChips.map((g) => {
+            const chipButton = (
+              <button
+                key={g.id}
+                className="yt-gchip"
+                aria-current={activeGroupId === g.id}
+                title={g.id === 'all' ? '全部快捷方式' : '右键可重命名或删除分组'}
+                onClick={() => setActiveGroupId(g.id)}
+              >
+                {g.name}
+                <span className="n">{g.count}</span>
+              </button>
+            );
+            if (g.id === 'all') return chipButton;
+            return (
+              <Dropdown
+                key={g.id}
+                trigger={['contextMenu']}
+                menu={{
+                  items: [
+                    {
+                      key: 'rename',
+                      icon: <EditOutlined />,
+                      label: '重命名分组',
+                      onClick: () => handleOpenGroupModal({ id: g.id, name: g.name }),
+                    },
+                    {
+                      key: 'delete',
+                      icon: <DeleteOutlined />,
+                      danger: true,
+                      disabled: pinnedData.groups.length <= 1,
+                      label: '删除分组',
+                      onClick: () => handleDeleteGroup({ id: g.id, name: g.name }),
+                    },
+                  ],
+                }}
+              >
+                {chipButton}
+              </Dropdown>
+            );
+          })}
           <span className="spacer" />
-          <button className="yt-text-btn" onClick={() => setGroupModalVisible(true)}>
+          <button className="yt-text-btn" onClick={() => handleOpenGroupModal()}>
             ＋ 新建分组
           </button>
           <button className="yt-text-btn accent" onClick={() => handleOpenItemModal()}>
@@ -968,10 +1140,32 @@ export default function NewTabApp() {
               return (
                 <div
                   key={item.id}
-                  className="yt-tile"
-                  title={`${item.title}\n${item.url}`}
+                  className={`yt-tile${draggingItemId === item.id ? ' dragging' : ''}${dragOverItemId === item.id && draggingItemId !== item.id ? ' drag-over' : ''}`}
+                  title={`${item.title}\n${item.url}\n(可拖拽调整排序)`}
                   role="link"
                   tabIndex={0}
+                  draggable={!confirmingItemId}
+                  onDragStart={(e) => {
+                    setDraggingItemId(item.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                  }}
+                  onDragOver={(e) => {
+                    if (!draggingItemId || draggingItemId === item.id) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (dragOverItemId !== item.id) setDragOverItemId(item.id);
+                  }}
+                  onDragLeave={() => {
+                    if (dragOverItemId === item.id) setDragOverItemId(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    void handleDropTile(item.id);
+                  }}
+                  onDragEnd={() => {
+                    setDraggingItemId(null);
+                    setDragOverItemId(null);
+                  }}
                   onClick={() => {
                     // 确认气泡挂在 body 上，React 事件仍会冒泡到这里；
                     // 有气泡打开时忽略，避免点「删除」顺带把页面导航走。
@@ -1336,11 +1530,14 @@ export default function NewTabApp() {
         </Modal>
 
         <Modal
-          title="新建分组"
+          title={editingGroup ? '重命名分组' : '新建分组'}
           open={groupModalVisible}
           onOk={handleSaveGroup}
-          onCancel={() => setGroupModalVisible(false)}
-          okText="创建"
+          onCancel={() => {
+            setGroupModalVisible(false);
+            setEditingGroup(null);
+          }}
+          okText={editingGroup ? '保存' : '创建'}
           cancelText="取消"
           destroyOnHidden
         >

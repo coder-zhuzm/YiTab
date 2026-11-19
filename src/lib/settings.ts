@@ -158,3 +158,25 @@ export async function saveAiSettings(patch: Partial<AiSettings>): Promise<AiSett
   return next;
 }
 
+/** 临时暂停去重拦截的截止时间戳（ms），存放在 local storage 以便跨 SW 重启生效 */
+export const DEDUP_PAUSE_STORAGE_KEY = 'yitab_dedup_paused_until';
+
+export async function getDedupPausedUntil(): Promise<number> {
+  if (typeof chrome === 'undefined' || !chrome.storage?.local) return 0;
+  try {
+    const res = await chrome.storage.local.get(DEDUP_PAUSE_STORAGE_KEY);
+    const val = Number(res[DEDUP_PAUSE_STORAGE_KEY] ?? 0);
+    return Number.isFinite(val) && val > Date.now() ? val : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function setDedupPausedUntil(untilMs: number): Promise<number> {
+  const normalized = Number.isFinite(untilMs) && untilMs > Date.now() ? untilMs : 0;
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    await chrome.storage.local.set({ [DEDUP_PAUSE_STORAGE_KEY]: normalized });
+  }
+  return normalized;
+}
+

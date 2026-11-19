@@ -138,6 +138,34 @@ export async function addPinnedGroup(name: string): Promise<PinnedGroup> {
 }
 
 /**
+ * 重命名分组
+ */
+export async function renamePinnedGroup(id: string, name: string): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const data = await getPinnedData();
+  const target = data.groups.find((g) => g.id === id);
+  if (target) {
+    target.name = trimmed;
+    await savePinnedData(data);
+  }
+}
+
+/**
+ * 拖拽重排固钉卡片：将 draggedId 移动到 targetId 所在位置
+ */
+export async function reorderPinnedItems(draggedId: string, targetId: string): Promise<void> {
+  if (!draggedId || !targetId || draggedId === targetId) return;
+  const data = await getPinnedData();
+  const fromIdx = data.items.findIndex((i) => i.id === draggedId);
+  const toIdx = data.items.findIndex((i) => i.id === targetId);
+  if (fromIdx === -1 || toIdx === -1) return;
+  const [moved] = data.items.splice(fromIdx, 1);
+  data.items.splice(toIdx, 0, moved);
+  await savePinnedData(data);
+}
+
+/**
  * 删除分组（该分组下的卡片会自动移入默认或第一个分组）
  */
 export async function deletePinnedGroup(id: string): Promise<void> {

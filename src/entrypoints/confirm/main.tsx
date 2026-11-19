@@ -24,7 +24,7 @@ import type {
   TabGroupInfo,
   TabGroupColor,
 } from '@/lib/messaging';
-import { MODE_LABELS, type TabInfo } from '@/lib/match';
+import { hostOf, MODE_LABELS, type TabInfo } from '@/lib/match';
 import { useThemeTokens, type ThemeTokens } from '@/lib/theme-tokens';
 import { useThemeMode, applyThemeToDocument } from '@/lib/theme-mode';
 import { ThemeModeButton } from '@/components/ThemeToggle';
@@ -78,6 +78,7 @@ function ConfirmPage() {
   useEffect(() => applyThemeToDocument(isDark, tk.canvas), [isDark, tk.canvas]);
   const [targetUrl] = useState(() => new URLSearchParams(location.search).get('u') ?? '');
   const [dups, setDups] = useState<TabInfo[]>([]);
+  const [currentWindowId, setCurrentWindowId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -133,6 +134,10 @@ function ConfirmPage() {
   }, [targetUrl, valid]);
 
   useEffect(() => {
+    chrome.windows?.getCurrent?.().then((w) => {
+      if (w?.id != null) setCurrentWindowId(w.id);
+    }).catch(() => {});
+
     refresh();
     window.addEventListener('focus', refresh);
 
@@ -408,7 +413,36 @@ function ConfirmPage() {
 
   // 摘要解析
   const targetSummary = useMemo(() => parseUrlSummary(targetUrl), [targetUrl]);
+  const targetHost = useMemo(() => hostOf(targetUrl), [targetUrl]);
   const primaryMode = dups[0]?.match?.mode;
+
+  // 将原始 windowId 映射为人类可读标签（当前窗口 / 其他窗口 #2...）
+  const windowLabelMap = useMemo(() => {
+    const map = new Map<number, string>();
+    let otherIdx = 2;
+    for (const t of dups) {
+      if (map.has(t.windowId)) continue;
+      if (currentWindowId != null && t.windowId === currentWindowId) {
+        map.set(t.windowId, '当前窗口');
+      } else {
+        map.set(t.windowId, `其他窗口 #${otherIdx++}`);
+      }
+    }
+    return map;
+  }, [dups, currentWindowId]);
+
+  const whitelistAndOpen = useCallback(async () => {
+    if (!targetHost || !valid || busy) return;
+    setBusy(true);
+    try {
+      await sendToBackground({ type: 'addWhitelistDomain', domain: targetHost });
+      await sendToBackground({ type: 'confirmOpen', url: targetUrl });
+      location.href = targetUrl;
+    } catch {
+      setError('加入白名单失败，请重试。');
+      setBusy(false);
+    }
+  }, [targetHost, valid, busy, targetUrl]);
 
   return (
     <ConfigProvider
@@ -537,6 +571,17 @@ function ConfirmPage() {
                 <Kbd tk={tk}>Esc</Kbd>
               </Button>
 
+              {targetHost && (
+                <Popconfirm
+                  title={`将 ${targetHost} 加入白名单？`}
+                  description="之后打开该站点不再触发重复拦截，并立即打开当前目标页。"
+                  onConfirm={() => void whitelistAndOpen()}
+                  okText="放行并打开"
+                  cancelText="取消"
+                >
+                  <Button disabled={busy}>放行此站</Button>
+                </Popconfirm>
+              )}
               <Button onClick={() => void chrome.runtime.openOptionsPage()}>网站规则</Button>
               <ThemeModeButton mode={themeMode} onChange={setThemeMode} ink3={tk.ink3} size="middle" />
             </Space>
@@ -849,28 +894,30 @@ function ConfirmPage() {
                 styles={{ body: { padding: '14px 18px' } }}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-                  {/* 模式勾选或单选指示 */}
-                  <div style={{ paddingTop: 3 }} onClick={(e) => e.stopPropagation()}>
-                    {batchMode ? (
-                      <Checkbox
-                        checked={isBatchChecked}
-                        onChange={(e) => {
-                          setBatchSelectedIds((prev) => {
-                            const next = new Set(prev);
-                            if (e.target.checked) next.add(t.id);
-                            else next.delete(t.id);
-                            return next;
-                          });
-                        }}
-                      />
-                    ) : (
-                      <Radio
-                        checked={isSelected}
-                        onChange={() => setSelectedId(t.id)}
-                        aria-label="选择此标签"
-                      />
-                    )}
-                  </div>
+                  {/* 模式勾选或单选指示（单匹配项时省略 Radio 降噪） */}
+                  {(batchMode || dups.length > 1) && (
+                    <div style={{ paddingTop: 3 }} onClick={(e) => e.stopPropagation()}>
+                      {batchMode ? (
+                        <Checkbox
+                          checked={isBatchChecked}
+                          onChange={(e) => {
+                            setBatchSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(t.id);
+                              else next.delete(t.id);
+                              return next;
+                            });
+                          }}
+                        />
+                      ) : (
+                        <Radio
+                          checked={isSelected}
+                          onChange={() => setSelectedId(t.id)}
+                          aria-label="选择此标签"
+                        />
+                      )}
+                    </div>
+                  )}
 
                   {/* Favicon 优雅包装 */}
                   <div
@@ -994,7 +1041,7 @@ function ConfirmPage() {
                           borderRadius: 4,
                         }}
                       >
-                        窗口 {t.windowId}
+                        {windowLabelMap.get(t.windowId) ?? '当前窗口'}
                       </Tag>
                       <span style={{ fontSize: 12, color: tk.ink3 }}>{t.match?.reason}</span>
                     </div>

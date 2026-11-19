@@ -1,5 +1,12 @@
 import { browser } from 'wxt/browser';
-import { getSettings, watchSettings, type Settings } from '@/lib/settings';
+import {
+  getDedupPausedUntil,
+  getSettings,
+  normalizeDomain,
+  setSettings,
+  watchSettings,
+  type Settings,
+} from '@/lib/settings';
 import {
   INTERNAL_URL_RE,
   matchDuplicate,
@@ -197,6 +204,17 @@ export default defineBackground(() => {
           sendResponse({ ok: true, groups: [] });
         } else if (msg.type === 'getSettings') {
           sendResponse({ ok: true, settings: await getSettings() });
+        } else if (msg.type === 'addWhitelistDomain') {
+          const normalized = normalizeDomain(msg.domain);
+          if (!normalized) {
+            sendResponse({ ok: false, message: '无效域名' });
+            return;
+          }
+          const current = await getSettings();
+          if (!current.whitelist.includes(normalized)) {
+            await setSettings({ whitelist: [...current.whitelist, normalized] });
+          }
+          sendResponse({ ok: true, message: `已将 ${normalized} 加入白名单` });
         } else if (msg.type === 'autoGroupTabs') {
           const win =
             msg.windowId ??
@@ -589,6 +607,9 @@ async function handleNavigation(
   transitionQualifiers?: string[],
 ): Promise<void> {
   if (!url || INTERNAL_URL_RE.test(url)) return;
+
+  // 若用户临时暂停了去重拦截，直接放行
+  if ((await getDedupPausedUntil()) > Date.now()) return;
 
   // 记录序列号，避免连续导航异步竞争导致用过期事件覆盖最新状态
   const state = tabStates.get(tabId) ?? { lastUrl: '', lastMatchKey: null, seq: 0 };

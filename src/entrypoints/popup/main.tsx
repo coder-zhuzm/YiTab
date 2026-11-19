@@ -22,15 +22,16 @@ import {
   BookOutlined,
   CameraOutlined,
   CheckOutlined,
-  CloudDownloadOutlined,
   CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
   ExportOutlined,
   FolderOpenOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
-  RestOutlined,
+  SafetyCertificateOutlined,
   SearchOutlined,
   SettingOutlined,
   ThunderboltOutlined,
@@ -38,12 +39,8 @@ import {
 } from '@ant-design/icons';
 import { sendToBackground } from '@/lib/messaging';
 import type {
-  ArchiveInactiveTabsResponse,
   AutoGroupTabsResponse,
-  CleanBookmarksResponse,
-  DiscardTabsResponse,
   ExecuteCommandResponse,
-  ExportBookmarksBackupResponse,
   GetCurrentWindowTabsResponse,
   GetTabHealthResponse,
   ScanBookmarksResponse,
@@ -51,16 +48,23 @@ import type {
   UngroupAllTabsResponse,
 } from '@/lib/messaging';
 import type { SearchItem, SearchItemKind } from '@/lib/search';
-import {
-  computeRecommendedDeletePlan,
-  type BookmarkDuplicateGroup,
-  type BookmarkScanReport,
-} from '@/lib/bookmarks';
-import { ESTIMATED_MB_PER_TAB, type TabHealthReport } from '@/lib/tab-health';
+import type { BookmarkScanReport } from '@/lib/bookmarks';
+import type { TabHealthReport } from '@/lib/tab-health';
 import { APP_VERSION } from '@/lib/version';
 import { useThemeTokens } from '@/lib/theme-tokens';
 import { useThemeMode, applyThemeToDocument } from '@/lib/theme-mode';
 import { ThemeModeButton } from '@/components/ThemeToggle';
+import { TabHealthPanel } from '@/components/TabHealthPanel';
+import { BookmarkHealthPanel } from '@/components/BookmarkHealthPanel';
+import {
+  DEFAULTS,
+  getDedupPausedUntil,
+  getSettings,
+  setDedupPausedUntil,
+  setSettings,
+  type Settings,
+} from '@/lib/settings';
+import { hostOf, inWhitelist, MODE_LABELS, resolveRule, stripWww } from '@/lib/match';
 import {
   analyzeTabsByDomain,
   deleteSnapshot,
@@ -88,16 +92,17 @@ function PopupApp() {
   const [loading, setLoading] = useState(true);
   const [activeTabKey, setActiveTabKey] = useState('organize');
 
+  // 当前站点去重策略与暂停状态
+  const [activeTabUrl, setActiveTabUrl] = useState('');
+  const [dedupSettings, setDedupSettings] = useState<Settings>(DEFAULTS);
+  const [pausedUntil, setPausedUntil] = useState(0);
+
   // 阶段四：标签健康与闲置休眠状态
   const [tabHealth, setTabHealth] = useState<TabHealthReport | null>(null);
-  const [discardLoading, setDiscardLoading] = useState(false);
-  const [archiveLoading, setArchiveLoading] = useState(false);
 
   // 阶段四：书签健康与智能去重状态
   const [bookmarkReport, setBookmarkReport] = useState<BookmarkScanReport | null>(null);
   const [bookmarkScanning, setBookmarkScanning] = useState(false);
-  const [bookmarkCleaning, setBookmarkCleaning] = useState(false);
-  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
 
   // 快照状态
   const [snapshots, setSnapshots] = useState<SessionSnapshot[]>([]);
@@ -185,13 +190,16 @@ function PopupApp() {
     }
   };
 
-  // 刷新当前窗口标签、健康数据与快照
+  // 刷新当前窗口标签、健康数据、站点策略与快照
   const refreshCurrentWindow = async () => {
     setLoading(true);
     try {
-      const [tabsRes, healthRes] = await Promise.all([
+      const [tabsRes, healthRes, settingsRes, pausedRes, activeTabs] = await Promise.all([
         sendToBackground<GetCurrentWindowTabsResponse>({ type: 'getCurrentWindowTabs' }),
         sendToBackground<GetTabHealthResponse>({ type: 'getTabHealth' }),
+        getSettings(),
+        getDedupPausedUntil(),
+        chrome.tabs?.query ? chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []) : Promise.resolve([]),
       ]);
       if (tabsRes.ok) {
         setCurrentTabs(tabsRes.tabs);
@@ -199,12 +207,54 @@ function PopupApp() {
       if (healthRes.ok) {
         setTabHealth(healthRes.health);
       }
+      setDedupSettings(settingsRes);
+      setPausedUntil(pausedRes);
+      setActiveTabUrl(activeTabs[0]?.url || '');
       const snaps = await getSnapshots();
       setSnapshots(snaps);
     } catch (e) {
       console.warn('Failed to refresh tabs:', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const activeHost = useMemo(() => hostOf(activeTabUrl), [activeTabUrl]);
+  const isCurrentWhitelisted = useMemo(
+    () => Boolean(activeTabUrl && inWhitelist(activeTabUrl, dedupSettings.whitelist)),
+    [activeTabUrl, dedupSettings.whitelist],
+  );
+  const currentRule = useMemo(
+    () => (activeTabUrl ? resolveRule(activeTabUrl, dedupSettings) : null),
+    [activeTabUrl, dedupSettings],
+  );
+  const isDedupPaused = pausedUntil > Date.now();
+  const pausedRemainMin = isDedupPaused ? Math.max(1, Math.ceil((pausedUntil - Date.now()) / 60000)) : 0;
+
+  const handleToggleCurrentWhitelist = async () => {
+    if (!activeHost) return;
+    if (isCurrentWhitelisted) {
+      const nextList = dedupSettings.whitelist.filter((w) => stripWww(w) !== activeHost);
+      const next = await setSettings({ whitelist: nextList });
+      setDedupSettings(next);
+      messageApi.success(`已将 ${activeHost} 移出白名单`);
+    } else {
+      const next = await setSettings({ whitelist: [...dedupSettings.whitelist, activeHost] });
+      setDedupSettings(next);
+      messageApi.success(`已放行 ${activeHost}（加入白名单）`);
+    }
+  };
+
+  const handleTogglePauseDedup = async () => {
+    if (isDedupPaused) {
+      await setDedupPausedUntil(0);
+      setPausedUntil(0);
+      messageApi.success('已恢复标签去重拦截');
+    } else {
+      const until = Date.now() + 15 * 60 * 1000;
+      await setDedupPausedUntil(until);
+      setPausedUntil(until);
+      messageApi.info('已暂停标签去重拦截 15 分钟');
     }
   };
 
@@ -265,46 +315,6 @@ function PopupApp() {
     }
   };
 
-  // 一键休眠当前窗口所有闲置标签（释放内存）
-  const handleDiscardInactiveTabs = async () => {
-    setDiscardLoading(true);
-    try {
-      const res = await sendToBackground<DiscardTabsResponse>({
-        type: 'discardTabs',
-      });
-      if (res.ok && res.discardedCount > 0) {
-        messageApi.success(`已休眠 ${res.discardedCount} 个闲置标签，估算释放约 ${res.freedMemoryMb}MB 内存`);
-      } else {
-        messageApi.info('当前没有符合条件的闲置标签（播放中、固定或活动标签受保护）');
-      }
-      refreshCurrentWindow();
-    } catch {
-      messageApi.error('休眠标签操作失败');
-    } finally {
-      setDiscardLoading(false);
-    }
-  };
-
-  // 一键沉淀归档并安全关闭闲置标签
-  const handleArchiveInactiveTabs = async () => {
-    setArchiveLoading(true);
-    try {
-      const res = await sendToBackground<ArchiveInactiveTabsResponse>({
-        type: 'archiveInactiveTabs',
-      });
-      if (res.ok && res.archivedCount > 0) {
-        messageApi.success(`已归档 ${res.archivedCount} 个闲置标签并关闭，快照：「${res.snapshotName}」`);
-      } else {
-        messageApi.info('当前没有需要沉淀归档的闲置标签');
-      }
-      refreshCurrentWindow();
-    } catch {
-      messageApi.error('沉淀归档操作失败');
-    } finally {
-      setArchiveLoading(false);
-    }
-  };
-
   // 扫描书签树
   const scanBookmarks = async () => {
     setBookmarkScanning(true);
@@ -321,65 +331,6 @@ function PopupApp() {
       console.warn('Scan bookmarks failed:', e);
     } finally {
       setBookmarkScanning(false);
-    }
-  };
-
-  // 按建议一键批量清理书签
-  const handleCleanRecommendedBookmarks = async () => {
-    if (!bookmarkReport || bookmarkReport.redundantCount === 0) return;
-    const { deleteIds } = computeRecommendedDeletePlan(bookmarkReport.groups);
-    if (!deleteIds.length) return;
-
-    setBookmarkCleaning(true);
-    try {
-      const res = await sendToBackground<CleanBookmarksResponse>({
-        type: 'cleanBookmarks',
-        bookmarkIds: deleteIds,
-      });
-      if (res.ok) {
-        messageApi.success(`已清理 ${res.removedCount} 个多余重复书签，保留推荐项`);
-        await scanBookmarks();
-      }
-    } catch {
-      messageApi.error('清理书签失败');
-    } finally {
-      setBookmarkCleaning(false);
-    }
-  };
-
-  // 单独删除一个书签副本
-  const handleDeleteSingleBookmark = async (id: string) => {
-    try {
-      const res = await sendToBackground<CleanBookmarksResponse>({
-        type: 'cleanBookmarks',
-        bookmarkIds: [id],
-      });
-      if (res.ok) {
-        await scanBookmarks();
-      }
-    } catch {
-      messageApi.error('删除书签失败');
-    }
-  };
-
-  // 导出书签备份 (Netscape HTML / JSON)
-  const handleBackupBookmarks = async (format: 'html' | 'json') => {
-    try {
-      const res = await sendToBackground<ExportBookmarksBackupResponse>({
-        type: 'exportBookmarksBackup',
-        format,
-      });
-      if (res.ok) {
-        const blob = new Blob([res.content], { type: res.mimeType });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = res.filename;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
-    } catch {
-      messageApi.error('导出书签备份失败');
     }
   };
 
@@ -550,6 +501,84 @@ function PopupApp() {
           </Space>
         </div>
 
+        {/* 当前站点去重策略快捷条 */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            padding: '7px 10px',
+            marginBottom: 10,
+            borderRadius: 8,
+            background: isDedupPaused ? tk.dangerSoft : tk.surface,
+            border: `1px solid ${isDedupPaused ? tk.dangerBorder : tk.hairline}`,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
+            <SafetyCertificateOutlined
+              style={{
+                fontSize: 13,
+                color: isDedupPaused
+                  ? tk.dangerInk
+                  : isCurrentWhitelisted
+                    ? tk.successInk
+                    : tk.accentInk,
+                flexShrink: 0,
+              }}
+            />
+            {isDedupPaused ? (
+              <Text ellipsis style={{ fontSize: 12, color: tk.dangerInk, fontWeight: 500 }}>
+                去重拦截已暂停（剩 {pausedRemainMin} 分钟）
+              </Text>
+            ) : activeHost ? (
+              <>
+                <Text ellipsis style={{ fontSize: 12, color: tk.ink, fontWeight: 500, maxWidth: 130 }} title={activeHost}>
+                  {activeHost}
+                </Text>
+                <Tag
+                  color={isCurrentWhitelisted ? 'green' : currentRule?.rule ? 'blue' : 'default'}
+                  style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 5px', borderRadius: 4 }}
+                >
+                  {isCurrentWhitelisted
+                    ? '白名单'
+                    : currentRule?.rule
+                      ? `规则·${MODE_LABELS[currentRule.mode]}`
+                      : MODE_LABELS[dedupSettings.matchMode]}
+                </Tag>
+              </>
+            ) : (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                去重拦截运行中 · {MODE_LABELS[dedupSettings.matchMode]}
+              </Text>
+            )}
+          </div>
+
+          <Space size={4} style={{ flexShrink: 0 }}>
+            {!isDedupPaused && activeHost && (
+              <Button
+                size="small"
+                type={isCurrentWhitelisted ? 'default' : 'text'}
+                onClick={handleToggleCurrentWhitelist}
+                style={{ fontSize: 11, height: 24, padding: '0 7px' }}
+              >
+                {isCurrentWhitelisted ? '恢复拦截' : '放行此站'}
+              </Button>
+            )}
+            <Tooltip title={isDedupPaused ? '立即恢复全局标签去重拦截' : '临时暂停全局去重拦截 15 分钟'}>
+              <Button
+                size="small"
+                type={isDedupPaused ? 'primary' : 'text'}
+                icon={isDedupPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
+                onClick={handleTogglePauseDedup}
+                style={{ fontSize: 11, height: 24, padding: '0 7px' }}
+              >
+                {isDedupPaused ? '恢复' : '暂停15m'}
+              </Button>
+            </Tooltip>
+          </Space>
+        </div>
+
         {/* Tabs */}
         <Tabs
           activeKey={activeTabKey}
@@ -665,84 +694,14 @@ function PopupApp() {
                     </div>
                   </Card>
 
-                  {/* 2. 闲置标签休眠与沉淀归档 (阶段四) */}
-                  <Card
-                    size="small"
-                    style={{
-                      borderRadius: 10,
-                      boxShadow: tk.shadowCard,
-                      border: `1px solid ${tk.hairline}`,
-                    }}
-                  >
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Text strong style={{ fontSize: 13, color: tk.ink }}>
-                          闲置休眠与内存沉淀
-                        </Text>
-                        {tabHealth && (
-                          <Tag color="cyan" style={{ margin: 0, fontSize: 11, borderRadius: 4 }}>
-                            可释放 ~{tabHealth.estimatedMemorySavedMb} MB
-                          </Tag>
-                        )}
-                      </div>
-                      <Paragraph
-                        type="secondary"
-                        style={{ fontSize: 12, margin: '2px 0 0', lineHeight: 1.4 }}
-                      >
-                        非活动标签释放常驻内存（保留在标签栏）；或一键保存为快照后安全关闭。
-                      </Paragraph>
-                    </div>
-
-                    <div
-                      style={{
-                        background: tk.canvas,
-                        padding: '8px 10px',
-                        borderRadius: 6,
-                        marginBottom: 12,
-                        fontSize: 11,
-                        color: tk.ink3,
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <span>已休眠: <strong style={{ color: tk.ink }}>{tabHealth?.discardedCount ?? 0}</strong></span>
-                      <span>发声/保护: <strong style={{ color: tk.ink }}>{(tabHealth?.audibleCount ?? 0) + (tabHealth?.pinnedCount ?? 0)}</strong></span>
-                      <span>可休眠: <strong style={{ color: tk.accentInk }}>{tabHealth?.eligibleDiscardCount ?? 0}</strong></span>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <Tooltip title="调用 Chrome 原生 discard 接口，释放内存，标签仍保留在标签栏">
-                        <Button
-                          block
-                          icon={<RestOutlined />}
-                          loading={discardLoading}
-                          onClick={handleDiscardInactiveTabs}
-                          style={{ height: 34, fontWeight: 500 }}
-                        >
-                          一键休眠闲置
-                        </Button>
-                      </Tooltip>
-                      <Popconfirm
-                        title="确认沉淀归档并关闭闲置标签？"
-                        description={`将保存快照后关闭当前窗口的 ${tabHealth?.eligibleDiscardCount ?? 0} 个闲置标签（播放中、固定和活动标签受保护）。`}
-                        onConfirm={handleArchiveInactiveTabs}
-                        okText="归档并关闭"
-                        cancelText="取消"
-                        disabled={!tabHealth?.eligibleDiscardCount}
-                      >
-                        <Tooltip title="将闲置标签暂存为快照并安全关闭，彻底清理标签栏">
-                          <Button
-                            block
-                            icon={<CameraOutlined />}
-                            loading={archiveLoading}
-                            style={{ height: 34, fontWeight: 500 }}
-                          >
-                            沉淀归档并关闭
-                          </Button>
-                        </Tooltip>
-                      </Popconfirm>
-                    </div>
-                  </Card>
+                  {/* 2. 闲置标签休眠与沉淀归档 (共享组件) */}
+                  <TabHealthPanel
+                    variant="compact"
+                    tk={tk}
+                    tabHealth={tabHealth}
+                    onRefresh={refreshCurrentWindow}
+                    messageApi={messageApi}
+                  />
                 </div>
               ),
             },
@@ -940,219 +899,14 @@ function PopupApp() {
                 </span>
               ),
               children: (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {/* 顶部报告与操作卡片 */}
-                  <Card
-                    size="small"
-                    style={{
-                      borderRadius: 10,
-                      boxShadow: tk.shadowCard,
-                      border: `1px solid ${tk.hairline}`,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <div>
-                        <Text strong style={{ fontSize: 13, color: tk.ink }}>
-                          书签智能去重
-                        </Text>
-                        <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
-                          扫描收藏夹全树，按目录深度与标题质量推荐保留最佳书签
-                        </Text>
-                      </div>
-                      <Button
-                        size="small"
-                        icon={<ReloadOutlined />}
-                        loading={bookmarkScanning}
-                        onClick={scanBookmarks}
-                      >
-                        重新扫描
-                      </Button>
-                    </div>
-
-                    {bookmarkReport ? (
-                      <div
-                        style={{
-                          background: tk.canvas,
-                          padding: '8px 10px',
-                          borderRadius: 6,
-                          marginBottom: 10,
-                          fontSize: 11,
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          color: tk.ink3,
-                        }}
-                      >
-                        <span>总书签: <strong style={{ color: tk.ink }}>{bookmarkReport.totalBookmarks}</strong></span>
-                        <span>文件夹: <strong style={{ color: tk.ink }}>{bookmarkReport.totalFolders}</strong></span>
-                        <span>重复组: <strong style={{ color: tk.accentInk }}>{bookmarkReport.duplicateGroupCount}</strong></span>
-                        <span>可清理: <strong style={{ color: '#ef4444' }}>{bookmarkReport.redundantCount}</strong></span>
-                      </div>
-                    ) : (
-                      <div style={{ textAlign: 'center', padding: '16px 0' }}>
-                        <Button
-                          type="primary"
-                          icon={<BookOutlined />}
-                          loading={bookmarkScanning}
-                          onClick={scanBookmarks}
-                          style={{ background: '#4f46e5' }}
-                        >
-                          开始扫描书签树
-                        </Button>
-                      </div>
-                    )}
-
-                    {bookmarkReport && bookmarkReport.redundantCount > 0 && (
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <Popconfirm
-                          title="确认按建议一键清理？"
-                          description={`将删除 ${bookmarkReport.redundantCount} 个冗余副本，保留分类最深、标题最完整的优质书签。`}
-                          onConfirm={handleCleanRecommendedBookmarks}
-                          okText="立即清理"
-                          cancelText="取消"
-                        >
-                          <Button
-                            type="primary"
-                            danger
-                            block
-                            loading={bookmarkCleaning}
-                            icon={<DeleteOutlined />}
-                            style={{ fontWeight: 600, height: 32 }}
-                          >
-                            一键按建议清理 ({bookmarkReport.redundantCount} 项)
-                          </Button>
-                        </Popconfirm>
-                      </div>
-                    )}
-
-                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                      <Button
-                        size="small"
-                        block
-                        icon={<CloudDownloadOutlined />}
-                        onClick={() => handleBackupBookmarks('html')}
-                      >
-                        导出标准 HTML 备份
-                      </Button>
-                      <Button
-                        size="small"
-                        block
-                        icon={<DownloadOutlined />}
-                        onClick={() => handleBackupBookmarks('json')}
-                      >
-                        导出 JSON
-                      </Button>
-                    </div>
-                  </Card>
-
-                  {/* 重复书签列表 */}
-                  {bookmarkReport && (
-                    <div
-                      style={{
-                        maxHeight: 250,
-                        overflowY: 'auto',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 8,
-                      }}
-                    >
-                      {bookmarkReport.groups.length === 0 ? (
-                        <Empty
-                          image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          description="非常棒！您的收藏夹很健康，未发现重复书签。"
-                          style={{ margin: '30px 0' }}
-                        />
-                      ) : (
-                        bookmarkReport.groups.map((group) => {
-                          const isExpanded = expandedGroupKey === group.groupKey;
-                          return (
-                            <div
-                              key={group.groupKey}
-                              style={{
-                                background: tk.surface,
-                                border: `1px solid ${tk.hairline}`,
-                                borderRadius: 8,
-                                padding: '8px 10px',
-                                boxShadow: tk.shadowCard,
-                              }}
-                            >
-                              <div
-                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
-                                onClick={() => setExpandedGroupKey(isExpanded ? null : group.groupKey)}
-                              >
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <Text strong ellipsis style={{ fontSize: 13, color: tk.ink, display: 'block' }}>
-                                    {group.title}
-                                  </Text>
-                                  <Text type="secondary" ellipsis style={{ fontSize: 11, display: 'block' }}>
-                                    {group.normalizedUrl}
-                                  </Text>
-                                </div>
-                                <Tag color="volcano" style={{ margin: 0, fontSize: 10, borderRadius: 4 }}>
-                                  {group.items.length} 个副本
-                                </Tag>
-                              </div>
-
-                              {isExpanded && (
-                                <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${tk.hairline}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                  {group.items.map((it) => {
-                                    const isKeep = it.id === group.recommendedKeepId;
-                                    return (
-                                      <div
-                                        key={it.id}
-                                        style={{
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'space-between',
-                                          padding: '4px 6px',
-                                          borderRadius: 4,
-                                          background: isKeep ? tk.successSoft : tk.surface,
-                                          border: isKeep ? `1px solid ${tk.successBorder}` : `1px solid ${tk.hairline}`,
-                                        }}
-                                      >
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            <Tag
-                                              color={isKeep ? 'green' : 'default'}
-                                              style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 4px' }}
-                                            >
-                                              {isKeep ? '推荐保留' : '待清理'}
-                                            </Tag>
-                                            <Text ellipsis style={{ fontSize: 12, color: tk.ink2 }}>
-                                              {it.title}
-                                            </Text>
-                                          </div>
-                                          <Text type="secondary" ellipsis style={{ fontSize: 10, display: 'block', marginTop: 2 }}>
-                                            目录: {it.folderPath.join(' / ') || '书签栏根目录'}
-                                          </Text>
-                                        </div>
-
-                                        {!isKeep && (
-                                          <Popconfirm
-                                            title="确认删除该重复书签？"
-                                            onConfirm={() => handleDeleteSingleBookmark(it.id)}
-                                            okText="删除"
-                                            cancelText="取消"
-                                          >
-                                            <Button
-                                              type="text"
-                                              danger
-                                              size="small"
-                                              icon={<DeleteOutlined style={{ fontSize: 12 }} />}
-                                            />
-                                          </Popconfirm>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  )}
-                </div>
+                <BookmarkHealthPanel
+                  variant="compact"
+                  tk={tk}
+                  report={bookmarkReport}
+                  scanning={bookmarkScanning}
+                  onScan={scanBookmarks}
+                  messageApi={messageApi}
+                />
               ),
             },
             {

@@ -62,6 +62,11 @@ export interface GetSettingsRequest {
   type: 'getSettings';
 }
 
+export interface AddWhitelistDomainRequest {
+  type: 'addWhitelistDomain';
+  domain: string;
+}
+
 /** 阶段二：域名智能归拢与会话快照管理协议 */
 
 export interface AutoGroupTabsRequest {
@@ -144,6 +149,7 @@ export type BackgroundRequest =
   | UngroupTabsRequest
   | GetTabGroupsRequest
   | GetSettingsRequest
+  | AddWhitelistDomainRequest
   | AutoGroupTabsRequest
   | UngroupAllTabsRequest
   | GetCurrentWindowTabsRequest

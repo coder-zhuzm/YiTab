@@ -373,6 +373,28 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         background: #e2e8f0;
         color: #0f172a;
       }
+      .btn-link {
+        margin-left: auto;
+        background: transparent;
+        border: none;
+        color: #64748b;
+        font-size: 11.5px;
+        cursor: pointer;
+        padding: 4px 6px;
+        border-radius: 5px;
+        transition: color 0.15s ease, background 0.15s ease;
+      }
+      .btn-link:hover {
+        color: #4f46e5;
+        background: rgba(79, 70, 229, 0.08);
+      }
+      :host([data-theme='dark']) .btn-link {
+        color: #94a3b8;
+      }
+      :host([data-theme='dark']) .btn-link:hover {
+        color: #a5b4fc;
+        background: rgba(129, 140, 248, 0.15);
+      }
       
       .countdown-bar {
         position: absolute;
@@ -420,6 +442,7 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
       <div class="actions">
         <button class="btn-primary" id="yitab-switch">切换到该标签</button>
         <button class="btn-secondary" id="yitab-dismiss">留在本页</button>
+        <button class="btn-link" id="yitab-whitelist" title="将当前站点加入白名单，后续不再提示">此站不再提示</button>
       </div>
       <div class="countdown-bar"></div>
     </div>
@@ -451,6 +474,20 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
       windowId: targetTab.windowId,
       closeSelf: false, // SPA 站内导航不强行关闭当前标签
     });
+    dismiss();
+  });
+
+  shadow.getElementById('yitab-whitelist')?.addEventListener('click', () => {
+    try {
+      const host = new URL(candidateUrl || location.href).hostname.replace(/^www\./i, '');
+      if (host) {
+        chrome.runtime.sendMessage({ type: 'addWhitelistDomain', domain: host }, () => {
+          showStatusNotice(`已将 ${host} 加入白名单`);
+        });
+      }
+    } catch {
+      // ignore
+    }
     dismiss();
   });
 
