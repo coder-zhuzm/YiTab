@@ -396,6 +396,36 @@ test('Issue1 chain: a vanished source tab is a no-op, not an error', async () =>
   assert.deepEqual(api.calls.remove, []);
 });
 
+test('switchToTab still closes source tab when focusWindow throws', async () => {
+  const api = makeSwitchApi({ tab: { url: CONFIRM, windowId: 1 }, siblings: [{ id: 5 }, { id: 6 }] });
+  api.focusWindow = async () => {
+    throw new Error('window focus rejected');
+  };
+
+  const outcome = await switchToTab(api, { tabId: 6, windowId: 2, closeSelf: true }, 5);
+
+  assert.equal(outcome, 'closed');
+  assert.deepEqual(api.calls.remove, [5]);
+});
+
+test('closeTabAfterSwitch accepts custom urlMatcher for client-side replaceState normalization', async () => {
+  const api = makeSwitchApi({
+    tab: { url: 'https://example.com/issue/42', windowId: 1 },
+    siblings: [{ id: 5 }, { id: 6 }],
+  });
+
+  const outcome = await closeTabAfterSwitch(
+    api,
+    5,
+    'https://example.com/issue/42?utm_source=chat',
+    () => false,
+    (liveUrl) => liveUrl.startsWith('https://example.com/issue/42'),
+  );
+
+  assert.equal(outcome, 'closed');
+  assert.deepEqual(api.calls.remove, [5]);
+});
+
 test('planCloseDuplicates respects whitelist, protects pinned & active tabs, and picks optimal keeper', () => {
   const mockSettings = {
     matchMode: 'smart',

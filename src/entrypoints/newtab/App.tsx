@@ -71,6 +71,7 @@ import {
   findPinnedByUrl,
   getNewTabSettings,
   getPinnedData,
+  normalizePinnedUrl,
   renamePinnedGroup,
   reorderPinnedItems,
   saveNewTabSettings,
@@ -92,6 +93,7 @@ import { getAiSettings, type AiSettings, DEFAULT_AI_SETTINGS } from '@/lib/setti
 import { applyThemeToDocument, useThemeMode } from '@/lib/theme-mode';
 import { ThemeModeButton } from '@/components/ThemeToggle';
 import { AdaptiveFavicon } from '@/components/AdaptiveFavicon';
+import { sendToBackground } from '@/lib/messaging';
 
 /** 「继续上次」最多展示的入口数 */
 const RESUME_LIMIT = 3;
@@ -455,22 +457,40 @@ export default function NewTabApp() {
     return merged.slice(0, 8);
   }, [aiSearchSuggestions, localSearchSuggestions]);
 
+  const switchToExistingTab = useCallback(
+    (tabId: number, windowId: number | undefined, closeSelf: boolean) => {
+      if (typeof chrome !== 'undefined' && typeof chrome.runtime?.sendMessage === 'function') {
+        void sendToBackground({
+          type: 'switchTab',
+          tabId,
+          windowId: windowId ?? 0,
+          closeSelf,
+        }).catch(() => {
+          chrome.tabs?.update?.(tabId, { active: true });
+          if (windowId !== undefined) chrome.windows?.update?.(windowId, { focused: true });
+        });
+        return;
+      }
+      chrome.tabs?.update?.(tabId, { active: true });
+      if (windowId !== undefined) chrome.windows?.update?.(windowId, { focused: true });
+    },
+    [],
+  );
+
   const handleOpenUrl = useCallback(
     (targetUrl: string, inNewTab = false) => {
       if (!targetUrl) return;
 
-      // 已有完全相同地址的标签页：直接切换，避免重复开
-      const foundTab = openTabs.find((t) => t.url === targetUrl);
-      if (foundTab && typeof chrome !== 'undefined' && chrome.tabs?.update) {
-        chrome.tabs.update(foundTab.id, { active: true });
-        if (foundTab.windowId !== undefined && chrome.windows?.update) {
-          chrome.windows.update(foundTab.windowId, { focused: true });
-        }
+      // 已有相同（归一化后一致）地址的标签页：切换过去，并在非「保留工作台」模式下关闭当前临时新标签页
+      const targetNorm = normalizePinnedUrl(targetUrl);
+      const foundTab = openTabs.find((t) => normalizePinnedUrl(t.url) === targetNorm);
+      if (foundTab && typeof chrome !== 'undefined' && typeof chrome.tabs?.update === 'function') {
+        switchToExistingTab(foundTab.id, foundTab.windowId, !inNewTab && !settings.openInNewTab);
         return;
       }
 
       if (inNewTab || settings.openInNewTab) {
-        if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+        if (typeof chrome !== 'undefined' && typeof chrome.tabs?.create === 'function') {
           chrome.tabs.create({ url: targetUrl });
         } else {
           window.open(targetUrl, '_blank');
@@ -479,15 +499,12 @@ export default function NewTabApp() {
         window.location.href = targetUrl;
       }
     },
-    [openTabs, settings.openInNewTab],
+    [openTabs, settings.openInNewTab, switchToExistingTab],
   );
 
   const handleActivateSearchItem = (item: SearchItem) => {
-    if (item.tabId && typeof chrome !== 'undefined' && chrome.tabs?.update) {
-      chrome.tabs.update(item.tabId, { active: true });
-      if (item.windowId && chrome.windows?.update) {
-        chrome.windows.update(item.windowId, { focused: true });
-      }
+    if (item.tabId && typeof chrome !== 'undefined' && typeof chrome.tabs?.update === 'function') {
+      switchToExistingTab(item.tabId, item.windowId, !settings.openInNewTab);
     } else if (item.url) {
       handleOpenUrl(item.url);
     }
@@ -1250,7 +1267,8 @@ export default function NewTabApp() {
             {filteredItems.map((item) => {
               const hostname = hostnameOf(item.url);
               const isIntranet = isIntranetHost(hostname);
-              const isOpen = openTabs.some((t) => t.url === item.url);
+              const itemNorm = normalizePinnedUrl(item.url);
+              const isOpen = openTabs.some((t) => normalizePinnedUrl(t.url) === itemNorm);
               const icon = iconFor(item.url, item.title, 64);
 
               return (

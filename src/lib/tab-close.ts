@@ -62,6 +62,7 @@ export async function closeTabAfterSwitch(
   tabId: number,
   expectedUrl: string,
   isStale: () => boolean,
+  urlMatcher?: (liveUrl: string) => boolean,
 ): Promise<CloseOutcome> {
   let live: { url?: string; windowId: number };
   try {
@@ -70,9 +71,12 @@ export async function closeTabAfterSwitch(
     return 'skipped'; // 标签已被关闭
   }
 
+  const matches = (tab: { url?: string }) =>
+    Boolean(tab.url) && (urlMatcher ? urlMatcher(tab.url!) : urlMatches(tab, expectedUrl));
+
   // 空 expectedUrl 表示「调用方没提供可比对的地址」，属于无法校验，不能当成「匹配任意内容」，
   // 否则会关掉用户正在编辑的页面。调用方必须传入触发本次切换时的真实 URL。
-  if (!expectedUrl || !urlMatches(live, expectedUrl)) return 'skipped';
+  if (!expectedUrl || !matches(live)) return 'skipped';
   if (isStale()) return 'skipped';
 
   const countedWindowId = live.windowId;
@@ -88,7 +92,7 @@ export async function closeTabAfterSwitch(
   } catch {
     return 'skipped'; // 标签已被关闭
   }
-  if (!urlMatches(after, expectedUrl)) return 'skipped';
+  if (!matches(after)) return 'skipped';
   // 窗口变了则本次「窗口内有几个标签」的计数不再适用，旧计划作废
   if (after.windowId !== countedWindowId) return 'skipped';
   if (isStale()) return 'skipped';
@@ -125,7 +129,12 @@ export async function switchToTab(
   }
 
   await api.update(target.tabId, { active: true });
-  await api.focusWindow(target.windowId);
+  // 聚焦窗口失败（如全屏/多桌面/同窗口异常）不应阻断后续关闭源标签
+  try {
+    await api.focusWindow(target.windowId);
+  } catch {
+    // ignore focus failure
+  }
 
   if (target.closeSelf && senderTabId != null) {
     return closeTabAfterSwitch(api, senderTabId, sourceUrl, () => false);

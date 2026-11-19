@@ -500,11 +500,24 @@ export default defineBackground(() => {
           });
         } else if (msg.type === 'restoreSnapshot') {
           if (Array.isArray(msg.urls) && msg.urls.length) {
+            const settings = await getSettings();
+            const registerRestoreAllow = (tabId: number | undefined, url: string) => {
+              if (tabId == null) return;
+              allowed.set(tabId, {
+                targetUrl: url,
+                matchKey: computeMatchKey(url, settings),
+                expiresAt: Date.now() + ALLOW_TTL,
+              });
+            };
             if (msg.newWindow && chrome.windows?.create) {
-              await chrome.windows.create({ url: msg.urls });
+              const win = await chrome.windows.create({ url: msg.urls }).catch(() => null);
+              if (win?.tabs) {
+                win.tabs.forEach((t, idx) => registerRestoreAllow(t.id, msg.urls[idx] || t.pendingUrl || t.url || ''));
+              }
             } else {
               for (const url of msg.urls) {
-                await chrome.tabs.create({ url }).catch(() => {});
+                const created = await chrome.tabs.create({ url }).catch(() => null);
+                registerRestoreAllow(created?.id, url);
               }
             }
           }
@@ -942,8 +955,16 @@ async function handleNavigation(
       }
 
       await browser.tabs.update(targetId, { active: true });
-      await browser.windows.update(target.windowId, { focused: true });
-      await closeTabAfterSwitch(tabCloseApi(), tabId, url, () => state.seq !== currentSeq);
+      await browser.windows.update(target.windowId, { focused: true }).catch(() => {});
+      await closeTabAfterSwitch(
+        tabCloseApi(),
+        tabId,
+        url,
+        () => state.seq !== currentSeq,
+        (liveUrl) =>
+          liveUrl === url ||
+          (currentMatchKey != null && computeMatchKey(liveUrl, settings) === currentMatchKey),
+      );
     } catch (err) {
       console.warn('[YiTab] 静默切换失败:', err);
     } finally {

@@ -445,8 +445,8 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         </div>
       </div>
       <div class="actions">
-        <button class="btn-primary" id="yitab-switch">切换到该标签</button>
-        <button class="btn-secondary" id="yitab-dismiss">留在本页</button>
+        <button class="btn-primary" id="yitab-switch-close">切换并关闭</button>
+        <button class="btn-secondary" id="yitab-switch">仅切换</button>
         <button class="btn-link" id="yitab-whitelist" title="将当前站点加入白名单，后续不再提示">此站不再提示</button>
       </div>
       <div class="countdown-bar"></div>
@@ -470,14 +470,23 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
   };
 
   shadow.getElementById('yitab-close')?.addEventListener('click', dismiss);
-  shadow.getElementById('yitab-dismiss')?.addEventListener('click', dismiss);
+
+  shadow.getElementById('yitab-switch-close')?.addEventListener('click', () => {
+    chrome.runtime.sendMessage({
+      type: 'switchTab',
+      tabId: targetTab.id,
+      windowId: targetTab.windowId,
+      closeSelf: true,
+    });
+    dismiss();
+  });
 
   shadow.getElementById('yitab-switch')?.addEventListener('click', () => {
     chrome.runtime.sendMessage({
       type: 'switchTab',
       tabId: targetTab.id,
       windowId: targetTab.windowId,
-      closeSelf: false, // SPA 站内导航不强行关闭当前标签
+      closeSelf: false,
     });
     dismiss();
   });
