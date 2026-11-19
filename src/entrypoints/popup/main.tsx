@@ -10,6 +10,7 @@ import {
   message,
   Popconfirm,
   Radio,
+  Select,
   Space,
   Tabs,
   Tag,
@@ -25,6 +26,7 @@ import {
   CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
+  EditOutlined,
   ExportOutlined,
   FolderOpenOutlined,
   PauseCircleOutlined,
@@ -109,6 +111,8 @@ function PopupApp() {
   const [expandedSnapshotId, setExpandedSnapshotId] = useState<string | null>(null);
   const [newSnapshotName, setNewSnapshotName] = useState('');
   const [isSavingSnapshot, setIsSavingSnapshot] = useState(false);
+  const [editingSnapshotId, setEditingSnapshotId] = useState<string | null>(null);
+  const [editingSnapshotName, setEditingSnapshotName] = useState('');
 
   // 导出状态
   const [exportSource, setExportSource] = useState<'current' | string>('current');
@@ -358,6 +362,19 @@ function PopupApp() {
       urls,
       newWindow,
     });
+  };
+
+  // 重命名快照
+  const handleConfirmRenameSnapshot = async (id: string) => {
+    const trimmed = editingSnapshotName.trim();
+    if (!trimmed) {
+      setEditingSnapshotId(null);
+      return;
+    }
+    await renameSnapshot(id, trimmed);
+    setSnapshots(await getSnapshots());
+    setEditingSnapshotId(null);
+    messageApi.success('快照已重命名');
   };
 
   // 删除快照
@@ -929,24 +946,22 @@ function PopupApp() {
               ),
               children: (
                 <div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      marginBottom: 8,
-                    }}
-                  >
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      已存快照（共 {snapshots.length} 份）
-                    </Text>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                    <Input
+                      size="small"
+                      placeholder="快照名称（可选，留空自动命名）"
+                      value={newSnapshotName}
+                      onChange={(e) => setNewSnapshotName(e.target.value)}
+                      onPressEnter={() => void handleSaveSnapshot()}
+                    />
                     <Button
                       size="small"
-                      type="link"
+                      type="primary"
                       icon={<PlusOutlined />}
-                      onClick={handleSaveSnapshot}
+                      loading={isSavingSnapshot}
+                      onClick={() => void handleSaveSnapshot()}
                     >
-                      新建快照
+                      保存快照
                     </Button>
                   </div>
 
@@ -993,13 +1008,26 @@ function PopupApp() {
                                 }
                               >
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <Text
-                                    strong
-                                    ellipsis
-                                    style={{ fontSize: 13, color: tk.ink, maxWidth: 190 }}
-                                  >
-                                    {snap.name}
-                                  </Text>
+                                  {editingSnapshotId === snap.id ? (
+                                    <Input
+                                      size="small"
+                                      autoFocus
+                                      value={editingSnapshotName}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onChange={(e) => setEditingSnapshotName(e.target.value)}
+                                      onPressEnter={() => void handleConfirmRenameSnapshot(snap.id)}
+                                      onBlur={() => void handleConfirmRenameSnapshot(snap.id)}
+                                      style={{ width: 170, fontSize: 12 }}
+                                    />
+                                  ) : (
+                                    <Text
+                                      strong
+                                      ellipsis
+                                      style={{ fontSize: 13, color: tk.ink, maxWidth: 180 }}
+                                    >
+                                      {snap.name}
+                                    </Text>
+                                  )}
                                   <Tag
                                     color="blue"
                                     style={{
@@ -1019,6 +1047,17 @@ function PopupApp() {
                               </div>
 
                               <Space size={2}>
+                                <Tooltip title="重命名快照">
+                                  <Button
+                                    size="small"
+                                    type="text"
+                                    icon={<EditOutlined style={{ color: tk.ink3 }} />}
+                                    onClick={() => {
+                                      setEditingSnapshotId(snap.id);
+                                      setEditingSnapshotName(snap.name);
+                                    }}
+                                  />
+                                </Tooltip>
                                 <Tooltip title="在新窗口全部恢复">
                                   <Button
                                     size="small"
@@ -1106,10 +1145,20 @@ function PopupApp() {
 
                   {/* 导出工具集成 */}
                   <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${tk.hairline}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <Text strong style={{ fontSize: 12, color: tk.ink2 }}>
-                        多格式快速导出
-                      </Text>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <Select
+                        size="small"
+                        value={exportSource}
+                        onChange={setExportSource}
+                        style={{ flex: 1, minWidth: 120 }}
+                        options={[
+                          { value: 'current', label: `当前窗口 (${currentTabs.length})` },
+                          ...snapshots.map((s) => ({
+                            value: s.id,
+                            label: `${s.name} (${s.tabs.length})`,
+                          })),
+                        ]}
+                      />
                       <Radio.Group
                         size="small"
                         value={exportFormat}

@@ -193,8 +193,8 @@
 - [x] **P2-1**：确认页 `windowId` 语义化、单匹配项精简布局；确认页与 SPA 浮窗补齐「加白名单」入口。
 - [x] **工程拆分**：抽取 `BookmarkHealthPanel` / `TabHealthPanel` 共享组件，消除 Popup 与 Options 双端重复代码。
 
-### Phase 3：v1.5.0 — 生态闭环与视觉统一（预计 3–5 天）
-- [ ] **P2-2**：Options 增加全局配置 JSON 导出/导入（含 Schema 校验与合并策略）。
-- [ ] **快照完善**：Popup 快照支持命名保存、行内重命名与选择指定快照导出。
-- [ ] **P2-3**：统一 Content Shadow DOM 与主界面的深色 Token、清理 Emoji 混用、优化 SPA Toast 贴底进度条与视觉层次。
+### Phase 3：v1.5.0 — 生态闭环与视觉统一（已完成）
+- [x] **P2-2**：Options 增加全局配置 JSON 导出/导入（含 Schema 校验与合并/覆盖策略 + 单元测试）。
+- [x] **快照完善**：Popup 快照支持命名保存、行内重命名与选择指定快照导出。
+- [x] **P2-3**：统一 Content Shadow DOM 与主界面的深色 Token、清理 Emoji 混用、优化 SPA Toast 视觉层次。
 - [ ] **AI 能力真落地（可选）**：按需正式实现「晨间工作现场简报」渲染或「跨域名语义分组」，并与端侧 AI 开关一一对应。

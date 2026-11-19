@@ -173,37 +173,37 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         display: block;
       }
 
-      /* 深色：由宿主元素的 data-theme 驱动，跟随用户选择而非系统 */
+      /* 深色：对齐主界面 --canvas(#0f1115) / --surface(#16181d) / --hairline(#262a31) */
       :host([data-theme='dark']) .card {
-        background: rgba(30, 41, 59, 0.92);
-        color: #f8fafc;
-        border-color: rgba(255, 255, 255, 0.12);
-        box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+        background: rgba(22, 24, 29, 0.96);
+        color: #e8eaee;
+        border-color: #262a31;
+        box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
       }
 
-      :host([data-theme='dark']) .head-title { color: #f1f5f9; }
+      :host([data-theme='dark']) .head-title { color: #e8eaee; }
 
       :host([data-theme='dark']) .favicon-box {
-        background: #334155;
-        border-color: rgba(255, 255, 255, 0.1);
+        background: #1e2127;
+        border-color: #262a31;
       }
 
-      :host([data-theme='dark']) .tab-title { color: #e2e8f0; }
+      :host([data-theme='dark']) .tab-title { color: #e8eaee; }
 
       :host([data-theme='dark']) .reason-tag {
         background: transparent;
-        color: #94a3b8;
+        color: #8f96a2;
         border-color: transparent;
       }
 
       :host([data-theme='dark']) .btn-secondary {
-        background: #334155;
-        color: #cbd5e1;
-        border-color: rgba(255, 255, 255, 0.08);
+        background: #1e2127;
+        color: #b3bac5;
+        border-color: #262a31;
       }
       :host([data-theme='dark']) .btn-secondary:hover {
-        background: #475569;
-        color: #ffffff;
+        background: #262a31;
+        color: #e8eaee;
       }
 
       .card {
@@ -545,52 +545,52 @@ function openCommandPalette() {
         display: block;
       }
 
-      /* 深色：由宿主元素的 data-theme 驱动，跟随用户选择而非系统 */
+      /* 深色：对齐主界面 --canvas(#0f1115) / --surface(#16181d) / --hairline(#262a31) */
       :host([data-theme='dark']) .palette-box {
-        background: #1e293b;
-        color: #f8fafc;
-        border-color: rgba(255, 255, 255, 0.1);
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
+        background: #16181d;
+        color: #e8eaee;
+        border-color: #262a31;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
       }
 
-      :host([data-theme='dark']) .search-bar { border-color: #334155; }
+      :host([data-theme='dark']) .search-bar { border-color: #262a31; }
 
       :host([data-theme='dark']) .kbd-hint {
-        background: #334155;
-        color: #94a3b8;
-        border-color: #475569;
+        background: #1e2127;
+        color: #8f96a2;
+        border-color: #343941;
       }
 
       :host([data-theme='dark']) .filter-tabs {
-        background: #0f172a;
-        border-color: #334155;
+        background: #0f1115;
+        border-color: #262a31;
       }
 
       :host([data-theme='dark']) .filter-tab:hover {
-        background: #1e293b;
-        color: #f8fafc;
+        background: #1e2127;
+        color: #e8eaee;
       }
 
       :host([data-theme='dark']) .result-item:hover,
       :host([data-theme='dark']) .result-item.selected {
-        background: #334155;
+        background: #1e2127;
       }
 
-      :host([data-theme='dark']) .item-icon-box { background: #0f172a; }
+      :host([data-theme='dark']) .item-icon-box { background: #0f1115; }
 
       :host([data-theme='dark']) .item-title mark { color: #818cf8; }
 
-      :host([data-theme='dark']) .item-sub { color: #94a3b8; }
+      :host([data-theme='dark']) .item-sub { color: #8f96a2; }
 
-      :host([data-theme='dark']) .kind-tab { background: rgba(99, 102, 241, 0.25); color: #c7d2fe; }
-      :host([data-theme='dark']) .kind-command { background: rgba(217, 70, 239, 0.25); color: #f5d0fe; }
-      :host([data-theme='dark']) .kind-bookmark { background: rgba(34, 197, 94, 0.25); color: #bbf7d0; }
-      :host([data-theme='dark']) .kind-history { background: rgba(249, 115, 22, 0.25); color: #fed7aa; }
+      :host([data-theme='dark']) .kind-tab { background: rgba(99, 102, 241, 0.22); color: #a5b4fc; }
+      :host([data-theme='dark']) .kind-command { background: rgba(217, 70, 239, 0.22); color: #f5d0fe; }
+      :host([data-theme='dark']) .kind-bookmark { background: rgba(34, 197, 94, 0.22); color: #bbf7d0; }
+      :host([data-theme='dark']) .kind-history { background: rgba(249, 115, 22, 0.22); color: #fed7aa; }
 
       :host([data-theme='dark']) .footer-bar {
-        background: #0f172a;
-        border-color: #334155;
-        color: #94a3b8;
+        background: #0f1115;
+        border-color: #262a31;
+        color: #8f96a2;
       }
 
       .backdrop {

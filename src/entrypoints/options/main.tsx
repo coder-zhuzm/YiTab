@@ -35,6 +35,7 @@ import {
   SafetyCertificateOutlined,
   SettingOutlined,
   ThunderboltOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import {
   DEFAULTS,
@@ -78,6 +79,11 @@ import { useThemeMode, applyThemeToDocument } from '../../lib/theme-mode';
 import { ThemeModeDropdown } from '../../components/ThemeToggle';
 import { TabHealthPanel } from '../../components/TabHealthPanel';
 import { BookmarkHealthPanel } from '../../components/BookmarkHealthPanel';
+import {
+  exportAllConfig,
+  importAllConfig,
+  parseConfigBackup,
+} from '../../lib/config-backup';
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -146,6 +152,64 @@ function OptionsPage() {
   // 工作台（新标签页）偏好
   const [newTabSettings, setNewTabSettingsState] =
     useState<NewTabSettings>(DEFAULT_NEWTAB_SETTINGS);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const importModeRef = useRef<'merge' | 'overwrite'>('merge');
+
+  const handleExportConfig = async () => {
+    try {
+      const payload = await exportAllConfig();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json;charset=utf-8',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dateTag = new Date().toISOString().slice(0, 10);
+      a.download = `yitab-config-${dateTag}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      messageApi.success('配置备份已导出');
+    } catch {
+      messageApi.error('导出配置失败');
+    }
+  };
+
+  const triggerImportConfig = (mode: 'merge' | 'overwrite') => {
+    importModeRef.current = mode;
+    if (importInputRef.current) {
+      importInputRef.current.value = '';
+      importInputRef.current.click();
+    }
+  };
+
+  const handleImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = parseConfigBackup(text);
+      if (!parsed.ok) {
+        messageApi.error(parsed.error);
+        return;
+      }
+      await importAllConfig(parsed.data, importModeRef.current);
+      const [nextSettings, nextNewTab, nextAi] = await Promise.all([
+        getSettings(),
+        getNewTabSettings(),
+        getAiSettings(),
+      ]);
+      update(nextSettings);
+      setNewTabSettingsState(nextNewTab);
+      setAiSettingsState(nextAi);
+      messageApi.success(
+        importModeRef.current === 'overwrite'
+          ? '配置已覆盖导入并生效'
+          : '配置已合并导入（保留原有规则与快捷方式）',
+      );
+    } catch {
+      messageApi.error('读取或导入配置文件失败');
+    }
+  };
 
   useEffect(() => {
     getSettings()
@@ -601,6 +665,54 @@ function OptionsPage() {
                           </div>
                         </div>
                       </div>
+                    </Card>
+
+                    {/* 配置备份与跨设备迁移 */}
+                    <Card
+                      title={
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 16, fontWeight: 600, color: tk.ink }}>
+                            配置备份与跨设备迁移
+                          </span>
+                          <span style={{ fontSize: 12, color: tk.ink3, fontWeight: 'normal' }}>
+                            一键导出或导入去重规则、白名单、工作台快捷方式与偏好设置
+                          </span>
+                        </div>
+                      }
+                      style={{
+                        marginBottom: 20,
+                        borderRadius: 12,
+                        borderColor: tk.hairline,
+                        boxShadow: tk.shadowCard,
+                      }}
+                    >
+                      <input
+                        ref={importInputRef}
+                        type="file"
+                        accept=".json,application/json"
+                        style={{ display: 'none' }}
+                        onChange={(e) => void handleImportFileChange(e)}
+                      />
+                      <Space wrap size={10}>
+                        <Button icon={<DownloadOutlined />} onClick={() => void handleExportConfig()}>
+                          导出全部配置 (JSON)
+                        </Button>
+                        <Button
+                          icon={<UploadOutlined />}
+                          onClick={() => triggerImportConfig('merge')}
+                        >
+                          合并导入配置
+                        </Button>
+                        <Popconfirm
+                          title="确认以导入文件覆盖当前配置？"
+                          description="将替换现有的去重规则、白名单、快捷方式与主题偏好，建议先导出备份。"
+                          onConfirm={() => triggerImportConfig('overwrite')}
+                          okText="选择文件并覆盖"
+                          cancelText="取消"
+                        >
+                          <Button danger>覆盖导入配置</Button>
+                        </Popconfirm>
+                      </Space>
                     </Card>
                   </div>
                 ),
