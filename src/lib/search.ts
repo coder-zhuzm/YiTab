@@ -19,6 +19,7 @@ export interface SearchItem {
   groupTitle?: string;
   groupColor?: string;
   description?: string;
+  keywords?: string[];
   commandAction?: string;
   score?: number;
 }
@@ -215,10 +216,33 @@ export function scoreStringMatch(query: string, target: string): number {
 }
 
 /**
+ * 解析命令面板输入（支持 `>` 前缀快捷进入指令模式）
+ */
+export function parsePaletteQuery(
+  rawQuery: string,
+  activeFilter: 'all' | SearchItemKind,
+): { query: string; effectiveFilter: 'all' | SearchItemKind; isCommandPrefix: boolean } {
+  const safeRaw = typeof rawQuery === 'string' ? rawQuery : '';
+  const trimmedStart = safeRaw.trimStart();
+  if (trimmedStart.startsWith('>')) {
+    return {
+      query: trimmedStart.slice(1).trimStart(),
+      effectiveFilter: 'command',
+      isCommandPrefix: true,
+    };
+  }
+  return {
+    query: safeRaw,
+    effectiveFilter: activeFilter,
+    isCommandPrefix: false,
+  };
+}
+
+/**
  * 多关键字综合评分计算
  */
 export function computeItemScore(query: string, item: SearchItem): number {
-  const q = query.trim().toLowerCase();
+  const q = (query ?? '').trim().toLowerCase();
   if (!q) return 1;
 
   const tokens = q.split(/\s+/).filter(Boolean);
@@ -232,14 +256,23 @@ export function computeItemScore(query: string, item: SearchItem): number {
     const domainScore = item.domain ? scoreStringMatch(token, item.domain) : 0;
     // 匹配 URL
     const urlScore = item.url ? scoreStringMatch(token, item.url) : 0;
-    // 匹配描述 / 关键字
+    // 匹配描述
     const descScore = item.description ? scoreStringMatch(token, item.description) : 0;
+    // 匹配指令关键词（拼音/英文/别名）
+    let keywordScore = 0;
+    if (item.keywords && item.keywords.length > 0) {
+      for (const kw of item.keywords) {
+        const s = scoreStringMatch(token, kw);
+        if (s > keywordScore) keywordScore = s;
+      }
+    }
 
     const tokenBest = Math.max(
       titleScore * 1.0,
+      keywordScore * 0.9,
       domainScore * 0.85,
-      urlScore * 0.7,
       descScore * 0.75,
+      urlScore * 0.7,
     );
 
     if (tokenBest === 0) {
@@ -273,15 +306,16 @@ export function filterAndRankItems(
   kindFilter: 'all' | SearchItemKind = 'all',
   limit = 30,
 ): SearchItem[] {
+  const safeQuery = typeof query === 'string' ? query : '';
   const filtered = kindFilter === 'all' ? items : items.filter((i) => i.kind === kindFilter);
 
-  if (!query.trim()) {
+  if (!safeQuery.trim()) {
     return filtered.slice(0, limit);
   }
 
   const scored: SearchItem[] = [];
   for (const item of filtered) {
-    const score = computeItemScore(query, item);
+    const score = computeItemScore(safeQuery, item);
     if (score > 0) {
       scored.push({ ...item, score });
     }

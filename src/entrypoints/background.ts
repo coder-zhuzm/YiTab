@@ -539,6 +539,15 @@ export default defineBackground(() => {
           } else {
             sendResponse({ ok: true, message: res });
           }
+        } else if (msg.type === 'openUrl') {
+          if (msg.url && /^https?:\/\//i.test(msg.url)) {
+            if (msg.newTab === false && sender.tab?.id != null) {
+              await chrome.tabs.update(sender.tab.id, { url: msg.url }).catch(() => {});
+            } else {
+              await chrome.tabs.create({ url: msg.url, active: true }).catch(() => {});
+            }
+          }
+          sendResponse({ ok: true });
         } else if (msg.type === 'scanBookmarks') {
           if (!chrome.bookmarks) {
             sendResponse({ ok: false, error: '未获取书签读取权限' });
@@ -706,7 +715,7 @@ export default defineBackground(() => {
     });
   }
 
-  // 阶段三：全局快捷键唤出命令面板 (Alt+K / Cmd+K)
+  // 阶段三：全局快捷键唤出命令面板 (Alt+Shift+K / Cmd+Shift+K，或用户在扩展快捷键中自定义的 Cmd+K)
   if (chrome.commands) {
     chrome.commands.onCommand.addListener(async (command) => {
       if (command === 'toggle-palette') {
@@ -715,16 +724,38 @@ export default defineBackground(() => {
             active: true,
             lastFocusedWindow: true,
           });
-          if (activeTab?.id != null) {
-            const delivered = await chrome.tabs
+          const canInjectContent =
+            activeTab?.id != null &&
+            typeof activeTab.url === 'string' &&
+            /^https?:\/\//i.test(activeTab.url);
+
+          if (canInjectContent && activeTab.id != null) {
+            // 立即发送切换消息，不在发送前 await 检索，避免延迟或消耗 openPopup 所需的用户手势
+            const delivered = (await chrome.tabs
               .sendMessage(activeTab.id, { type: 'yitab_toggle_palette' })
-              .catch(() => null);
-            if (!delivered) {
-              // 在无法运行内容脚本的特殊受限页（如 chrome:// 或 New Tab）回退打开 Popup
-              if (chrome.action?.openPopup) {
-                await chrome.action.openPopup().catch(() => {});
+              .catch(() => null)) as { ok?: boolean; opened?: boolean } | null;
+
+            if (delivered?.ok) {
+              if (delivered.opened) {
+                const items = await queryAllSearchItems('', 'all', 30).catch(() => null);
+                if (items) {
+                  chrome.tabs
+                    .sendMessage(activeTab.id, {
+                      type: 'yitab_palette_initial_items',
+                      items,
+                    })
+                    .catch(() => {});
+                }
               }
+              return;
             }
+          }
+
+          // 在无法运行内容脚本的受限页（chrome://、New Tab 或未刷新的旧标签页）立即回退打开 Popup
+          if (chrome.action?.openPopup) {
+            await chrome.action.openPopup().catch((err) => {
+              console.warn('[YiTab] openPopup fallback failed:', err);
+            });
           }
         } catch (e) {
           console.warn('[YiTab] toggle-palette failed:', e);
@@ -1010,106 +1041,183 @@ async function handleNavigation(
   }
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise.then(
+      (val) => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      },
+    );
+  });
+}
+
+function sanitizeFavicon(url?: string): string | undefined {
+  if (!url) return undefined;
+  // 跳过超大的 data: URI，避免 IPC 序列化卡顿
+  if (url.startsWith('data:') && url.length > 16_384) return undefined;
+  return url;
+}
+
 /** 阶段三：跨标签页、书签、历史与快捷指令的多源统一检索 */
 async function queryAllSearchItems(
   query: string,
   kindFilter: 'all' | SearchItemKind = 'all',
   limit = 30,
 ): Promise<SearchItem[]> {
-  const items: SearchItem[] = [];
+  const safeQuery = typeof query === 'string' ? query : '';
+  const trimmedQuery = safeQuery.trim();
+  const SOURCE_TIMEOUT_MS = 2500;
 
-  // 1. 已打开的标签页
-  if (kindFilter === 'all' || kindFilter === 'tab') {
-    try {
-      const [tabs, groups] = await Promise.all([
-        chrome.tabs.query({}),
-        chrome.tabGroups ? chrome.tabGroups.query({}).catch(() => []) : [],
-      ]);
-      const groupMap = new Map<number, { title?: string; color?: string }>();
-      for (const g of groups) {
-        groupMap.set(g.id, { title: g.title, color: g.color });
-      }
+  // 1. 已打开的标签页（并行查询）
+  const tabsPromise: Promise<SearchItem[]> =
+    kindFilter === 'all' || kindFilter === 'tab'
+      ? withTimeout(
+          (async () => {
+            const [tabs, groups] = await Promise.all([
+              chrome.tabs.query({}),
+              chrome.tabGroups ? chrome.tabGroups.query({}).catch(() => []) : [],
+            ]);
+            const groupMap = new Map<number, { title?: string; color?: string }>();
+            for (const g of groups) {
+              groupMap.set(g.id, { title: g.title, color: g.color });
+            }
 
-      for (const t of tabs) {
-        if (!t.url || INTERNAL_URL_RE.test(t.url)) continue;
-        const grp = t.groupId && t.groupId > 0 ? groupMap.get(t.groupId) : undefined;
-        items.push({
-          id: `tab:${t.id}`,
-          kind: 'tab',
-          title: t.title || t.url,
-          url: t.url,
-          domain: extractHostname(t.url),
-          favicon: t.favIconUrl,
-          tabId: t.id,
-          windowId: t.windowId,
-          active: t.active,
-          groupId: t.groupId && t.groupId > 0 ? t.groupId : undefined,
-          groupTitle: grp?.title,
-          groupColor: grp?.color,
-        });
-      }
-    } catch (e) {
-      console.warn('[YiTab] Query tabs for search failed:', e);
-    }
-  }
+            const tabItems: SearchItem[] = [];
+            for (const t of tabs) {
+              if (!t.url || INTERNAL_URL_RE.test(t.url)) continue;
+              const grp = t.groupId && t.groupId > 0 ? groupMap.get(t.groupId) : undefined;
+              tabItems.push({
+                id: `tab:${t.id}`,
+                kind: 'tab',
+                title: t.title || t.url,
+                url: t.url,
+                domain: extractHostname(t.url),
+                favicon: sanitizeFavicon(t.favIconUrl),
+                tabId: t.id,
+                windowId: t.windowId,
+                active: t.active,
+                groupId: t.groupId && t.groupId > 0 ? t.groupId : undefined,
+                groupTitle: grp?.title,
+                groupColor: grp?.color,
+              });
+            }
+            return tabItems;
+          })(),
+          SOURCE_TIMEOUT_MS,
+          [],
+        )
+      : Promise.resolve([]);
 
-  // 2. 快捷指令
-  if (kindFilter === 'all' || kindFilter === 'command') {
-    for (const cmd of ACTION_COMMANDS) {
-      items.push({
-        id: cmd.id,
-        kind: 'command',
-        title: cmd.title,
-        description: cmd.description,
-        commandAction: cmd.action,
-      });
-    }
-  }
+  // 2. 快捷指令（内存静态列表，零 I/O）
+  const commandItems: SearchItem[] =
+    kindFilter === 'all' || kindFilter === 'command'
+      ? ACTION_COMMANDS.map((cmd) => ({
+          id: cmd.id,
+          kind: 'command',
+          title: cmd.title,
+          description: cmd.description,
+          keywords: cmd.keywords,
+          commandAction: cmd.action,
+        }))
+      : [];
 
-  // 3. 书签
-  if ((kindFilter === 'all' || kindFilter === 'bookmark') && chrome.bookmarks) {
-    try {
-      const bookmarks = await chrome.bookmarks.search(query || 'http');
-      for (const bm of bookmarks.slice(0, 50)) {
-        if (bm.url && !INTERNAL_URL_RE.test(bm.url)) {
-          items.push({
-            id: `bm:${bm.id}`,
-            kind: 'bookmark',
-            title: bm.title || bm.url,
-            url: bm.url,
-            domain: extractHostname(bm.url),
-          });
-        }
-      }
-    } catch (e) {
-      console.warn('[YiTab] Query bookmarks failed:', e);
-    }
-  }
+  // 3. 书签（空查询时走 getRecent(25) 避免 search('http') 扫描全量书签树）
+  const bookmarksPromise: Promise<SearchItem[]> =
+    (kindFilter === 'all' || kindFilter === 'bookmark') && chrome.bookmarks
+      ? withTimeout(
+          (async () => {
+            const bookmarks = trimmedQuery
+              ? await chrome.bookmarks.search(trimmedQuery)
+              : typeof chrome.bookmarks.getRecent === 'function'
+                ? await chrome.bookmarks.getRecent(25)
+                : await chrome.bookmarks.search('http');
+            const bmItems: SearchItem[] = [];
+            for (const bm of bookmarks.slice(0, 50)) {
+              if (bm.url && !INTERNAL_URL_RE.test(bm.url)) {
+                bmItems.push({
+                  id: `bm:${bm.id}`,
+                  kind: 'bookmark',
+                  title: bm.title || bm.url,
+                  url: bm.url,
+                  domain: extractHostname(bm.url),
+                });
+              }
+            }
+            return bmItems;
+          })(),
+          SOURCE_TIMEOUT_MS,
+          [],
+        )
+      : Promise.resolve([]);
 
   // 4. 历史记录
-  if ((kindFilter === 'all' || kindFilter === 'history') && chrome.history) {
-    try {
-      const historyItems = await chrome.history.search({ text: query, maxResults: 30 });
-      for (const h of historyItems) {
-        if (h.url && !INTERNAL_URL_RE.test(h.url)) {
-          items.push({
-            id: `hist:${h.id}`,
-            kind: 'history',
-            title: h.title || h.url,
-            url: h.url,
-            domain: extractHostname(h.url),
-            description: h.lastVisitTime
-              ? new Date(h.lastVisitTime).toLocaleDateString()
-              : undefined,
-          });
+  const historyPromise: Promise<SearchItem[]> =
+    (kindFilter === 'all' || kindFilter === 'history') && chrome.history
+      ? withTimeout(
+          (async () => {
+            const historyItems = await chrome.history.search({
+              text: trimmedQuery,
+              maxResults: 30,
+            });
+            const histItems: SearchItem[] = [];
+            for (const h of historyItems) {
+              if (h.url && !INTERNAL_URL_RE.test(h.url)) {
+                histItems.push({
+                  id: `hist:${h.id}`,
+                  kind: 'history',
+                  title: h.title || h.url,
+                  url: h.url,
+                  domain: extractHostname(h.url),
+                  description: h.lastVisitTime
+                    ? new Date(h.lastVisitTime).toLocaleDateString()
+                    : undefined,
+                });
+              }
+            }
+            return histItems;
+          })(),
+          SOURCE_TIMEOUT_MS,
+          [],
+        )
+      : Promise.resolve([]);
+
+  const [tabItems, bookmarkItems, historyItems] = await Promise.all([
+    tabsPromise,
+    bookmarksPromise,
+    historyPromise,
+  ]);
+
+  // 空查询且在「全部」视图时，按分类均衡配额，避免大量标签页挤占指令/书签/历史
+  if (!trimmedQuery && kindFilter === 'all') {
+    const picked: SearchItem[] = [
+      ...tabItems.slice(0, 12),
+      ...commandItems.slice(0, 6),
+      ...bookmarkItems.slice(0, 6),
+      ...historyItems.slice(0, 6),
+    ];
+    if (picked.length < limit) {
+      const seen = new Set(picked.map((i) => i.id));
+      for (const pool of [tabItems, commandItems, bookmarkItems, historyItems]) {
+        for (const item of pool) {
+          if (picked.length >= limit) break;
+          if (!seen.has(item.id)) {
+            seen.add(item.id);
+            picked.push(item);
+          }
         }
       }
-    } catch (e) {
-      console.warn('[YiTab] Query history failed:', e);
     }
+    return picked.slice(0, limit);
   }
 
-  return filterAndRankItems(items, query, kindFilter, limit);
+  const items: SearchItem[] = [...tabItems, ...commandItems, ...bookmarkItems, ...historyItems];
+  return filterAndRankItems(items, safeQuery, kindFilter, limit);
 }
 
 interface ActionCommandResult {

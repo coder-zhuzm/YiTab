@@ -1,10 +1,18 @@
 import type { TabInfo } from '@/lib/match';
-import type { SearchItem, SearchItemKind } from '@/lib/search';
+import { parsePaletteQuery, type SearchItem, type SearchItemKind } from '@/lib/search';
 import { resolveIsDark, THEME_STORAGE_KEY, sanitizeThemeMode, type ThemeMode } from '@/lib/theme-mode';
+import {
+  getDefaultPaletteShortcut,
+  matchesPaletteShortcut,
+  PALETTE_SHORTCUT_STORAGE_KEY,
+  sanitizePaletteShortcut,
+  type PaletteShortcutConfig,
+} from '@/lib/palette-shortcut';
 
 /** 当前生效的主题；content script 常驻页面，缓存一份避免每次弹窗都读存储。 */
 let themeMode: ThemeMode = 'system';
 let systemDark = false;
+let paletteShortcut: PaletteShortcutConfig = getDefaultPaletteShortcut();
 
 function applyThemeTo(el: HTMLElement): void {
   el.dataset.theme = resolveIsDark(themeMode) ? 'dark' : 'light';
@@ -36,11 +44,35 @@ function initTheme(): void {
   });
 }
 
+/** 读取并订阅页内自定义命令面板快捷键（设置页修改后所有已开网页立即生效） */
+function initPaletteShortcut(): void {
+  chrome.storage?.sync?.get(PALETTE_SHORTCUT_STORAGE_KEY).then((res) => {
+    paletteShortcut = sanitizePaletteShortcut(res[PALETTE_SHORTCUT_STORAGE_KEY]);
+  }).catch(() => {});
+
+  chrome.storage?.onChanged?.addListener((changes, area) => {
+    if (area !== 'sync' || !(PALETTE_SHORTCUT_STORAGE_KEY in changes)) return;
+    paletteShortcut = sanitizePaletteShortcut(changes[PALETTE_SHORTCUT_STORAGE_KEY].newValue);
+  });
+
+  document.addEventListener(
+    'keydown',
+    (e: KeyboardEvent) => {
+      if (!matchesPaletteShortcut(e, paletteShortcut)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      toggleCommandPalette();
+    },
+    true,
+  );
+}
+
 export default defineContentScript({
   matches: ['*://*/*'],
   runAt: 'document_idle',
   main() {
     initTheme();
+    initPaletteShortcut();
 
     // 1. 监听来自 background 的 SPA 路由重复提醒与全局快捷键指令
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -48,7 +80,12 @@ export default defineContentScript({
         showDuplicateToast(msg.candidateUrl, msg.targetTab);
         sendResponse({ ok: true });
       } else if (msg && msg.type === 'yitab_toggle_palette') {
-        toggleCommandPalette();
+        const opened = toggleCommandPalette(Array.isArray(msg.initialItems) ? msg.initialItems : null);
+        sendResponse({ ok: true, opened });
+      } else if (msg && msg.type === 'yitab_palette_initial_items') {
+        if (Array.isArray(msg.items)) {
+          applyInitialPaletteItems(msg.items);
+        }
         sendResponse({ ok: true });
       } else if (msg && msg.type === 'yitab_show_notice') {
         if (msg.message) {
@@ -519,26 +556,142 @@ let currentFilter: 'all' | SearchItemKind = 'all';
 let currentQuery = '';
 let selectedIdx = 0;
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let skeletonDelayTimer: ReturnType<typeof setTimeout> | null = null;
+let paletteKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
+let paletteApplyInitialItems: ((items: SearchItem[]) => void) | null = null;
+let searchRequestSeq = 0;
 
-function toggleCommandPalette() {
+/** 带超时与瞬时重试的扩展消息调用，避免 SW 唤醒抖动或通道断开时永久悬停在「正在加载」 */
+async function sendRuntimeMessageWithTimeout<T>(
+  payload: Record<string, unknown>,
+  timeoutMs = 4500,
+  retries = 1,
+): Promise<T> {
+  const attempt = (): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      if (!chrome.runtime?.id) {
+        reject(new Error('CONTEXT_INVALIDATED'));
+        return;
+      }
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new Error('TIMEOUT'));
+        }
+      }, timeoutMs);
+
+      try {
+        chrome.runtime.sendMessage(payload, (response: T) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          const err = chrome.runtime.lastError;
+          if (err) {
+            reject(new Error(err.message || 'RUNTIME_ERROR'));
+            return;
+          }
+          resolve(response);
+        });
+      } catch (err) {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          reject(err);
+        }
+      }
+    });
+
+  let lastErr: unknown;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await attempt();
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err ?? '');
+      if (msg.includes('CONTEXT_INVALIDATED') || msg.includes('Extension context invalidated')) {
+        throw err;
+      }
+      if (i < retries) {
+        await new Promise((r) => setTimeout(r, 140));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+function applyInitialPaletteItems(items: SearchItem[]) {
+  if (paletteApplyInitialItems) {
+    paletteApplyInitialItems(items);
+  }
+}
+
+function toggleCommandPalette(initialItems?: SearchItem[] | null): boolean {
   if (paletteContainer) {
     closeCommandPalette();
-    return;
+    return false;
   }
-  openCommandPalette();
+  openCommandPalette(initialItems);
+  return true;
 }
 
 function closeCommandPalette() {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+  if (skeletonDelayTimer) {
+    clearTimeout(skeletonDelayTimer);
+    skeletonDelayTimer = null;
+  }
+  if (paletteKeydownHandler) {
+    document.removeEventListener('keydown', paletteKeydownHandler, true);
+    paletteKeydownHandler = null;
+  }
+  paletteApplyInitialItems = null;
+  searchRequestSeq++;
   if (paletteContainer && paletteContainer.parentNode) {
     paletteContainer.parentNode.removeChild(paletteContainer);
-    paletteContainer = null;
-    currentItems = [];
-    currentQuery = '';
-    selectedIdx = 0;
   }
+  paletteContainer = null;
+  currentItems = [];
+  currentFilter = 'all';
+  currentQuery = '';
+  selectedIdx = 0;
 }
 
-function openCommandPalette() {
+const SECTION_LABELS: Record<SearchItemKind, string> = {
+  tab: '已开标签',
+  command: '快捷指令',
+  bookmark: '收藏书签',
+  history: '近期历史',
+};
+
+const KIND_LABELS: Record<SearchItemKind, string> = {
+  tab: '标签',
+  command: '指令',
+  bookmark: '书签',
+  history: '历史',
+};
+
+const TAB_GROUP_DOT_COLORS: Record<string, string> = {
+  grey: '#64748b',
+  blue: '#3b82f6',
+  red: '#ef4444',
+  yellow: '#eab308',
+  green: '#10b981',
+  pink: '#ec4899',
+  purple: '#8b5cf6',
+  cyan: '#06b6d4',
+  orange: '#f97316',
+};
+
+function resolveGroupDotColor(color?: string): string {
+  if (!color) return 'var(--accent)';
+  return TAB_GROUP_DOT_COLORS[color] || color;
+}
+
+function openCommandPalette(initialItems?: SearchItem[] | null) {
   closeCommandPalette();
 
   paletteContainer = document.createElement('div');
@@ -551,308 +704,645 @@ function openCommandPalette() {
   applyThemeTo(paletteContainer);
 
   const shadow = paletteContainer.shadowRoot ?? paletteContainer.attachShadow({ mode: 'open' });
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
+  const modKey = isMac ? '⌘' : 'Ctrl';
 
   shadow.innerHTML = `
     <style>
+      /* 对齐 YiTab 主界面设计令牌（中性画布 + 单一强调色，克制层级） */
       :host {
         all: initial;
         display: block;
+        --canvas: #f6f7f9;
+        --surface: #ffffff;
+        --surface-hover: #eef0f5;
+        --hairline: #e3e6ec;
+        --hairline-strong: #d3d8e0;
+        --ink: #14161b;
+        --ink-2: #4e5663;
+        --ink-3: #666d79;
+        --accent: #4f46e5;
+        --accent-soft: #ecebfd;
+        --ok: #0f9d6e;
+        --danger: #c0392b;
+        --backdrop: rgba(15, 17, 21, 0.36);
+        --shadow: 0 24px 56px -14px rgba(15, 17, 21, 0.24), 0 0 0 1px rgba(20, 22, 27, 0.08);
+        --tag-bg: #eef0f5;
+        --tag-ink: #4e5663;
+        --cmd-bg: #ecebfd;
+        --cmd-ink: #4338ca;
+        --ok-soft: rgba(15, 157, 110, 0.12);
+        --skeleton: #eef0f5;
+        --skeleton-shine: #f6f7f9;
       }
 
-      /* 深色：对齐主界面 --canvas(#0f1115) / --surface(#16181d) / --hairline(#262a31) */
-      :host([data-theme='dark']) .palette-box {
-        background: #16181d;
-        color: #e8eaee;
-        border-color: #262a31;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+      :host([data-theme='dark']) {
+        --canvas: #0f1115;
+        --surface: #16181d;
+        --surface-hover: #1e2127;
+        --hairline: #262a31;
+        --hairline-strong: #343941;
+        --ink: #e8eaee;
+        --ink-2: #b3bac5;
+        --ink-3: #8f96a2;
+        --accent: #8b8bf5;
+        --accent-soft: #23243a;
+        --ok: #34c793;
+        --danger: #f08080;
+        --backdrop: rgba(0, 0, 0, 0.58);
+        --shadow: 0 28px 64px -14px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        --tag-bg: #1e2127;
+        --tag-ink: #9aa2af;
+        --cmd-bg: #23243a;
+        --cmd-ink: #a5b4fc;
+        --ok-soft: rgba(52, 199, 147, 0.14);
+        --skeleton: #1e2127;
+        --skeleton-shine: #262a31;
       }
 
-      :host([data-theme='dark']) .search-bar { border-color: #262a31; }
-
-      :host([data-theme='dark']) .kbd-hint {
-        background: #1e2127;
-        color: #8f96a2;
-        border-color: #343941;
-      }
-
-      :host([data-theme='dark']) .filter-tabs {
-        background: #0f1115;
-        border-color: #262a31;
-      }
-
-      :host([data-theme='dark']) .filter-tab:hover {
-        background: #1e2127;
-        color: #e8eaee;
-      }
-
-      :host([data-theme='dark']) .result-item:hover,
-      :host([data-theme='dark']) .result-item.selected {
-        background: #1e2127;
-      }
-
-      :host([data-theme='dark']) .item-icon-box { background: #0f1115; }
-
-      :host([data-theme='dark']) .item-title mark { color: #818cf8; }
-
-      :host([data-theme='dark']) .item-sub { color: #8f96a2; }
-
-      :host([data-theme='dark']) .kind-tab { background: rgba(99, 102, 241, 0.22); color: #a5b4fc; }
-      :host([data-theme='dark']) .kind-command { background: rgba(217, 70, 239, 0.22); color: #f5d0fe; }
-      :host([data-theme='dark']) .kind-bookmark { background: rgba(34, 197, 94, 0.22); color: #bbf7d0; }
-      :host([data-theme='dark']) .kind-history { background: rgba(249, 115, 22, 0.22); color: #fed7aa; }
-
-      :host([data-theme='dark']) .footer-bar {
-        background: #0f1115;
-        border-color: #262a31;
-        color: #8f96a2;
+      * {
+        box-sizing: border-box;
       }
 
       .backdrop {
         position: fixed;
         inset: 0;
-        background: rgba(15, 23, 42, 0.45);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
+        background: var(--backdrop);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
         display: flex;
         justify-content: center;
         align-items: flex-start;
-        padding-top: 13vh;
-        box-sizing: border-box;
-        animation: yitab-fade-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        padding: 12vh 16px 24px;
+        animation: yitab-fade-in 0.14s ease-out forwards;
       }
+
       @keyframes yitab-fade-in {
         from { opacity: 0; }
         to { opacity: 1; }
       }
+
       .palette-box {
-        width: 620px;
-        max-width: 92vw;
-        background: #ffffff;
+        width: 640px;
+        max-width: 100%;
+        background: var(--surface);
+        color: var(--ink);
         border-radius: 14px;
-        box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(15, 23, 42, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.9);
+        box-shadow: var(--shadow);
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif;
-        color: #0f172a;
-        animation: yitab-scale-up 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI',
+          'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        animation: yitab-scale-up 0.16s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       }
-      
+
       @keyframes yitab-scale-up {
-        from { opacity: 0; transform: translateY(-14px) scale(0.97); }
+        from { opacity: 0; transform: translateY(-10px) scale(0.985); }
         to { opacity: 1; transform: translateY(0) scale(1); }
       }
+
+      @media (prefers-reduced-motion: reduce) {
+        .backdrop,
+        .palette-box {
+          animation: none;
+        }
+      }
+
+      /* 顶部搜索栏 */
       .search-bar {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 14px 18px;
-        border-bottom: 1px solid #e2e8f0;
+        gap: 10px;
+        padding: 13px 16px;
+        border-bottom: 1px solid var(--hairline);
       }
-      
-      .logo-icon {
-        width: 24px;
-        height: 24px;
-        border-radius: 6px;
-        background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
-        color: #fff;
+
+      .search-leading {
+        width: 22px;
+        height: 22px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 12px;
-        font-weight: 800;
+        color: var(--ink-3);
         flex-shrink: 0;
+        transition: color 0.15s ease;
       }
+
+      .search-bar:focus-within .search-leading,
+      .search-leading.cmd-mode {
+        color: var(--accent);
+      }
+
       .search-input {
         flex: 1;
+        min-width: 0;
         border: none;
         outline: none;
         background: transparent;
+        font-family: inherit;
         font-size: 15px;
-        color: inherit;
+        font-weight: 450;
+        color: var(--ink);
         line-height: 1.4;
+        padding: 2px 0;
       }
+
       .search-input::placeholder {
-        color: #94a3b8;
+        color: var(--ink-3);
+        font-weight: 400;
       }
-      .kbd-hint {
+
+      .clear-btn {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--ink-3);
+        cursor: pointer;
+        padding: 0;
+        flex-shrink: 0;
+        transition: background 0.12s ease, color 0.12s ease;
+      }
+
+      .clear-btn.visible {
+        display: inline-flex;
+      }
+
+      .clear-btn:hover {
+        background: var(--surface-hover);
+        color: var(--ink);
+      }
+
+      .kbd {
         display: inline-flex;
         align-items: center;
-        gap: 4px;
-        font-size: 11px;
-        color: #64748b;
-        background: #f1f5f9;
-        padding: 2px 6px;
-        border-radius: 4px;
-        border: 1px solid #cbd5e1;
+        justify-content: center;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 5px;
+        font-family: inherit;
+        font-size: 10.5px;
+        font-weight: 500;
+        line-height: 1;
+        color: var(--ink-3);
+        background: var(--canvas);
+        border: 1px solid var(--hairline-strong);
+        border-radius: 5px;
+        box-shadow: 0 1px 0 var(--hairline-strong);
+        flex-shrink: 0;
+        user-select: none;
       }
-      
+
+      /* 分类栏 */
+      .filter-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 7px 14px;
+        background: var(--canvas);
+        border-bottom: 1px solid var(--hairline);
+      }
+
       .filter-tabs {
         display: flex;
         align-items: center;
-        gap: 6px;
-        padding: 8px 18px;
-        background: #f8fafc;
-        border-bottom: 1px solid #e2e8f0;
+        gap: 4px;
         overflow-x: auto;
+        scrollbar-width: none;
       }
-      
+
+      .filter-tabs::-webkit-scrollbar {
+        display: none;
+      }
+
       .filter-tab {
         border: none;
         background: transparent;
+        font-family: inherit;
         font-size: 12px;
-        color: #64748b;
-        padding: 3px 10px;
-        border-radius: 6px;
+        font-weight: 500;
+        color: var(--ink-2);
+        padding: 4px 10px;
+        border-radius: 7px;
         cursor: pointer;
-        transition: all 0.15s ease;
+        white-space: nowrap;
+        transition: background 0.12s ease, color 0.12s ease;
       }
+
       .filter-tab:hover {
-        background: #e2e8f0;
-        color: #0f172a;
+        background: var(--surface-hover);
+        color: var(--ink);
       }
-      
+
       .filter-tab.active {
-        background: #4f46e5;
-        color: #ffffff;
+        background: var(--accent-soft);
+        color: var(--accent);
         font-weight: 600;
       }
-      .results-list {
-        max-height: 380px;
-        overflow-y: auto;
-        padding: 6px 8px;
+
+      .result-count {
+        font-size: 11.5px;
+        color: var(--ink-3);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        flex-shrink: 0;
+        padding-right: 2px;
       }
+
+      /* 结果列表 */
+      .results-list {
+        max-height: 400px;
+        min-height: 120px;
+        overflow-y: auto;
+        padding: 6px 8px 8px;
+        overscroll-behavior: contain;
+      }
+
+      .results-list::-webkit-scrollbar {
+        width: 6px;
+      }
+      .results-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .results-list::-webkit-scrollbar-thumb {
+        background: var(--hairline-strong);
+        border-radius: 3px;
+      }
+
+      .section-header {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--ink-3);
+        padding: 8px 10px 4px;
+        user-select: none;
+      }
+
+      .section-header:first-child {
+        padding-top: 4px;
+      }
+
       .result-item {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 9px 12px;
-        border-radius: 8px;
+        gap: 11px;
+        padding: 8px 10px 8px 12px;
+        border-radius: 9px;
         cursor: pointer;
-        transition: all 0.12s ease;
         position: relative;
+        transition: background 0.1s ease;
       }
-      .result-item:hover,
+
+      .result-item::before {
+        content: '';
+        position: absolute;
+        left: 2px;
+        top: 8px;
+        bottom: 8px;
+        width: 2.5px;
+        border-radius: 2px;
+        background: transparent;
+        transition: background 0.1s ease;
+      }
+
+      .result-item:hover {
+        background: var(--surface-hover);
+      }
+
       .result-item.selected {
-        background: #f1f5f9;
+        background: var(--accent-soft);
       }
-      
-      .result-item.selected {
-        box-shadow: inset 0 0 0 1.5px #4f46e5;
+
+      .result-item.selected::before {
+        background: var(--accent);
       }
+
       .item-icon-box {
-        width: 26px;
-        height: 26px;
-        border-radius: 6px;
-        background: #f1f5f9;
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        background: var(--canvas);
+        border: 1px solid var(--hairline);
         display: flex;
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
         overflow: hidden;
+        color: var(--ink-2);
       }
-      
+
+      .result-item.selected .item-icon-box {
+        background: var(--surface);
+        border-color: transparent;
+      }
+
       .item-icon-img {
         width: 16px;
         height: 16px;
         object-fit: contain;
+        border-radius: 3px;
       }
+
       .item-info {
         flex: 1;
         min-width: 0;
       }
-      .item-title {
-        font-size: 13px;
-        font-weight: 500;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        line-height: 1.4;
-      }
-      .item-title mark {
-        background: transparent;
-        color: #4f46e5;
-        font-weight: 700;
-      }
-      
-      .item-sub {
-        font-size: 11px;
-        color: #64748b;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        line-height: 1.3;
+
+      .item-title-row {
         display: flex;
         align-items: center;
         gap: 6px;
+        min-width: 0;
       }
-      
-      .kind-tag {
+
+      .item-title {
+        font-size: 13.5px;
+        font-weight: 500;
+        color: var(--ink);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.35;
+      }
+
+      .item-title mark {
+        background: transparent;
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .active-badge {
         font-size: 10px;
+        font-weight: 600;
+        color: var(--ok);
+        background: var(--ok-soft);
         padding: 1px 5px;
         border-radius: 4px;
-        font-weight: 600;
+        flex-shrink: 0;
+        line-height: 1.4;
+      }
+
+      .item-sub {
+        font-size: 11.5px;
+        color: var(--ink-3);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.35;
+        margin-top: 1px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .group-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--ink-2);
+        font-weight: 500;
         flex-shrink: 0;
       }
-      .kind-tab { background: #e0e7ff; color: #4338ca; }
-      .kind-command { background: #fae8ff; color: #86198f; }
-      .kind-bookmark { background: #dcfce7; color: #15803d; }
-      .kind-history { background: #ffedd5; color: #c2410c; }
-      
-      .empty-tip {
+
+      .group-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      .sub-sep {
+        width: 2.5px;
+        height: 2.5px;
+        border-radius: 50%;
+        background: var(--hairline-strong);
+        flex-shrink: 0;
+      }
+
+      .sub-text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .item-trailing {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+
+      .kind-tag {
+        font-size: 10.5px;
+        font-weight: 500;
+        padding: 2px 6px;
+        border-radius: 5px;
+        background: var(--tag-bg);
+        color: var(--tag-ink);
+        flex-shrink: 0;
+      }
+
+      .kind-tag.kind-command {
+        background: var(--cmd-bg);
+        color: var(--cmd-ink);
+      }
+
+      .tab-close-btn {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--ink-3);
+        cursor: pointer;
+        padding: 0;
+        transition: background 0.12s ease, color 0.12s ease;
+      }
+
+      .result-item:hover .tab-close-btn,
+      .result-item.selected .tab-close-btn {
+        display: inline-flex;
+      }
+
+      .tab-close-btn:hover {
+        background: rgba(192, 57, 43, 0.14);
+        color: var(--danger);
+      }
+
+      .enter-hint {
+        display: none;
+        font-size: 11px;
+        color: var(--accent);
+        font-weight: 500;
+        white-space: nowrap;
+      }
+
+      .result-item.selected .enter-hint {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+
+      /* 空态 / 错误态 / 骨架屏 */
+      .state-box {
         padding: 36px 20px;
         text-align: center;
-        color: #94a3b8;
+        color: var(--ink-3);
         font-size: 13px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
       }
+
+      .state-title {
+        color: var(--ink-2);
+        font-weight: 500;
+        font-size: 13.5px;
+      }
+
+      .state-sub {
+        color: var(--ink-3);
+        font-size: 12px;
+        max-width: 380px;
+        line-height: 1.5;
+      }
+
+      .retry-btn {
+        margin-top: 4px;
+        border: 1px solid var(--hairline-strong);
+        background: var(--surface);
+        color: var(--ink);
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 500;
+        padding: 5px 14px;
+        border-radius: 7px;
+        cursor: pointer;
+        transition: background 0.12s ease, border-color 0.12s ease;
+      }
+
+      .retry-btn:hover {
+        background: var(--surface-hover);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      .skeleton-row {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        padding: 9px 12px;
+      }
+
+      .skeleton-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        background: var(--skeleton);
+        flex-shrink: 0;
+      }
+
+      .skeleton-lines {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .skeleton-line {
+        height: 11px;
+        border-radius: 4px;
+        background: linear-gradient(90deg, var(--skeleton) 25%, var(--skeleton-shine) 50%, var(--skeleton) 75%);
+        background-size: 200% 100%;
+        animation: yitab-shimmer 1.1s ease-in-out infinite;
+      }
+
+      .skeleton-line.short {
+        width: 42%;
+        height: 9px;
+      }
+
+      @keyframes yitab-shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+
+      /* 底部快捷键指引 */
       .footer-bar {
-        padding: 8px 18px;
-        border-top: 1px solid #e2e8f0;
-        background: #f8fafc;
+        padding: 8px 16px;
+        border-top: 1px solid var(--hairline);
+        background: var(--canvas);
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 12px;
         font-size: 11px;
-        color: #64748b;
+        color: var(--ink-3);
       }
-      
+
       .footer-tips {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
         gap: 12px;
       }
+
+      .tip-pair {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
     </style>
-    <div class="backdrop" id="yitab-palette-backdrop">
+    <div class="backdrop" id="yitab-palette-backdrop" role="dialog" aria-modal="true" aria-label="YiTab 全局命令与标签搜索">
       <div class="palette-box">
         <div class="search-bar">
-          <div class="logo-icon">Yi</div>
+          <div class="search-leading" id="yitab-palette-leading" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </div>
           <input
             type="text"
             class="search-input"
             id="yitab-palette-input"
-            placeholder="搜索标签页、书签、历史或快捷指令..."
+            placeholder="搜索标签页、书签、历史，或输入 > 快捷执行指令..."
             autocomplete="off"
             spellcheck="false"
           />
-          <span class="kbd-hint">Esc 关闭</span>
+          <button type="button" class="clear-btn" id="yitab-palette-clear" title="清空输入" aria-label="清空输入">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+          <span class="kbd">Esc</span>
         </div>
-        <div class="filter-tabs">
-          <button class="filter-tab active" data-kind="all">全部</button>
-          <button class="filter-tab" data-kind="tab">已开标签</button>
-          <button class="filter-tab" data-kind="command">快捷指令</button>
-          <button class="filter-tab" data-kind="bookmark">收藏书签</button>
-          <button class="filter-tab" data-kind="history">近期历史</button>
+        <div class="filter-bar">
+          <div class="filter-tabs" role="tablist">
+            <button type="button" class="filter-tab active" data-kind="all" role="tab" aria-selected="true">全部</button>
+            <button type="button" class="filter-tab" data-kind="tab" role="tab" aria-selected="false">已开标签</button>
+            <button type="button" class="filter-tab" data-kind="command" role="tab" aria-selected="false">快捷指令</button>
+            <button type="button" class="filter-tab" data-kind="bookmark" role="tab" aria-selected="false">收藏书签</button>
+            <button type="button" class="filter-tab" data-kind="history" role="tab" aria-selected="false">近期历史</button>
+          </div>
+          <span class="result-count" id="yitab-palette-count"></span>
         </div>
-        <div class="results-list" id="yitab-palette-results">
-          <div class="empty-tip">正在加载...</div>
-        </div>
+        <div class="results-list" id="yitab-palette-results" role="listbox"></div>
         <div class="footer-bar">
-          <span id="yitab-palette-count">共 0 项</span>
           <div class="footer-tips">
-            <span>↑ ↓ 导航</span>
-            <span>↵ 确认执行</span>
-            <span>Tab 切换分类</span>
+            <span class="tip-pair"><span class="kbd">↑</span><span class="kbd">↓</span><span>选择</span></span>
+            <span class="tip-pair"><span class="kbd">↵</span><span id="yitab-footer-enter-label">打开</span></span>
+            <span class="tip-pair"><span class="kbd">Tab</span><span>切换分类</span></span>
+            <span class="tip-pair"><span class="kbd">&gt;</span><span>指令模式</span></span>
+          </div>
+          <div class="footer-tips">
+            <span class="tip-pair" title="在当前标签页打开书签或历史"><span class="kbd">${modKey}↵</span><span>当前页打开</span></span>
           </div>
         </div>
       </div>
@@ -860,13 +1350,365 @@ function openCommandPalette() {
   `;
 
   const inputEl = shadow.getElementById('yitab-palette-input') as HTMLInputElement;
+  const clearBtn = shadow.getElementById('yitab-palette-clear') as HTMLButtonElement;
+  const leadingEl = shadow.getElementById('yitab-palette-leading')!;
   const resultsEl = shadow.getElementById('yitab-palette-results')!;
   const countEl = shadow.getElementById('yitab-palette-count')!;
+  const enterLabelEl = shadow.getElementById('yitab-footer-enter-label')!;
   const backdropEl = shadow.getElementById('yitab-palette-backdrop')!;
   const filterBtns = shadow.querySelectorAll<HTMLButtonElement>('.filter-tab');
 
+  const searchIconSvg =
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>';
+  const commandIconSvg =
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>';
+
   // 聚焦输入框
-  setTimeout(() => inputEl?.focus(), 50);
+  requestAnimationFrame(() => inputEl?.focus());
+
+  const syncFilterTabsUI = (activeKind: 'all' | SearchItemKind) => {
+    filterBtns.forEach((btn) => {
+      const isActive = btn.getAttribute('data-kind') === activeKind;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+  };
+
+  const syncLeadingUI = (isCommandPrefix: boolean) => {
+    leadingEl.classList.toggle('cmd-mode', isCommandPrefix);
+    leadingEl.innerHTML = isCommandPrefix ? commandIconSvg : searchIconSvg;
+    clearBtn.classList.toggle('visible', currentQuery.length > 0);
+  };
+
+  const renderSkeleton = () => {
+    resultsEl.innerHTML = `
+      <div class="skeleton-row"><div class="skeleton-icon"></div><div class="skeleton-lines"><div class="skeleton-line" style="width:62%"></div><div class="skeleton-line short"></div></div></div>
+      <div class="skeleton-row"><div class="skeleton-icon"></div><div class="skeleton-lines"><div class="skeleton-line" style="width:48%"></div><div class="skeleton-line short"></div></div></div>
+      <div class="skeleton-row"><div class="skeleton-icon"></div><div class="skeleton-lines"><div class="skeleton-line" style="width:70%"></div><div class="skeleton-line short"></div></div></div>
+    `;
+  };
+
+  const renderErrorState = (err: unknown) => {
+    const rawMsg = err instanceof Error ? err.message : String(err ?? '');
+    const isInvalidated =
+      rawMsg.includes('CONTEXT_INVALIDATED') || rawMsg.includes('Extension context invalidated');
+    countEl.textContent = '';
+    resultsEl.innerHTML = `
+      <div class="state-box">
+        <div class="state-title">${isInvalidated ? '扩展刚完成更新' : '暂时无法获取搜索结果'}</div>
+        <div class="state-sub">${
+          isInvalidated
+            ? '当前页面的扩展连接已失效，刷新页面后即可恢复正常使用。'
+            : '后台服务响应超时或连接中断，请点击重试。'
+        }</div>
+        <button type="button" class="retry-btn" id="yitab-palette-retry">${isInvalidated ? '刷新页面' : '重新加载'}</button>
+      </div>
+    `;
+    shadow.getElementById('yitab-palette-retry')?.addEventListener('click', () => {
+      if (isInvalidated) {
+        window.location.reload();
+      } else {
+        void triggerSearch(currentQuery);
+      }
+    });
+  };
+
+  const updateFooterHint = () => {
+    const active = currentItems[selectedIdx];
+    if (!active) {
+      enterLabelEl.textContent = '打开';
+      return;
+    }
+    if (active.kind === 'tab') {
+      enterLabelEl.textContent = '切换标签';
+    } else if (active.kind === 'command') {
+      enterLabelEl.textContent = '执行指令';
+    } else {
+      enterLabelEl.textContent = '新标签打开';
+    }
+  };
+
+  const updateSelectionDom = (scrollIntoView: boolean) => {
+    const itemEls = shadow.querySelectorAll<HTMLElement>('.result-item');
+    itemEls.forEach((el) => {
+      const idx = parseInt(el.getAttribute('data-idx') || '-1', 10);
+      const isSelected = idx === selectedIdx;
+      el.classList.toggle('selected', isSelected);
+      el.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+      if (isSelected && scrollIntoView) {
+        el.scrollIntoView({ block: 'nearest' });
+      }
+    });
+    updateFooterHint();
+  };
+
+  // 结果渲染
+  const renderResults = () => {
+    if (!paletteContainer || !paletteContainer.isConnected) return;
+    const parsed = parsePaletteQuery(currentQuery, currentFilter);
+    const effectiveFilter = parsed.effectiveFilter;
+    const trimmedQuery = parsed.query.trim();
+
+    countEl.textContent = currentItems.length > 0 ? `${currentItems.length} 项` : '';
+    updateFooterHint();
+
+    if (currentItems.length === 0) {
+      resultsEl.innerHTML = `
+        <div class="state-box">
+          <div class="state-title">没有找到匹配项</div>
+          <div class="state-sub">${
+            trimmedQuery
+              ? '试试更换关键词，按 Tab 切换分类，或输入 > 查看全部快捷指令。'
+              : '当前分类暂无可展示内容。'
+          }</div>
+        </div>
+      `;
+      return;
+    }
+
+    const showSections = effectiveFilter === 'all' && !trimmedQuery;
+    const showKindBadge = effectiveFilter === 'all' && Boolean(trimmedQuery);
+    let lastKind: SearchItemKind | null = null;
+
+    const htmlParts: string[] = [];
+    currentItems.forEach((item, idx) => {
+      if (showSections && item.kind !== lastKind) {
+        lastKind = item.kind;
+        htmlParts.push(`<div class="section-header">${SECTION_LABELS[item.kind]}</div>`);
+      }
+
+      const isSelected = idx === selectedIdx;
+      const kindLabel = KIND_LABELS[item.kind];
+      const kindClass = `kind-${item.kind}`;
+
+      // 高亮多词匹配
+      let highlightedTitle = escapeHtml(item.title);
+      if (trimmedQuery) {
+        const tokens = trimmedQuery
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((t) => escapeHtml(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        if (tokens.length > 0) {
+          const reg = new RegExp(`(${tokens.join('|')})`, 'gi');
+          highlightedTitle = highlightedTitle.replace(reg, '<mark>$1</mark>');
+        }
+      }
+
+      const subtitle = escapeHtml(item.domain || item.description || item.url || '');
+      const enterText =
+        item.kind === 'tab' ? '切换' : item.kind === 'command' ? '执行' : '打开';
+
+      htmlParts.push(`
+        <div class="result-item ${isSelected ? 'selected' : ''}" data-idx="${idx}" role="option" aria-selected="${isSelected ? 'true' : 'false'}">
+          <div class="item-icon-box" data-kind="${item.kind}">
+            ${
+              item.favicon
+                ? `<img class="item-icon-img" src="${escapeHtml(item.favicon)}" alt="" />`
+                : getCategoryIcon(item.kind)
+            }
+          </div>
+          <div class="item-info">
+            <div class="item-title-row">
+              <div class="item-title">${highlightedTitle}</div>
+              ${item.kind === 'tab' && item.active ? '<span class="active-badge">当前</span>' : ''}
+            </div>
+            <div class="item-sub">
+              ${
+                item.groupTitle
+                  ? `<span class="group-chip"><span class="group-dot" style="background:${escapeHtml(resolveGroupDotColor(item.groupColor))}"></span><span>${escapeHtml(item.groupTitle)}</span></span><span class="sub-sep"></span>`
+                  : ''
+              }
+              <span class="sub-text">${subtitle}</span>
+            </div>
+          </div>
+          <div class="item-trailing">
+            ${
+              item.kind === 'tab' && item.tabId != null
+                ? `<button type="button" class="tab-close-btn" data-close-tab="${item.tabId}" title="关闭此标签页 (${modKey}⌫)" aria-label="关闭此标签页"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>`
+                : ''
+            }
+            ${showKindBadge ? `<span class="kind-tag ${kindClass}">${kindLabel}</span>` : ''}
+            <span class="enter-hint">${enterText} ↵</span>
+          </div>
+        </div>
+      `);
+    });
+
+    resultsEl.innerHTML = htmlParts.join('');
+
+    // CSP 安全的图标加载失败回退
+    resultsEl.querySelectorAll<HTMLImageElement>('.item-icon-img').forEach((img) => {
+      img.addEventListener('error', () => {
+        const box = img.parentElement;
+        if (!box) return;
+        const kind = (box.getAttribute('data-kind') as SearchItemKind) || 'tab';
+        box.innerHTML = getCategoryIcon(kind);
+      });
+    });
+
+    // 绑定行交互：悬停同步选中、点击执行、标签快捷关闭
+    resultsEl.querySelectorAll<HTMLElement>('.result-item').forEach((el) => {
+      const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
+      el.addEventListener('mouseenter', () => {
+        if (selectedIdx !== idx) {
+          selectedIdx = idx;
+          updateSelectionDom(false);
+        }
+      });
+      el.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement | null;
+        const closeBtn = target?.closest<HTMLButtonElement>('.tab-close-btn');
+        if (closeBtn) {
+          e.stopPropagation();
+          const tabId = parseInt(closeBtn.getAttribute('data-close-tab') || '', 10);
+          if (!Number.isNaN(tabId)) {
+            void quickCloseTab(tabId);
+          }
+          return;
+        }
+        if (currentItems[idx]) {
+          void executeItem(currentItems[idx], e.metaKey || e.ctrlKey);
+        }
+      });
+    });
+
+    const selectedEl = shadow.querySelector<HTMLElement>('.result-item.selected');
+    if (selectedEl) {
+      selectedEl.scrollIntoView({ block: 'nearest' });
+    }
+  };
+
+  // 面板内直接关闭某个已开标签页
+  const quickCloseTab = async (tabId: number) => {
+    try {
+      await sendRuntimeMessageWithTimeout({ type: 'closeTabs', tabIds: [tabId] }, 3000, 0);
+      currentItems = currentItems.filter((item) => !(item.kind === 'tab' && item.tabId === tabId));
+      if (selectedIdx >= currentItems.length) {
+        selectedIdx = Math.max(0, currentItems.length - 1);
+      }
+      renderResults();
+    } catch (e) {
+      console.warn('[YiTab] quick close tab failed:', e);
+    }
+  };
+
+  // 搜索请求（带序列号防竞态、超时重试、延迟骨架屏与错误回退）
+  const triggerSearch = async (rawQuery: string) => {
+    const seq = ++searchRequestSeq;
+    const parsed = parsePaletteQuery(rawQuery, currentFilter);
+    syncLeadingUI(parsed.isCommandPrefix);
+    syncFilterTabsUI(parsed.effectiveFilter);
+
+    if (skeletonDelayTimer) {
+      clearTimeout(skeletonDelayTimer);
+      skeletonDelayTimer = null;
+    }
+    if (currentItems.length === 0) {
+      skeletonDelayTimer = setTimeout(() => {
+        if (seq === searchRequestSeq && paletteContainer?.isConnected) {
+          renderSkeleton();
+        }
+      }, 120);
+    }
+
+    try {
+      const res = await sendRuntimeMessageWithTimeout<{ ok?: boolean; items?: SearchItem[] }>(
+        {
+          type: 'searchItems',
+          query: parsed.query,
+          kindFilter: parsed.effectiveFilter,
+          limit: 30,
+        },
+        4500,
+        1,
+      );
+      if (seq !== searchRequestSeq || !paletteContainer?.isConnected) return;
+      if (skeletonDelayTimer) {
+        clearTimeout(skeletonDelayTimer);
+        skeletonDelayTimer = null;
+      }
+      if (res && res.ok) {
+        currentItems = Array.isArray(res.items) ? res.items : [];
+        selectedIdx = 0;
+        renderResults();
+      } else {
+        renderErrorState(new Error('INVALID_RESPONSE'));
+      }
+    } catch (e) {
+      if (seq !== searchRequestSeq || !paletteContainer?.isConnected) return;
+      if (skeletonDelayTimer) {
+        clearTimeout(skeletonDelayTimer);
+        skeletonDelayTimer = null;
+      }
+      console.warn('[YiTab] search error:', e);
+      renderErrorState(e);
+    }
+  };
+
+  // 执行具体项（书签/历史默认新标签打开，按住 Cmd/Ctrl+Enter 在当前页打开）
+  const executeItem = async (item: SearchItem, openInCurrentTab = false) => {
+    closeCommandPalette();
+
+    try {
+      if (item.kind === 'tab' && item.tabId != null) {
+        await sendRuntimeMessageWithTimeout(
+          {
+            type: 'switchTab',
+            tabId: item.tabId,
+            windowId: item.windowId ?? 0,
+            closeSelf: false,
+          },
+          3000,
+          0,
+        );
+        return;
+      }
+
+      if (item.kind === 'command' && item.commandAction) {
+        const res = await sendRuntimeMessageWithTimeout<{
+          ok?: boolean;
+          message?: string;
+          copyText?: string;
+        }>(
+          {
+            type: 'executeCommand',
+            action: item.commandAction,
+          },
+          5000,
+          0,
+        );
+        if (res) {
+          if (res.copyText) {
+            try {
+              await navigator.clipboard.writeText(res.copyText);
+            } catch (e) {
+              console.warn('[YiTab] 写入剪贴板失败:', e);
+            }
+          }
+          if (res.message) {
+            showStatusNotice(String(res.message));
+          }
+        }
+        return;
+      }
+
+      if (item.url) {
+        if (openInCurrentTab) {
+          window.location.href = item.url;
+        } else {
+          await sendRuntimeMessageWithTimeout(
+            { type: 'openUrl', url: item.url, newTab: true },
+            3000,
+            0,
+          ).catch(() => {
+            window.open(item.url, '_blank', 'noopener,noreferrer');
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[YiTab] executeItem failed:', e);
+    }
+  };
 
   // 点击背景关闭
   backdropEl.addEventListener('click', (e) => {
@@ -875,13 +1717,27 @@ function openCommandPalette() {
     }
   });
 
+  // 清空输入
+  clearBtn.addEventListener('click', () => {
+    inputEl.value = '';
+    currentQuery = '';
+    inputEl.focus();
+    void triggerSearch('');
+  });
+
   // 分类按钮点击
   filterBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
-      filterBtns.forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentFilter = (btn.getAttribute('data-kind') as 'all' | SearchItemKind) || 'all';
-      triggerSearch(currentQuery);
+      const nextKind = (btn.getAttribute('data-kind') as 'all' | SearchItemKind) || 'all';
+      currentFilter = nextKind;
+      // 如果输入框处于 > 前缀模式但用户主动切到非指令分类，去掉 > 前缀
+      if (nextKind !== 'command' && currentQuery.trimStart().startsWith('>')) {
+        currentQuery = currentQuery.trimStart().slice(1).trimStart();
+        inputEl.value = currentQuery;
+      }
+      syncFilterTabsUI(nextKind);
+      inputEl.focus();
+      void triggerSearch(currentQuery);
     });
   });
 
@@ -889,210 +1745,120 @@ function openCommandPalette() {
   inputEl.addEventListener('input', (e) => {
     const val = (e.target as HTMLInputElement).value;
     currentQuery = val;
+    const parsed = parsePaletteQuery(val, currentFilter);
+    syncLeadingUI(parsed.isCommandPrefix);
+    syncFilterTabsUI(parsed.effectiveFilter);
+
     if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
     searchDebounceTimer = setTimeout(() => {
-      triggerSearch(val);
-    }, 100);
+      void triggerSearch(val);
+    }, 80);
   });
 
-  // 全键盘导航
-  inputEl.addEventListener('keydown', (e) => {
+  // 全局捕获级键盘导航（即便焦点不在输入框，Esc/上下/Tab 仍稳定响应）
+  paletteKeydownHandler = (e: KeyboardEvent) => {
+    if (!paletteContainer || !paletteContainer.isConnected) return;
+
     if (e.key === 'Escape') {
       e.preventDefault();
+      e.stopPropagation();
       closeCommandPalette();
       return;
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault();
+      e.stopPropagation();
       if (currentItems.length > 0) {
         selectedIdx = (selectedIdx + 1) % currentItems.length;
-        renderResults();
+        updateSelectionDom(true);
       }
       return;
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault();
+      e.stopPropagation();
       if (currentItems.length > 0) {
         selectedIdx = (selectedIdx - 1 + currentItems.length) % currentItems.length;
-        renderResults();
+        updateSelectionDom(true);
       }
       return;
     }
     if (e.key === 'Enter') {
+      // 中文输入法组合选词阶段不触发执行
+      if (e.isComposing || e.keyCode === 229) return;
       e.preventDefault();
+      e.stopPropagation();
       if (currentItems.length > 0 && currentItems[selectedIdx]) {
-        executeItem(currentItems[selectedIdx]);
+        void executeItem(currentItems[selectedIdx], e.metaKey || e.ctrlKey);
       }
       return;
     }
     if (e.key === 'Tab') {
       e.preventDefault();
+      e.stopPropagation();
       const kinds: ('all' | SearchItemKind)[] = ['all', 'tab', 'command', 'bookmark', 'history'];
       const curIdx = kinds.indexOf(currentFilter);
-      const nextKind = kinds[(curIdx + 1) % kinds.length];
+      const delta = e.shiftKey ? -1 : 1;
+      const nextKind = kinds[(curIdx + delta + kinds.length) % kinds.length];
       currentFilter = nextKind;
-      filterBtns.forEach((b) => {
-        b.classList.toggle('active', b.getAttribute('data-kind') === nextKind);
-      });
-      triggerSearch(currentQuery);
-      return;
-    }
-  });
-
-  // 搜索请求
-  const triggerSearch = async (query: string) => {
-    try {
-      const res = await chrome.runtime.sendMessage({
-        type: 'searchItems',
-        query,
-        kindFilter: currentFilter,
-        limit: 30,
-      });
-      if (res && res.ok) {
-        currentItems = res.items || [];
-        selectedIdx = 0;
-        renderResults();
+      if (nextKind !== 'command' && currentQuery.trimStart().startsWith('>')) {
+        currentQuery = currentQuery.trimStart().slice(1).trimStart();
+        inputEl.value = currentQuery;
       }
-    } catch (e) {
-      console.warn('[YiTab] search error:', e);
-    }
-  };
-
-  // 结果渲染
-  const renderResults = () => {
-    countEl.textContent = `找到 ${currentItems.length} 项`;
-    if (currentItems.length === 0) {
-      resultsEl.innerHTML = `<div class="empty-tip">未找到匹配项，可尝试搜索其他关键词</div>`;
+      syncFilterTabsUI(nextKind);
+      void triggerSearch(currentQuery);
       return;
     }
-
-    resultsEl.innerHTML = currentItems
-      .map((item, idx) => {
-        const isSelected = idx === selectedIdx;
-        const kindLabel =
-          item.kind === 'tab'
-            ? '标签'
-            : item.kind === 'command'
-              ? '指令'
-              : item.kind === 'bookmark'
-                ? '书签'
-                : '历史';
-
-        const kindClass = `kind-${item.kind}`;
-
-        // 高亮关键词
-        let highlightedTitle = escapeHtml(item.title);
-        if (currentQuery.trim()) {
-          const qEsc = escapeHtml(currentQuery.trim());
-          const reg = new RegExp(`(${qEsc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-          highlightedTitle = highlightedTitle.replace(reg, '<mark>$1</mark>');
-        }
-
-        const subtitle = escapeHtml(item.domain || item.description || item.url || '');
-
-        return `
-          <div class="result-item ${isSelected ? 'selected' : ''}" data-idx="${idx}">
-            <div class="item-icon-box">
-              ${
-                item.favicon
-                  ? `<img class="item-icon-img" src="${escapeHtml(item.favicon)}" alt="" onerror="this.style.display='none'" />`
-                  : getCategoryIcon(item.kind)
-              }
-            </div>
-            <div class="item-info">
-              <div class="item-title">${highlightedTitle}</div>
-              <div class="item-sub">
-                ${
-                  item.groupTitle
-                    ? `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${escapeHtml(
-                        item.groupColor || '#4f46e5',
-                      )}"></span><span>${escapeHtml(item.groupTitle)}</span> · `
-                    : ''
-                }
-                <span>${subtitle}</span>
-              </div>
-            </div>
-            <span class="kind-tag ${kindClass}">${kindLabel}</span>
-          </div>
-        `;
-      })
-      .join('');
-
-    // 点击执行
-    shadow.querySelectorAll<HTMLElement>('.result-item').forEach((el) => {
-      const idx = parseInt(el.getAttribute('data-idx') || '0', 10);
-      el.addEventListener('click', () => {
-        if (currentItems[idx]) {
-          executeItem(currentItems[idx]);
-        }
-      });
-    });
-
-    // 自动滚动选中项至视野中央
-    const selectedEl = shadow.querySelector<HTMLElement>('.result-item.selected');
-    if (selectedEl) {
-      selectedEl.scrollIntoView({ block: 'nearest' });
-    }
-  };
-
-  // 执行具体项
-  const executeItem = async (item: SearchItem) => {
-    closeCommandPalette();
-
-    if (item.kind === 'tab' && item.tabId != null) {
-      await chrome.runtime.sendMessage({
-        type: 'switchTab',
-        tabId: item.tabId,
-        windowId: item.windowId ?? 0,
-        closeSelf: false,
-      });
-      return;
-    }
-
-    if (item.kind === 'command' && item.commandAction) {
-      const res = await chrome.runtime.sendMessage({
-        type: 'executeCommand',
-        action: item.commandAction,
-      });
-      if (res) {
-        if (res.copyText) {
-          try {
-            await navigator.clipboard.writeText(res.copyText);
-          } catch (e) {
-            console.warn('[YiTab] 写入剪贴板失败:', e);
-          }
-        }
-        if (res.message) {
-          showStatusNotice(String(res.message));
-        }
+    if ((e.key === 'Backspace' && (e.metaKey || e.ctrlKey)) || (e.altKey && e.key.toLowerCase() === 'w')) {
+      const active = currentItems[selectedIdx];
+      if (active && active.kind === 'tab' && active.tabId != null) {
+        e.preventDefault();
+        e.stopPropagation();
+        void quickCloseTab(active.tabId);
       }
-      return;
-    }
-
-    if (item.url) {
-      window.location.href = item.url;
     }
   };
+  document.addEventListener('keydown', paletteKeydownHandler, true);
 
-  // 初始加载当前所有标签
-  triggerSearch('');
+  // 接收 background 推送的首屏数据（仅当尚未输入且停留在「全部」视图时生效）
+  paletteApplyInitialItems = (items: SearchItem[]) => {
+    if (!paletteContainer?.isConnected) return;
+    if (currentQuery.trim() !== '' || currentFilter !== 'all') return;
+    if (skeletonDelayTimer) {
+      clearTimeout(skeletonDelayTimer);
+      skeletonDelayTimer = null;
+    }
+    searchRequestSeq++;
+    currentItems = items;
+    selectedIdx = 0;
+    renderResults();
+  };
+
+  // 优先使用预取首屏数据；未提供时再向 background 请求
+  if (Array.isArray(initialItems)) {
+    currentItems = initialItems;
+    selectedIdx = 0;
+    renderResults();
+  } else {
+    void triggerSearch('');
+  }
 }
 
 function getCategoryIcon(kind: SearchItemKind): string {
   if (kind === 'command') {
-    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9333ea" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`;
+    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`;
   }
   if (kind === 'bookmark') {
-    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
   }
   if (kind === 'history') {
-    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`;
+    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline></svg>`;
   }
-  return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>`;
+  return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="18" x2="12" y2="21"></line></svg>`;
 }
 
-function escapeHtml(str: string): string {
-  return str
+function escapeHtml(str: unknown): string {
+  return String(str ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

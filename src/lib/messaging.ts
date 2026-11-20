@@ -106,6 +106,12 @@ export interface ExecuteCommandRequest {
   windowId?: number;
 }
 
+export interface OpenUrlRequest {
+  type: 'openUrl';
+  url: string;
+  newTab?: boolean;
+}
+
 /** 阶段四：书签生态与闲置标签休眠维护协议 */
 
 export interface ScanBookmarksRequest {
@@ -156,6 +162,7 @@ export type BackgroundRequest =
   | RestoreSnapshotRequest
   | SearchItemsRequest
   | ExecuteCommandRequest
+  | OpenUrlRequest
   | ScanBookmarksRequest
   | CleanBookmarksRequest
   | ExportBookmarksBackupRequest

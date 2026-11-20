@@ -84,6 +84,16 @@ import {
   importAllConfig,
   parseConfigBackup,
 } from '../../lib/config-backup';
+import {
+  formatShortcutParts,
+  getDefaultPaletteShortcut,
+  getPaletteShortcut,
+  getShortcutPresets,
+  isMacPlatform,
+  parseKeyboardEventToShortcut,
+  savePaletteShortcut,
+  type PaletteShortcutConfig,
+} from '../../lib/palette-shortcut';
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -152,6 +162,12 @@ function OptionsPage() {
   // 工作台（新标签页）偏好
   const [newTabSettings, setNewTabSettingsState] =
     useState<NewTabSettings>(DEFAULT_NEWTAB_SETTINGS);
+  // 命令面板自定义快捷键
+  const [paletteShortcut, setPaletteShortcutState] = useState<PaletteShortcutConfig>(() =>
+    getDefaultPaletteShortcut(),
+  );
+  const [recordingShortcut, setRecordingShortcut] = useState(false);
+  const [chromeCommandShortcut, setChromeCommandShortcut] = useState<string>('');
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const importModeRef = useRef<'merge' | 'overwrite'>('merge');
 
@@ -222,7 +238,65 @@ function OptionsPage() {
     checkAiCapabilities().then(setAiCapabilities);
     getAiCacheStats().then((s) => setAiCacheCount(s.count));
     getNewTabSettings().then(setNewTabSettingsState);
+    getPaletteShortcut().then(setPaletteShortcutState);
+    if (typeof chrome !== 'undefined' && chrome.commands?.getAll) {
+      chrome.commands
+        .getAll()
+        .then((cmds) => {
+          const target = cmds.find((c) => c.name === 'toggle-palette');
+          setChromeCommandShortcut(target?.shortcut || '');
+        })
+        .catch(() => {});
+    }
   }, []);
+
+  const handleSavePaletteShortcut = async (nextCfg: PaletteShortcutConfig, tip?: string) => {
+    const savedCfg = await savePaletteShortcut(nextCfg);
+    setPaletteShortcutState(savedCfg);
+    if (tip) {
+      messageApi.success(tip);
+    }
+  };
+
+  useEffect(() => {
+    if (!recordingShortcut) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        setRecordingShortcut(false);
+        return;
+      }
+      const parsed = parseKeyboardEventToShortcut(e);
+      if (!parsed) {
+        if (!['Meta', 'Control', 'Alt', 'Shift'].includes(e.key)) {
+          messageApi.warning('请至少搭配一个修饰键（⌘ / Ctrl / Alt）');
+        }
+        return;
+      }
+      setRecordingShortcut(false);
+      const label = formatShortcutParts(parsed).join(' + ');
+      void handleSavePaletteShortcut(
+        { ...parsed, enabled: true },
+        `已设置命令面板快捷键为 ${label}，所有网页立即生效`,
+      );
+    };
+    const onBlur = () => setRecordingShortcut(false);
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [recordingShortcut]);
+
+  const handleOpenChromeShortcuts = () => {
+    if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+      chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }).catch(() => {
+        messageApi.info('请在地址栏打开 chrome://extensions/shortcuts 修改全局快捷键');
+      });
+    }
+  };
 
   const handleSaveNewTabSettings = async (patch: Partial<NewTabSettings>) => {
     const next = await saveNewTabSettings(patch);
@@ -663,6 +737,176 @@ function OptionsPage() {
                           <div style={{ fontSize: 12, color: tk.ink3, marginTop: 6 }}>
                             两种模式下未单独记忆时的兜底搜索引擎。
                           </div>
+                        </div>
+                      </div>
+                    </Card>
+
+                    {/* 命令面板快捷键设置 */}
+                    <Card
+                      title={
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 16, fontWeight: 600, color: tk.ink }}>
+                            命令面板快捷键
+                          </span>
+                          <span style={{ fontSize: 12, color: tk.ink3, fontWeight: 'normal' }}>
+                            自定义网页内一键呼出 YiTab 命令与标签搜索面板的组合键
+                          </span>
+                        </div>
+                      }
+                      style={{
+                        marginBottom: 20,
+                        borderRadius: 12,
+                        borderColor: tk.hairline,
+                        boxShadow: tk.shadowCard,
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {/* 行 1：页内自定义快捷键开关 + 录制器 */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: 12,
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 500, color: tk.ink }}>
+                              页内自定义快捷键
+                            </div>
+                            <div style={{ fontSize: 12, color: tk.ink3, marginTop: 2 }}>
+                              开启后在任意网页中按下下方组合键即可呼出，修改后所有已开网页立即同步生效。
+                            </div>
+                          </div>
+                          <Space size={10} align="center">
+                            <button
+                              type="button"
+                              onClick={() => setRecordingShortcut((v) => !v)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                minWidth: 148,
+                                height: 34,
+                                padding: '0 12px',
+                                borderRadius: 8,
+                                border: `1.5px solid ${recordingShortcut ? tk.accent : tk.hairlineStrong}`,
+                                background: recordingShortcut ? tk.accentSoft : tk.canvas,
+                                color: recordingShortcut ? tk.accent : tk.ink,
+                                cursor: 'pointer',
+                                fontSize: 12.5,
+                                fontWeight: 500,
+                                justifyContent: 'center',
+                                transition: 'all 0.15s ease',
+                              }}
+                              title="点击后直接按下你想要的快捷键组合"
+                            >
+                              {recordingShortcut ? (
+                                <span>请按下组合键… (Esc 取消)</span>
+                              ) : (
+                                <>
+                                  {formatShortcutParts(paletteShortcut).map((part, idx) => (
+                                    <kbd
+                                      key={idx}
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        minWidth: 22,
+                                        height: 22,
+                                        padding: '0 6px',
+                                        fontSize: 11.5,
+                                        fontWeight: 600,
+                                        borderRadius: 5,
+                                        background: tk.surface,
+                                        color: paletteShortcut.enabled ? tk.ink : tk.ink3,
+                                        border: `1px solid ${tk.hairlineStrong}`,
+                                        boxShadow: `0 1px 0 ${tk.hairlineStrong}`,
+                                      }}
+                                    >
+                                      {part}
+                                    </kbd>
+                                  ))}
+                                </>
+                              )}
+                            </button>
+                            <Switch
+                              checked={paletteShortcut.enabled}
+                              onChange={(checked) =>
+                                void handleSavePaletteShortcut(
+                                  { ...paletteShortcut, enabled: checked },
+                                  checked ? '已开启页内自定义快捷键' : '已关闭页内自定义快捷键',
+                                )
+                              }
+                            />
+                          </Space>
+                        </div>
+
+                        {/* 常用预设组合一键应用 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, color: tk.ink3 }}>常用预设：</span>
+                          {getShortcutPresets().map((preset) => {
+                            const parts = formatShortcutParts(preset);
+                            const isCurrent =
+                              paletteShortcut.enabled &&
+                              paletteShortcut.code === preset.code &&
+                              paletteShortcut.meta === preset.meta &&
+                              paletteShortcut.ctrl === preset.ctrl &&
+                              paletteShortcut.alt === preset.alt &&
+                              paletteShortcut.shift === preset.shift;
+                            return (
+                              <Button
+                                key={parts.join('-')}
+                                size="small"
+                                type={isCurrent ? 'primary' : 'default'}
+                                ghost={isCurrent}
+                                onClick={() => {
+                                  setRecordingShortcut(false);
+                                  void handleSavePaletteShortcut(
+                                    { ...preset, enabled: true },
+                                    `已切换为 ${parts.join(' + ')}`,
+                                  );
+                                }}
+                              >
+                                {parts.join(isMacPlatform() ? ' ' : ' + ')}
+                              </Button>
+                            );
+                          })}
+                        </div>
+
+                        {/* 分割线 + Chrome 全局快捷键状态与直达入口 */}
+                        <div
+                          style={{
+                            borderTop: `1px solid ${tk.hairline}`,
+                            paddingTop: 14,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: 12,
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: 13.5, fontWeight: 500, color: tk.ink }}>
+                              Chrome 全局快捷键
+                              <Tag
+                                style={{
+                                  marginLeft: 8,
+                                  fontWeight: 600,
+                                  borderRadius: 5,
+                                }}
+                              >
+                                {chromeCommandShortcut || (isMacPlatform() ? '⌘⇧K' : 'Alt+Shift+K')}
+                              </Tag>
+                            </div>
+                            <div style={{ fontSize: 12, color: tk.ink3, marginTop: 2 }}>
+                              由浏览器原生接管，在新标签页或 chrome:// 受限页也可触发（需在 Chrome 扩展快捷键页修改）。
+                            </div>
+                          </div>
+                          <Button size="small" onClick={handleOpenChromeShortcuts}>
+                            前往 Chrome 快捷键设置
+                          </Button>
                         </div>
                       </div>
                     </Card>

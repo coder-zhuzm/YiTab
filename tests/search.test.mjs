@@ -4,6 +4,7 @@ import {
   scoreStringMatch,
   computeItemScore,
   filterAndRankItems,
+  parsePaletteQuery,
   escapeOmniboxXml,
   formatOmniboxSuggest,
   ACTION_COMMANDS,
@@ -186,4 +187,38 @@ test('ACTION_COMMANDS contains required productivity commands', () => {
     assert.ok(cmd.description.length > 0);
     assert.ok(cmd.keywords.length > 0);
   }
+});
+
+test('computeItemScore matches command pinyin and English keywords', () => {
+  const muteCmd = ACTION_COMMANDS.find((c) => c.action === 'mute_audible_tabs');
+  assert.ok(muteCmd);
+  const item = {
+    id: muteCmd.id,
+    kind: 'command',
+    title: muteCmd.title,
+    description: muteCmd.description,
+    keywords: muteCmd.keywords,
+    commandAction: muteCmd.action,
+  };
+
+  assert.ok(computeItemScore('jingyin', item) > 50, 'Pinyin keyword should match');
+  assert.ok(computeItemScore('mute', item) > 50, 'English keyword should match');
+});
+
+test('parsePaletteQuery detects > command prefix and preserves normal queries', () => {
+  assert.deepEqual(parsePaletteQuery('> mute', 'all'), {
+    query: 'mute',
+    effectiveFilter: 'command',
+    isCommandPrefix: true,
+  });
+  assert.deepEqual(parsePaletteQuery('  >jingyin', 'tab'), {
+    query: 'jingyin',
+    effectiveFilter: 'command',
+    isCommandPrefix: true,
+  });
+  assert.deepEqual(parsePaletteQuery('github', 'bookmark'), {
+    query: 'github',
+    effectiveFilter: 'bookmark',
+    isCommandPrefix: false,
+  });
 });
