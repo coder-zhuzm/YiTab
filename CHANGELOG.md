@@ -8,6 +8,15 @@
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-11-22
+
+### 🐛 兼容性与快捷键稳定性修复 (Bug Fixes)
+
+- **绕过 AdGuard `ExtendedCss` 误杀全屏遮罩**：将命令面板、SPA 轻提示与状态气泡三个页内浮层宿主改为自定义标签（`<yitab-palette-overlay>` / `<yitab-toast-overlay>` / `<yitab-notice-overlay>`），移除外层内联 `style="position: fixed; z-index: 2147483647"` 属性并采用 `:host { all: initial; display: contents !important; }`，把定位与高层级完全封装至 Shadow DOM 内部，彻底解决腾讯云等站点因广告拦截规则隐藏浮层导致的「闪一下没了」问题。
+- **清除严格 CSP 站点内联事件报错**：移除 SPA 去重轻提示图标中残留的 `onerror="this.style.display='none'"`，改用 DOM `addEventListener('error', ...)` 绑定兜底，消除 X (Twitter) 等带 `nonce-` 的严格 `script-src` CSP 页面报错。
+- **抢先拦截站点冲突快捷键与子 `iframe` 支持**：`content.ts` 调整为 `runAt: 'document_start'` 与 `allFrames: true`，在 `window` 捕获阶段优先于宿主网页监听快捷键并调用 `stopImmediatePropagation()` 与配套 `keyup` 拦截；子 `iframe` 触发时通过后台 `togglePaletteFromFrame` 路由定向唤出顶层页面（`frameId: 0`）命令面板。
+- **防抖与连发保护**：`matchesPaletteShortcut` 过滤长按连发 `e.repeat` 事件（新增单元测试覆盖），`toggleCommandPalette` 增加 `isConnected` 检测与 `250ms` 开启防闪关保护。
+
 ## [2.0.0] - 2026-11-22
 
 ### 🚀 2.0 架构里程碑：Precision Slate 全栈工具美学重构 (Major Release)

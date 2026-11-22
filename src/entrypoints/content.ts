@@ -44,8 +44,11 @@ function initTheme(): void {
   });
 }
 
-/** 读取并订阅页内自定义命令面板快捷键（设置页修改后所有已开网页立即生效） */
-function initPaletteShortcut(): void {
+const handledShortcutEvents = new WeakSet<KeyboardEvent>();
+let suppressShortcutKeyupCode: string | null = null;
+
+/** 读取并订阅页内自定义命令面板快捷键（在 document_start 注册 window 捕获监听，抢先于网页自身快捷键拦截） */
+function initPaletteShortcut(isTopFrame: boolean): void {
   chrome.storage?.sync?.get(PALETTE_SHORTCUT_STORAGE_KEY).then((res) => {
     paletteShortcut = sanitizePaletteShortcut(res[PALETTE_SHORTCUT_STORAGE_KEY]);
   }).catch(() => {});
@@ -55,24 +58,45 @@ function initPaletteShortcut(): void {
     paletteShortcut = sanitizePaletteShortcut(changes[PALETTE_SHORTCUT_STORAGE_KEY].newValue);
   });
 
-  document.addEventListener(
-    'keydown',
-    (e: KeyboardEvent) => {
-      if (!matchesPaletteShortcut(e, paletteShortcut)) return;
+  const handleShortcutKeydown = (e: KeyboardEvent) => {
+    if (handledShortcutEvents.has(e)) return;
+    if (!matchesPaletteShortcut(e, paletteShortcut)) return;
+    handledShortcutEvents.add(e);
+    suppressShortcutKeyupCode = e.code;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    if (isTopFrame) {
+      toggleCommandPalette();
+    } else {
+      chrome.runtime.sendMessage({ type: 'togglePaletteFromFrame' }).catch(() => {});
+    }
+  };
+
+  const handleShortcutKeyup = (e: KeyboardEvent) => {
+    if (suppressShortcutKeyupCode && e.code === suppressShortcutKeyupCode) {
+      suppressShortcutKeyupCode = null;
       e.preventDefault();
       e.stopPropagation();
-      toggleCommandPalette();
-    },
-    true,
-  );
+      e.stopImmediatePropagation();
+    }
+  };
+
+  window.addEventListener('keydown', handleShortcutKeydown, true);
+  document.addEventListener('keydown', handleShortcutKeydown, true);
+  window.addEventListener('keyup', handleShortcutKeyup, true);
 }
 
 export default defineContentScript({
   matches: ['*://*/*'],
-  runAt: 'document_idle',
+  runAt: 'document_start',
+  allFrames: true,
   main() {
+    const isTopFrame = window === window.top;
+    initPaletteShortcut(isTopFrame);
+    if (!isTopFrame) return;
+
     initTheme();
-    initPaletteShortcut();
 
     // 1. 监听来自 background 的 SPA 路由重复提醒与全局快捷键指令
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -122,22 +146,22 @@ function showStatusNotice(text: string) {
     noticeTimer = null;
   }
   if (!noticeContainer) {
-    noticeContainer = document.createElement('div');
+    noticeContainer = document.createElement('yitab-notice-overlay');
     noticeContainer.id = 'yitab-status-notice-root';
-    noticeContainer.style.position = 'fixed';
-    noticeContainer.style.top = '18px';
-    noticeContainer.style.left = '50%';
-    noticeContainer.style.transform = 'translateX(-50%)';
-    noticeContainer.style.zIndex = '2147483647';
-    noticeContainer.style.pointerEvents = 'none';
     document.documentElement.appendChild(noticeContainer);
   }
   applyThemeTo(noticeContainer);
   const shadow = noticeContainer.shadowRoot ?? noticeContainer.attachShadow({ mode: 'open' });
   shadow.innerHTML = `
     <style>
-      :host { all: initial; display: block; }
+      :host { all: initial; display: contents !important; }
       .pill {
+        position: fixed;
+        top: 18px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 2147483647;
+        pointer-events: none;
         background: #ffffff;
         color: #111318;
         box-shadow: 0 0 0 1px oklch(0 0 0 / 0.08), 0 12px 28px -8px rgba(17, 19, 24, 0.18);
@@ -193,14 +217,8 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
   }
 
   if (!toastContainer) {
-    toastContainer = document.createElement('div');
+    toastContainer = document.createElement('yitab-toast-overlay');
     toastContainer.id = 'yitab-spa-toast-root';
-    toastContainer.style.position = 'fixed';
-    toastContainer.style.top = '16px';
-    toastContainer.style.right = '20px';
-    toastContainer.style.zIndex = '2147483647';
-    toastContainer.style.maxWidth = 'min(390px, calc(100vw - 40px))';
-    toastContainer.style.pointerEvents = 'auto';
     document.documentElement.appendChild(toastContainer);
   }
   applyThemeTo(toastContainer);
@@ -214,7 +232,7 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
     <style>
       :host {
         all: initial;
-        display: block;
+        display: contents !important;
       }
 
       /* 深色：对齐主界面 Precision Slate 令牌 */
@@ -288,7 +306,12 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
       }
 
       .card {
-        position: relative;
+        position: fixed;
+        top: 16px;
+        right: 20px;
+        z-index: 2147483647;
+        width: min(390px, calc(100vw - 40px));
+        pointer-events: auto;
         overflow: hidden;
         background: #ffffff;
         color: #111318;
@@ -554,7 +577,7 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         <div class="favicon-box">
           ${
             favicon
-              ? `<img class="favicon-img" src="${escapeHtml(favicon)}" alt="" onerror="this.style.display='none'" />`
+              ? `<img class="favicon-img" src="${escapeHtml(favicon)}" alt="" />`
               : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#525d70" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="4" width="18" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="18" x2="12" y2="21"></line></svg>`
           }
         </div>
@@ -571,6 +594,13 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
       <div class="countdown-track"><div class="countdown-bar"></div></div>
     </div>
   `;
+
+  const toastFavicon = shadow.querySelector<HTMLImageElement>('.favicon-img');
+  if (toastFavicon) {
+    toastFavicon.addEventListener('error', () => {
+      toastFavicon.style.display = 'none';
+    });
+  }
 
   const dismiss = () => {
     const card = shadow.getElementById('yitab-card');
@@ -708,11 +738,18 @@ function applyInitialPaletteItems(items: SearchItem[]) {
   }
 }
 
+let lastPaletteOpenedAt = 0;
+
 function toggleCommandPalette(initialItems?: SearchItem[] | null): boolean {
-  if (paletteContainer) {
+  if (paletteContainer?.isConnected) {
+    // 防止按键重复、微前端/iframe 代理重放事件在极短时间内将刚打开的面板再次关闭
+    if (Date.now() - lastPaletteOpenedAt < 250) {
+      return true;
+    }
     closeCommandPalette();
     return false;
   }
+  lastPaletteOpenedAt = Date.now();
   openCommandPalette(initialItems);
   return true;
 }
@@ -776,12 +813,8 @@ function resolveGroupDotColor(color?: string): string {
 function openCommandPalette(initialItems?: SearchItem[] | null) {
   closeCommandPalette();
 
-  paletteContainer = document.createElement('div');
+  paletteContainer = document.createElement('yitab-palette-overlay');
   paletteContainer.id = 'yitab-command-palette-root';
-  paletteContainer.style.position = 'fixed';
-  paletteContainer.style.inset = '0';
-  paletteContainer.style.zIndex = '2147483647';
-  paletteContainer.style.pointerEvents = 'auto';
   document.documentElement.appendChild(paletteContainer);
   applyThemeTo(paletteContainer);
 
@@ -794,7 +827,7 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
       /* 对齐 YiTab Precision Slate 设计令牌（冷灰/石墨表面层级 + 单一钴蓝信号色） */
       :host {
         all: initial;
-        display: block;
+        display: contents !important;
         --canvas: #f2f4f7;
         --surface: #ffffff;
         --surface-well: #eaeef4;
@@ -873,6 +906,8 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
       .backdrop {
         position: fixed;
         inset: 0;
+        z-index: 2147483647;
+        pointer-events: auto;
         background: var(--backdrop);
         backdrop-filter: blur(6px);
         -webkit-backdrop-filter: blur(6px);

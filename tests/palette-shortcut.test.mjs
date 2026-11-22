@@ -97,6 +97,15 @@ test('matchesPaletteShortcut matches exact modifiers via physical code and ignor
     false,
   );
 
+  // Auto-repeat keydown must not bounce-toggle the palette
+  assert.equal(
+    matchesPaletteShortcut(
+      { code: 'KeyK', metaKey: false, ctrlKey: false, altKey: true, shiftKey: false, isComposing: false, repeat: true },
+      cfg,
+    ),
+    false,
+  );
+
   // Disabled shortcut must not trigger
   assert.equal(
     matchesPaletteShortcut(

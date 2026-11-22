@@ -548,6 +548,11 @@ export default defineBackground(() => {
             }
           }
           sendResponse({ ok: true });
+        } else if (msg.type === 'togglePaletteFromFrame') {
+          if (sender.tab?.id != null) {
+            await togglePaletteInTab(sender.tab.id);
+          }
+          sendResponse({ ok: true });
         } else if (msg.type === 'scanBookmarks') {
           if (!chrome.bookmarks) {
             sendResponse({ ok: false, error: '未获取书签读取权限' });
@@ -730,23 +735,7 @@ export default defineBackground(() => {
             /^https?:\/\//i.test(activeTab.url);
 
           if (canInjectContent && activeTab.id != null) {
-            // 立即发送切换消息，不在发送前 await 检索，避免延迟或消耗 openPopup 所需的用户手势
-            const delivered = (await chrome.tabs
-              .sendMessage(activeTab.id, { type: 'yitab_toggle_palette' })
-              .catch(() => null)) as { ok?: boolean; opened?: boolean } | null;
-
-            if (delivered?.ok) {
-              if (delivered.opened) {
-                const items = await queryAllSearchItems('', 'all', 30).catch(() => null);
-                if (items) {
-                  chrome.tabs
-                    .sendMessage(activeTab.id, {
-                      type: 'yitab_palette_initial_items',
-                      items,
-                    })
-                    .catch(() => {});
-                }
-              }
+            if (await togglePaletteInTab(activeTab.id)) {
               return;
             }
           }
@@ -766,6 +755,32 @@ export default defineBackground(() => {
 
   console.info('[YiTab] background ready with SPA, TabGroups & Omnibox support');
 });
+
+async function togglePaletteInTab(tabId: number): Promise<boolean> {
+  // 立即发送切换消息到顶层 frame，不在发送前 await 检索，避免延迟或消耗 openPopup 所需的用户手势
+  const delivered = (await chrome.tabs
+    .sendMessage(tabId, { type: 'yitab_toggle_palette' }, { frameId: 0 })
+    .catch(() => null)) as { ok?: boolean; opened?: boolean } | null;
+
+  if (!delivered?.ok) return false;
+
+  if (delivered.opened) {
+    const items = await queryAllSearchItems('', 'all', 30).catch(() => null);
+    if (items) {
+      chrome.tabs
+        .sendMessage(
+          tabId,
+          {
+            type: 'yitab_palette_initial_items',
+            items,
+          },
+          { frameId: 0 },
+        )
+        .catch(() => {});
+    }
+  }
+  return true;
+}
 
 function confirmURL(url: string): string {
   return chrome.runtime.getURL('/confirm.html') + '?u=' + encodeURIComponent(url);

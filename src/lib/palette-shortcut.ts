@@ -128,11 +128,13 @@ export function parseKeyboardEventToShortcut(
  * 判断按键事件是否命中自定义命令面板快捷键
  */
 export function matchesPaletteShortcut(
-  e: Pick<KeyboardEvent, 'code' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'isComposing'>,
+  e: Pick<KeyboardEvent, 'code' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'isComposing'> & {
+    repeat?: boolean;
+  },
   cfg: PaletteShortcutConfig,
 ): boolean {
   if (!cfg.enabled) return false;
-  if (e.isComposing) return false;
+  if (e.isComposing || e.repeat) return false;
   if (e.code !== cfg.code) return false;
   return (
     e.metaKey === cfg.meta &&

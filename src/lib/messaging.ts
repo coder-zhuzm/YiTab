@@ -146,6 +146,10 @@ export interface ArchiveInactiveTabsRequest {
   customName?: string;
 }
 
+export interface TogglePaletteFromFrameRequest {
+  type: 'togglePaletteFromFrame';
+}
+
 export type BackgroundRequest =
   | FindDuplicatesRequest
   | ConfirmOpenRequest
@@ -168,7 +172,8 @@ export type BackgroundRequest =
   | ExportBookmarksBackupRequest
   | GetTabHealthRequest
   | DiscardTabsRequest
-  | ArchiveInactiveTabsRequest;
+  | ArchiveInactiveTabsRequest
+  | TogglePaletteFromFrameRequest;
 
 export interface FindDuplicatesResponse {
   ok: true;
