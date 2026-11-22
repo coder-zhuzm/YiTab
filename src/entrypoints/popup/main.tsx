@@ -81,6 +81,7 @@ import {
   formatTabsExport,
   getDeterministicColor,
   getSnapshots,
+  isSnapshotableTab,
   renameSnapshot,
   saveSnapshot,
   type DomainGroupAnalysis,
@@ -236,7 +237,10 @@ function PopupApp() {
     }
   };
 
-  const activeHost = useMemo(() => hostOf(activeTabUrl), [activeTabUrl]);
+  const activeHost = useMemo(() => {
+    if (!/^https?:\/\//i.test(activeTabUrl)) return '';
+    return hostOf(activeTabUrl);
+  }, [activeTabUrl]);
   const isCurrentWhitelisted = useMemo(
     () => Boolean(activeTabUrl && inWhitelist(activeTabUrl, dedupSettings.whitelist)),
     [activeTabUrl, dedupSettings.whitelist],
@@ -379,10 +383,14 @@ function PopupApp() {
 
   // 保存当前会话快照
   const handleSaveSnapshot = async () => {
-    if (!currentTabs.length) return;
+    const validTabs = currentTabs.filter((t) => isSnapshotableTab(t));
+    if (!validTabs.length) {
+      messageApi.info('当前窗口暂无可保存的网页标签');
+      return;
+    }
     setIsSavingSnapshot(true);
     try {
-      await saveSnapshot(currentTabs, newSnapshotName);
+      await saveSnapshot(validTabs, newSnapshotName);
       setNewSnapshotName('');
       const snaps = await getSnapshots();
       setSnapshots(snaps);
@@ -1124,11 +1132,33 @@ function PopupApp() {
                                   </span>
                                 </div>
                                 <Text type="secondary" className="yt-tnum" style={{ fontSize: 11 }}>
-                                  {new Date(snap.createdAt).toLocaleString()}
+                                  {(() => {
+                                    const d = new Date(snap.createdAt);
+                                    const pad = (n: number) => String(n).padStart(2, '0');
+                                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                                  })()}
                                 </Text>
                               </div>
 
-                              <Space size={2}>
+                              <Space size={4}>
+                                <Button
+                                  size="small"
+                                  type="primary"
+                                  ghost
+                                  icon={<FolderOpenOutlined />}
+                                  onClick={() => handleRestoreSnapshot(snap, false)}
+                                  style={{ fontSize: 11.5, padding: '0 7px' }}
+                                >
+                                  恢复
+                                </Button>
+                                <Tooltip title="在新窗口全部恢复">
+                                  <Button
+                                    size="small"
+                                    type="text"
+                                    icon={<ExportOutlined style={{ color: tk.accentInk }} />}
+                                    onClick={() => handleRestoreSnapshot(snap, true)}
+                                  />
+                                </Tooltip>
                                 <Tooltip title="重命名快照">
                                   <Button
                                     size="small"
@@ -1138,22 +1168,6 @@ function PopupApp() {
                                       setEditingSnapshotId(snap.id);
                                       setEditingSnapshotName(snap.name);
                                     }}
-                                  />
-                                </Tooltip>
-                                <Tooltip title="在新窗口全部恢复">
-                                  <Button
-                                    size="small"
-                                    type="text"
-                                    icon={<ExportOutlined style={{ color: tk.accentInk }} />}
-                                    onClick={() => handleRestoreSnapshot(snap, true)}
-                                  />
-                                </Tooltip>
-                                <Tooltip title="在当前窗口恢复">
-                                  <Button
-                                    size="small"
-                                    type="text"
-                                    icon={<FolderOpenOutlined style={{ color: tk.ink2 }} />}
-                                    onClick={() => handleRestoreSnapshot(snap, false)}
                                   />
                                 </Tooltip>
                                 <Popconfirm

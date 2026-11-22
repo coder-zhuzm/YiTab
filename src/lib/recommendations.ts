@@ -334,17 +334,22 @@ export function aggregateHistoryRecommendations(
       now,
     );
 
+    const safeTitle =
+      item.title && item.title.trim() && !/^https?:\/\//i.test(item.title.trim())
+        ? item.title.trim()
+        : '';
+
     const existing = domainMap.get(domain);
     if (!existing) {
       domainMap.set(domain, {
         domain,
         primaryUrl,
-        bestTitle: item.title || domain,
+        bestTitle: safeTitle || domain,
         totalScore: itemScore,
         totalVisits: item.visitCount || 1,
         latestVisitTime: item.lastVisitTime,
-        latestDeepItem: isDeepRoute(item.url)
-          ? { url: item.url, title: item.title || '', time: item.lastVisitTime }
+        latestDeepItem: isDeepRoute(item.url) && safeTitle
+          ? { url: item.url, title: safeTitle, time: item.lastVisitTime }
           : undefined,
       });
     } else {
@@ -352,16 +357,16 @@ export function aggregateHistoryRecommendations(
       existing.totalVisits += item.visitCount || 1;
       if (item.lastVisitTime > existing.latestVisitTime) {
         existing.latestVisitTime = item.lastVisitTime;
-        if (item.title && item.title.trim()) {
-          existing.bestTitle = item.title;
+        if (safeTitle) {
+          existing.bestTitle = safeTitle;
         }
       }
-      // 记录最近打开的深层上下文页面
-      if (isDeepRoute(item.url)) {
+      // 记录最近打开的深层上下文页面（必须有有效标题，不展示裸 URL）
+      if (isDeepRoute(item.url) && safeTitle) {
         if (!existing.latestDeepItem || item.lastVisitTime > existing.latestDeepItem.time) {
           existing.latestDeepItem = {
             url: item.url,
-            title: item.title || '',
+            title: safeTitle,
             time: item.lastVisitTime,
           };
         }

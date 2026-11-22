@@ -52,7 +52,7 @@ export function isMacPlatform(): boolean {
 
 export function getDefaultPaletteShortcut(isMac = isMacPlatform()): PaletteShortcutConfig {
   return {
-    enabled: false,
+    enabled: true,
     code: 'KeyK',
     label: 'K',
     meta: isMac,
@@ -89,12 +89,12 @@ export function sanitizePaletteShortcut(
   if (!meta && !ctrl && !alt) {
     return {
       ...fallback,
-      enabled: obj.enabled === true,
+      enabled: obj.enabled !== false,
     };
   }
 
   return {
-    enabled: obj.enabled === true,
+    enabled: obj.enabled !== false,
     code,
     label,
     meta,

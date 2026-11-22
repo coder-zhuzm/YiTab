@@ -23,6 +23,7 @@ import {
 import {
   analyzeTabsByDomain,
   getDeterministicColor,
+  isSnapshotableTab,
   saveSnapshot,
   formatTabsExport,
   extractCleanDomain,
@@ -654,9 +655,9 @@ export default defineBackground(() => {
             win != null ? { windowId: win } : { currentWindow: true },
           );
           const eligibleTabs = tabs.filter((t) =>
-            msg.tabIds && msg.tabIds.length > 0
+            (msg.tabIds && msg.tabIds.length > 0
               ? msg.tabIds.includes(t.id!)
-              : isEligibleForDiscard(t),
+              : isEligibleForDiscard(t)) && isSnapshotableTab(t),
           );
 
           if (!eligibleTabs.length) {
@@ -1011,6 +1012,12 @@ async function handleNavigation(
           liveUrl === url ||
           (currentMatchKey != null && computeMatchKey(liveUrl, settings) === currentMatchKey),
       );
+      browser.tabs
+        .sendMessage(targetId, {
+          type: 'yitab_show_notice',
+          message: '已自动拦截重复标签并切换至此',
+        })
+        .catch(() => {});
     } catch (err) {
       console.warn('[YiTab] 静默切换失败:', err);
     } finally {
@@ -1419,7 +1426,7 @@ async function executeActionCommand(
         }
       }
       if (count > 0) {
-        return `已休眠 ${count} 个闲置标签，估算释放约 ${count * ESTIMATED_MB_PER_TAB}MB 内存`;
+        return `已休眠 ${count} 个闲置标签（按单标签约 ${ESTIMATED_MB_PER_TAB} MB 估算，约释放 ${count * ESTIMATED_MB_PER_TAB} MB）`;
       }
       return '当前窗口暂无符合休眠条件的闲置标签';
     }
@@ -1429,7 +1436,7 @@ async function executeActionCommand(
   if (action === 'archive_inactive_tabs') {
     if (win != null) {
       const tabs = await chrome.tabs.query({ windowId: win });
-      const eligible = tabs.filter((t) => isEligibleForDiscard(t));
+      const eligible = tabs.filter((t) => isEligibleForDiscard(t) && isSnapshotableTab(t));
       if (!eligible.length) {
         return '当前窗口没有需要沉淀归档的闲置标签';
       }

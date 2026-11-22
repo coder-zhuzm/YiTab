@@ -635,6 +635,21 @@ export default function NewTabApp() {
       return;
     }
 
+    // 无显式搜索引擎前缀且未用 ↓ 高亮时，优先直达精确匹配的快捷方式/已开标签/书签
+    if (!parsedSearch.engine && searchSuggestions.length > 0) {
+      const q = parsedSearch.cleanQuery.trim().toLowerCase();
+      const exactHit = searchSuggestions.find((item) => {
+        const title = (item.title || '').trim().toLowerCase();
+        const domain = (item.domain || '').trim().toLowerCase().replace(/^www\./, '');
+        const domainHead = domain.split('.')[0] || '';
+        return title === q || domain === q || domainHead === q;
+      });
+      if (exactHit) {
+        handleActivateSearchItem(exactHit);
+        return;
+      }
+    }
+
     const engine = parsedSearch.engine || activeEngine;
     handleOpenUrl(
       engine.urlTemplate.replace('%s', encodeURIComponent(parsedSearch.cleanQuery)),

@@ -85,7 +85,7 @@
         <source media="(prefers-color-scheme: dark)" srcset="./docs/images/yitab-preview-palette-dark.png" />
         <img src="./docs/images/yitab-preview-palette.png" alt="全局命令面板" />
       </picture>
-      <br /><strong>全局命令面板 (Alt+K / Cmd+K)</strong>
+      <br /><strong>全局命令面板 (Ctrl+K / Cmd+K)</strong>
     </td>
     <td align="center" width="50%">
       <picture>
@@ -130,7 +130,7 @@
 
 | 场景 | 快捷键 | 功能说明 |
 | :--- | :--- | :--- |
-| **任意网页** | <kbd>Alt+K</kbd> / <kbd>Cmd+K</kbd> | 唤出 Spotlight 风格全局命令面板，即时搜索标签、书签、历史与执行指令 |
+| **任意网页** | <kbd>Ctrl+K</kbd> / <kbd>Cmd+K</kbd>（或全局 <kbd>Alt+Shift+K</kbd> / <kbd>Cmd+Shift+K</kbd>） | 唤出 Spotlight 风格全局命令面板，即时搜索标签、书签、历史与执行指令 |
 | **Chrome 地址栏** | 输入 <kbd>tab</kbd> + <kbd>Space</kbd> | 激活 Omnibox 搜索建议，输入关键字回车快速切换至已有标签 |
 | **工作台** | <kbd>/</kbd> | 秒级聚焦全能聚合搜索框；按 <kbd>Esc</kbd> 失焦 |
 | **工作台** | <kbd>↑</kbd> / <kbd>↓</kbd> | 在智能建议列表（已开标签/快捷跳转）中上下循环切换选择 |

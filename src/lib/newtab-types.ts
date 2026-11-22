@@ -61,7 +61,7 @@ export const DEFAULT_NEWTAB_SETTINGS: NewTabSettings = {
   defaultEngineId: 'google',
   openInNewTab: false,
   showGreeting: true,
-  iconMode: 'browser',
+  iconMode: 'initials',
   bookmarksExpanded: true,
   workEngineId: 'google',
   homeEngineId: 'google',

@@ -34,7 +34,7 @@ export interface Settings {
 }
 export const DEFAULTS: Settings = {
   matchMode: 'smart',
-  interceptMode: 'auto',
+  interceptMode: 'ask',
   whitelist: [],
   siteRules: [],
   ignoreReload: true,
@@ -64,7 +64,7 @@ export function normalizeDomain(value: string): string | null {
 export function sanitizeSettings(value: Partial<Settings>): Settings {
   return {
     matchMode: MODES.includes(value.matchMode!) ? value.matchMode! : DEFAULTS.matchMode,
-    interceptMode: value.interceptMode === 'ask' ? 'ask' : 'auto',
+    interceptMode: value.interceptMode === 'auto' ? 'auto' : 'ask',
     whitelist: Array.isArray(value.whitelist) ? [...new Set(value.whitelist.map(normalizeDomain).filter((x): x is string => !!x))] : [],
     siteRules: Array.isArray(value.siteRules) ? value.siteRules.flatMap(r => {
       if (!r || typeof r.domain !== 'string') return [];

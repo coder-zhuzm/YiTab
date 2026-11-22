@@ -313,10 +313,10 @@ export function TabHealthPanel({
           }}
         >
           <Text type="secondary" style={{ fontSize: 12, color: tk.accentInk }}>
-            可释放内存估算
+            预计可释放内存（按 ~55 MB/标签估算）
           </Text>
           <div style={{ fontSize: 22, fontWeight: 600, color: tk.accentInk, marginTop: 4 }}>
-            ~{tabHealth?.estimatedMemorySavedMb ?? 0} MB
+            约 {tabHealth?.estimatedMemorySavedMb ?? 0} MB
           </div>
         </div>
       </div>

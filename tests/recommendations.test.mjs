@@ -172,3 +172,31 @@ test('aggregateHistoryRecommendations groups by domain and generates capsule for
   assert.ok(ghRec.capsule);
   assert.match(ghRec.capsule.cleanTitle, /#82/);
 });
+
+test('aggregateHistoryRecommendations skips capsule when title is empty or raw URL', () => {
+  const now = Date.now();
+  const mockHistory = [
+    {
+      url: 'https://www.google.com/sorry/index?continue=abc',
+      title: 'https://www.google.com/sorry/index?continue=abc',
+      lastVisitTime: now - 1000,
+      visitCount: 3,
+    },
+    {
+      url: 'https://example.com/deep/route',
+      title: '',
+      lastVisitTime: now - 2000,
+      visitCount: 2,
+    },
+  ];
+
+  const recommendations = aggregateHistoryRecommendations(mockHistory, 5, now);
+  const googleRec = recommendations.find((r) => r.domain === 'www.google.com');
+  assert.ok(googleRec);
+  assert.equal(googleRec.title, 'www.google.com');
+  assert.equal(googleRec.capsule, undefined);
+
+  const exRec = recommendations.find((r) => r.domain === 'example.com');
+  assert.ok(exRec);
+  assert.equal(exRec.capsule, undefined);
+});

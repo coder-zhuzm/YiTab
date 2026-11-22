@@ -5,6 +5,7 @@ import {
   analyzeTabsByDomain,
   getDeterministicColor,
   formatTabsExport,
+  isSnapshotableTab,
 } from '../src/lib/snapshots.ts';
 
 test('extractCleanDomain extracts hostname without leading www', () => {
@@ -84,4 +85,15 @@ test('formatTabsExport formats tabs to Markdown list, table, URLs, and JSON', ()
   assert.equal(parsed[0].title, 'YiTab Project');
   assert.equal(parsed[0].url, 'https://github.com/coder-zhuzm/YiTab');
   assert.equal(parsed[0].domain, 'github.com');
+});
+
+test('isSnapshotableTab filters internal URLs and empty-title tabs', () => {
+  assert.equal(isSnapshotableTab({ url: 'about:blank', title: 'about:blank' }), false);
+  assert.equal(isSnapshotableTab({ url: 'chrome://settings', title: '设置' }), false);
+  assert.equal(
+    isSnapshotableTab({ url: 'chrome-extension://abcdef/newtab.html', title: 'YiTab' }),
+    false,
+  );
+  assert.equal(isSnapshotableTab({ url: 'https://example.com', title: '   ' }), false);
+  assert.equal(isSnapshotableTab({ url: 'https://example.com', title: 'Example Domain' }), true);
 });

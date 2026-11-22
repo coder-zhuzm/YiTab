@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Popconfirm, Space, Tag, Typography } from 'antd';
 import type { MessageInstance } from 'antd/es/message/interface';
 import {
@@ -39,7 +39,16 @@ export function BookmarkHealthPanel({
   messageApi,
 }: BookmarkHealthPanelProps) {
   const [cleaning, setCleaning] = useState(false);
-  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(new Set());
+
+  // 扫描出重复组时默认展开前 3 组，让用户清理前直接看清保留项与待清理项
+  useEffect(() => {
+    if (report && report.groups.length > 0) {
+      setExpandedGroupKeys(new Set(report.groups.slice(0, 3).map((g) => g.groupKey)));
+    } else {
+      setExpandedGroupKeys(new Set());
+    }
+  }, [report]);
 
   const handleCleanRecommended = async () => {
     if (!report || report.redundantCount === 0) return;
@@ -122,7 +131,7 @@ export function BookmarkHealthPanel({
         }}
       >
         {report.groups.map((group) => {
-          const isExpanded = expandedGroupKey === group.groupKey;
+          const isExpanded = expandedGroupKeys.has(group.groupKey);
           return (
             <div
               key={group.groupKey}
@@ -142,7 +151,14 @@ export function BookmarkHealthPanel({
                   cursor: 'pointer',
                   gap: 8,
                 }}
-                onClick={() => setExpandedGroupKey(isExpanded ? null : group.groupKey)}
+                onClick={() =>
+                  setExpandedGroupKeys((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(group.groupKey)) next.delete(group.groupKey);
+                    else next.add(group.groupKey);
+                    return next;
+                  })
+                }
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <Text strong ellipsis style={{ fontSize: 13, color: tk.ink, display: 'block' }}>
@@ -492,25 +508,30 @@ export function BookmarkHealthPanel({
                 borderTop: `1px solid ${tk.hairline}`,
               }}
             >
-              <Space size={8}>
+              <Space size={8} wrap>
                 {report.redundantCount > 0 && (
-                  <Popconfirm
-                    title="确认按建议一键清理？"
-                    description={`将安全删除 ${report.redundantCount} 个冗余书签，保留归类最深、无营销参数的优质书签。建议清理前先导出备份。`}
-                    onConfirm={handleCleanRecommended}
-                    okText="立即清理"
-                    cancelText="取消"
-                  >
-                    <Button
-                      type="primary"
-                      danger
-                      loading={cleaning}
-                      icon={<DeleteOutlined />}
-                      style={{ fontWeight: 600 }}
+                  <>
+                    <Popconfirm
+                      title="确认按建议一键清理？"
+                      description={`将删除 ${report.redundantCount} 个冗余书签，保留下方标为「推荐保留」的条目。清理前将自动保存本地备份。`}
+                      onConfirm={handleCleanRecommended}
+                      okText="立即清理"
+                      cancelText="取消"
                     >
-                      一键按建议清理 ({report.redundantCount} 项)
-                    </Button>
-                  </Popconfirm>
+                      <Button
+                        type="primary"
+                        danger
+                        loading={cleaning}
+                        icon={<DeleteOutlined />}
+                        style={{ fontWeight: 600 }}
+                      >
+                        一键按建议清理 ({report.redundantCount} 项)
+                      </Button>
+                    </Popconfirm>
+                    <Text type="secondary" style={{ fontSize: 12, color: tk.ink3 }}>
+                      清理前自动本地备份，下方已标明保留项
+                    </Text>
+                  </>
                 )}
               </Space>
 

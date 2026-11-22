@@ -531,7 +531,7 @@ function ConfirmPage() {
                     borderColor: tk.accent,
                   }}
                 >
-                  <span>继续打开目标页面</span>
+                  <span>{valid ? '直接打开该地址' : '目标地址无效'}</span>
                   <Kbd tk={tk}>↵ Enter</Kbd>
                 </Button>
               )}

@@ -1,12 +1,24 @@
 /**
  * YiTab 会话快照与导出格式化工具库
  */
+import { INTERNAL_URL_RE } from './match.ts';
 
 export interface TabSnapshotItem {
   title: string;
   url: string;
   favIconUrl?: string;
   domain?: string;
+}
+
+/** 仅允许保存有实际内容的网页标签，过滤 about:blank、chrome://、chrome-extension:// 与空标题页 */
+export function isSnapshotableTab(tab: { url?: string; title?: string }): boolean {
+  const url = tab.url?.trim() ?? '';
+  if (!url || INTERNAL_URL_RE.test(url) || !/^https?:\/\//i.test(url)) {
+    return false;
+  }
+  const title = tab.title?.trim() ?? '';
+  if (!title) return false;
+  return true;
 }
 
 export interface SessionSnapshot {
@@ -28,14 +40,31 @@ export function extractCleanDomain(urlStr: string): string {
   }
 }
 
-/** 获取所有已保存的会话快照（按时间倒序） */
+/** 获取所有已保存的会话快照（按时间倒序，并自动剔除历史脏数据中的内部/空白页） */
 export async function getSnapshots(): Promise<SessionSnapshot[]> {
   const result = await chrome.storage.local.get(STORAGE_KEY);
   const snapshots = result[STORAGE_KEY];
-  if (Array.isArray(snapshots)) {
-    return snapshots;
+  if (!Array.isArray(snapshots)) {
+    return [];
   }
-  return [];
+
+  let dirtyCleaned = false;
+  const cleaned: SessionSnapshot[] = [];
+  for (const snap of snapshots) {
+    if (!snap || !Array.isArray(snap.tabs)) continue;
+    const validTabs = snap.tabs.filter((t: TabSnapshotItem) => isSnapshotableTab(t));
+    if (validTabs.length !== snap.tabs.length) {
+      dirtyCleaned = true;
+    }
+    if (validTabs.length > 0) {
+      cleaned.push(validTabs.length === snap.tabs.length ? snap : { ...snap, tabs: validTabs });
+    }
+  }
+
+  if (dirtyCleaned) {
+    await chrome.storage.local.set({ [STORAGE_KEY]: cleaned }).catch(() => {});
+  }
+  return cleaned;
 }
 
 /** 保存新的会话快照 */
@@ -43,17 +72,18 @@ export async function saveSnapshot(
   tabs: TabSnapshotItem[],
   customName?: string,
 ): Promise<SessionSnapshot> {
+  const cleanTabs = tabs.filter((t) => isSnapshotableTab(t));
   const snapshots = await getSnapshots();
   const now = new Date();
   const timeStr = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  const defaultName = `会话 (${tabs.length} 标签) · ${timeStr}`;
+  const defaultName = `会话 (${cleanTabs.length} 标签) · ${timeStr}`;
 
   const newSnapshot: SessionSnapshot = {
     id: `snap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     name: customName?.trim() || defaultName,
     createdAt: Date.now(),
-    tabs: tabs.map((t) => ({
-      title: t.title || t.url,
+    tabs: cleanTabs.map((t) => ({
+      title: t.title.trim(),
       url: t.url,
       favIconUrl: t.favIconUrl,
       domain: extractCleanDomain(t.url),
