@@ -8,6 +8,13 @@
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-22
+
+### 🚀 2.0 架构里程碑：Precision Slate 全栈工具美学重构 (Major Release)
+
+- **2.0 正式大版本定版**：完成工作台（NewTab）、全局命令面板（Command Palette）、SPA 去重轻提示（Toast）、控制弹窗（Popup）、拦截确认页（Confirm）与控制中心（Options）的全桌面端 **Precision Slate** 设计体系升级与构建验证。
+- **工程化规范固化**：随版本纳入 `PRODUCT.md`、`DESIGN.md`、`.impeccable/design.json` 设计规范资产、共享样式层 `src/styles/precision-ui.css` 与浅深双模式 `docs/images/yitab-preview-*.png` 视觉基线。
+
 ## [1.6.0] - 2026-11-22
 
 ### 🎨 全面视觉重构：Precision Slate 精密工具面板体系 (UI Overhaul)
