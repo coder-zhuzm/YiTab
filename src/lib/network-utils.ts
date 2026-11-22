@@ -365,6 +365,7 @@ export function parseSearchQuery(
   defaultEngineId = 'google',
 ): {
   engine: SearchEngine;
+  explicitEngine: boolean;
   cleanQuery: string;
   isAddress: boolean;
   targetUrl?: string;
@@ -376,6 +377,7 @@ export function parseSearchQuery(
   if (!trimmed) {
     return {
       engine: defaultEngine,
+      explicitEngine: false,
       cleanQuery: '',
       isAddress: false,
     };
@@ -386,6 +388,7 @@ export function parseSearchQuery(
   if (direct.isAddress) {
     return {
       engine: defaultEngine,
+      explicitEngine: false,
       cleanQuery: trimmed,
       isAddress: true,
       targetUrl: direct.url,
@@ -401,6 +404,7 @@ export function parseSearchQuery(
     if (matchedEngine) {
       return {
         engine: matchedEngine,
+        explicitEngine: true,
         cleanQuery: rest,
         isAddress: false,
       };
@@ -409,6 +413,7 @@ export function parseSearchQuery(
 
   return {
     engine: defaultEngine,
+    explicitEngine: false,
     cleanQuery: trimmed,
     isAddress: false,
   };
