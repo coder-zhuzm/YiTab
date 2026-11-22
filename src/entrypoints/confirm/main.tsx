@@ -28,6 +28,7 @@ import { hostOf, MODE_LABELS, type TabInfo } from '@/lib/match';
 import { useThemeTokens, type ThemeTokens } from '@/lib/theme-tokens';
 import { useThemeMode, applyThemeToDocument } from '@/lib/theme-mode';
 import { ThemeModeButton } from '@/components/ThemeToggle';
+import '@/styles/precision-ui.css';
 
 const GROUP_COLORS: { label: string; value: TabGroupColor; hex: string }[] = [
   { label: '灰色', value: 'grey', hex: '#64748b' },
@@ -52,7 +53,7 @@ function Kbd({ children, tk }: { children: React.ReactNode; tk: ThemeTokens }) {
         height: 20,
         padding: '0 5px',
         fontSize: 11,
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+        fontFamily: 'var(--font-mono)',
         fontWeight: 600,
         color: tk.ink2,
         background: tk.surfaceMuted,
@@ -451,9 +452,9 @@ function ConfirmPage() {
         token: {
           colorPrimary: tk.accent,
           borderRadius: 8,
-          fontFamily:
-            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif',
+          fontFamily: 'var(--font-sans)',
           colorBgContainer: tk.surface,
+          colorBgElevated: tk.surface,
           colorBorderSecondary: tk.hairline,
         },
       }}
@@ -485,38 +486,11 @@ function ConfirmPage() {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  background: 'linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)',
-                  color: '#ffffff',
-                  fontWeight: 700,
-                  fontSize: 12,
-                  padding: '3px 8px',
-                  borderRadius: 6,
-                  letterSpacing: 0.3,
-                  boxShadow: '0 2px 5px rgba(79, 70, 229, 0.25)',
-                }}
-              >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                  <line x1="8" y1="21" x2="16" y2="21"></line>
-                  <line x1="12" y1="17" x2="12" y2="21"></line>
-                </svg>
-                YiTab
-              </div>
-              <Typography.Text strong style={{ fontSize: 16, color: tk.ink }}>
+              <span className="yt-brand-pill">
+                <span className="yt-brand-dot" />
+                <span>YiTab</span>
+              </span>
+              <Typography.Text strong className="yt-tnum" style={{ fontSize: 16, color: tk.ink }}>
                 {loading
                   ? '正在检查匹配标签…'
                   : dups.length
@@ -536,8 +510,8 @@ function ConfirmPage() {
                     fontWeight: 600,
                     display: 'inline-flex',
                     alignItems: 'center',
-                    background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
-                    boxShadow: '0 2px 6px rgba(79, 70, 229, 0.3)',
+                    background: tk.accent,
+                    borderColor: tk.accent,
                   }}
                 >
                   <span>切换到所选标签</span>
@@ -553,7 +527,8 @@ function ConfirmPage() {
                     fontWeight: 600,
                     display: 'inline-flex',
                     alignItems: 'center',
-                    background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
+                    background: tk.accent,
+                    borderColor: tk.accent,
                   }}
                 >
                   <span>继续打开目标页面</span>
@@ -615,7 +590,6 @@ function ConfirmPage() {
             style={{
               marginBottom: 20,
               borderRadius: 12,
-              borderColor: tk.hairline,
               background: tk.surface,
               boxShadow: tk.shadowCard,
             }}
@@ -664,7 +638,7 @@ function ConfirmPage() {
                 >
                   {copied ? (
                     <>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={tk.successInk} strokeWidth="2.2">
                         <polyline points="20 6 9 17 4 12"></polyline>
                       </svg>
                       已复制完整地址
@@ -689,7 +663,7 @@ function ConfirmPage() {
             <div
               style={{
                 fontSize: 13,
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                fontFamily: 'var(--font-mono)',
                 padding: '8px 12px',
                 background: tk.canvas,
                 borderRadius: 8,
@@ -703,30 +677,35 @@ function ConfirmPage() {
               <span style={{ fontWeight: 700, color: tk.ink }}>{targetSummary.host}</span>
               <span style={{ color: tk.ink2 }}>{targetSummary.path}</span>
               {targetSummary.queryCount > 0 && (
-                <Tag
-                  color="purple"
+                <span
+                  className="yt-tnum"
                   style={{
-                    margin: 0,
                     fontSize: 11,
-                    fontFamily: 'sans-serif',
+                    fontFamily: 'var(--font-sans)',
+                    padding: '1px 6px',
                     borderRadius: 4,
+                    background: tk.accentSoft,
+                    color: tk.accentInk,
+                    border: `1px solid ${tk.accentBorder}`,
                   }}
                 >
                   +{targetSummary.queryCount} 参数
-                </Tag>
+                </span>
               )}
               {targetSummary.hash && (
-                <Tag
-                  color="cyan"
+                <span
                   style={{
-                    margin: 0,
                     fontSize: 11,
-                    fontFamily: 'sans-serif',
+                    fontFamily: 'var(--font-sans)',
+                    padding: '1px 6px',
                     borderRadius: 4,
+                    background: tk.surfaceMuted,
+                    color: tk.ink2,
+                    border: `1px solid ${tk.hairlineStrong}`,
                   }}
                 >
                   Hash: {targetSummary.hash}
-                </Tag>
+                </span>
               )}
             </div>
 
@@ -754,7 +733,7 @@ function ConfirmPage() {
                       padding: '8px 12px',
                       borderRadius: 6,
                       fontSize: 12,
-                      fontFamily: 'ui-monospace, monospace',
+                      fontFamily: 'var(--font-mono)',
                       color: tk.ink,
                     }}
                   >
@@ -796,9 +775,23 @@ function ConfirmPage() {
                 )
               ) : (
                 <>
-                  <Tag color="blue" style={{ margin: 0 }}>
+                  <span
+                    className="yt-tnum"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      height: 22,
+                      padding: '0 8px',
+                      borderRadius: 5,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      background: tk.accentSoft,
+                      color: tk.accentInk,
+                      border: `1px solid ${tk.accentBorder}`,
+                    }}
+                  >
                     已选 {batchSelectedIds.size} 项
-                  </Tag>
+                  </span>
                   <Button
                     size="small"
                     onClick={() => {
@@ -867,6 +860,11 @@ function ConfirmPage() {
             return (
               <Card
                 key={t.id}
+                className={
+                  (isSelected && !batchMode) || (batchMode && isBatchChecked)
+                    ? 'yt-card-selected'
+                    : undefined
+                }
                 onClick={() => {
                   if (batchMode) {
                     setBatchSelectedIds((prev) => {
@@ -883,12 +881,7 @@ function ConfirmPage() {
                   marginBottom: 12,
                   borderRadius: 12,
                   cursor: 'pointer',
-                  borderColor: isSelected && !batchMode ? '#4f46e5' : tk.hairline,
-                  boxShadow:
-                    isSelected && !batchMode
-                      ? '0 0 0 2px rgba(79, 70, 229, 0.2), 0 4px 14px rgba(79, 70, 229, 0.08)'
-                      : '0 1px 3px rgba(0, 0, 0, 0.03)',
-                  transition: 'all 0.16s cubic-bezier(0.16, 1, 0.3, 1)',
+                  transition: 'background-color 140ms ease-out, box-shadow 140ms ease-out',
                   background: tk.surface,
                 }}
                 styles={{ body: { padding: '14px 18px' } }}
@@ -979,7 +972,7 @@ function ConfirmPage() {
                       style={{
                         fontSize: 12,
                         fontFamily:
-                          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                          'var(--font-mono)',
                         color: tk.ink3,
                         marginBottom: 6,
                         display: 'flex',
@@ -1009,40 +1002,82 @@ function ConfirmPage() {
                       style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}
                     >
                       {t.match && (
-                        <Tag
-                          color="blue"
+                        <span
                           style={{
-                            margin: 0,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            height: 20,
+                            padding: '0 7px',
+                            fontSize: 11.5,
                             fontWeight: 500,
                             borderRadius: 4,
+                            background: tk.accentSoft,
+                            color: tk.accentInk,
+                            border: `1px solid ${tk.accentBorder}`,
                           }}
                         >
                           {MODE_LABELS[t.match.mode]}
-                        </Tag>
+                        </span>
                       )}
                       {t.match?.ruleDomain && (
-                        <Tag style={{ margin: 0, borderRadius: 4 }}>
-                          网站规则：{t.match.ruleDomain}
-                        </Tag>
+                        <span
+                          className="yt-mono"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            height: 20,
+                            padding: '0 7px',
+                            fontSize: 11,
+                            borderRadius: 4,
+                            background: tk.surfaceMuted,
+                            color: tk.ink2,
+                            border: `1px solid ${tk.hairlineStrong}`,
+                          }}
+                        >
+                          规则·{t.match.ruleDomain}
+                        </span>
                       )}
                       {t.groupTitle && (
-                        <Tag
-                          color={t.groupColor ?? 'default'}
-                          style={{ margin: 0, borderRadius: 4 }}
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            height: 20,
+                            padding: '0 7px',
+                            fontSize: 11.5,
+                            borderRadius: 4,
+                            background: tk.surfaceMuted,
+                            color: tk.ink,
+                            border: `1px solid ${tk.hairlineStrong}`,
+                          }}
                         >
+                          <span
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: '50%',
+                              background:
+                                GROUP_COLORS.find((c) => c.value === t.groupColor)?.hex || tk.accent,
+                            }}
+                          />
                           分组: {t.groupTitle}
-                        </Tag>
+                        </span>
                       )}
-                      <Tag
+                      <span
                         style={{
-                          margin: 0,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          height: 20,
+                          padding: '0 7px',
+                          fontSize: 11.5,
                           background: tk.surfaceMuted,
                           color: tk.ink3,
                           borderRadius: 4,
                         }}
                       >
                         {windowLabelMap.get(t.windowId) ?? '当前窗口'}
-                      </Tag>
+                      </span>
                       <span style={{ fontSize: 12, color: tk.ink3 }}>{t.match?.reason}</span>
                     </div>
 
@@ -1067,7 +1102,7 @@ function ConfirmPage() {
                             background: tk.canvas,
                             padding: '6px 10px',
                             borderRadius: 6,
-                            fontFamily: 'ui-monospace, monospace',
+                            fontFamily: 'var(--font-mono)',
                             fontSize: 12,
                           }}
                         >
@@ -1095,8 +1130,8 @@ function ConfirmPage() {
                       onClick={() => void switchTo(t)}
                       style={{
                         fontWeight: 500,
-                        background: isSelected ? '#4f46e5' : undefined,
-                        borderColor: isSelected ? '#4f46e5' : undefined,
+                        background: isSelected ? tk.accent : undefined,
+                        borderColor: isSelected ? tk.accent : undefined,
                       }}
                     >
                       切换
@@ -1202,7 +1237,8 @@ function ConfirmPage() {
                 onClick={() => void openAnyway()}
                 style={{
                   fontWeight: 600,
-                  background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
+                  background: tk.accent,
+                  borderColor: tk.accent,
                 }}
               >
                 继续打开目标页面（Enter）
@@ -1240,6 +1276,7 @@ function ConfirmPage() {
                   return (
                     <div
                       key={c.value}
+                      className={`yt-choice-tile${isSelected ? ' is-selected' : ''}`}
                       onClick={() => setGroupColor(c.value)}
                       style={{
                         display: 'flex',
@@ -1247,10 +1284,6 @@ function ConfirmPage() {
                         gap: 6,
                         padding: '5px 10px',
                         borderRadius: 6,
-                        cursor: 'pointer',
-                        border: isSelected ? '2px solid #4f46e5' : `1px solid ${tk.hairline}`,
-                        background: isSelected ? tk.accentSoft : tk.surface,
-                        transition: 'all 0.15s ease',
                       }}
                     >
                       <span

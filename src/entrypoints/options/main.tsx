@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Alert,
-  Badge,
   Button,
   Card,
   Checkbox,
@@ -15,7 +14,6 @@ import {
   Select,
   Space,
   Switch,
-  Tabs,
   Tag,
   theme,
   Tooltip,
@@ -79,6 +77,7 @@ import { useThemeMode, applyThemeToDocument } from '../../lib/theme-mode';
 import { ThemeModeDropdown } from '../../components/ThemeToggle';
 import { TabHealthPanel } from '../../components/TabHealthPanel';
 import { BookmarkHealthPanel } from '../../components/BookmarkHealthPanel';
+import '../../styles/precision-ui.css';
 import {
   exportAllConfig,
   importAllConfig,
@@ -99,11 +98,11 @@ const { Text, Paragraph, Title } = Typography;
 
 const modes: MatchMode[] = ['smart', 'url', 'path', 'domain'];
 
-const modeBadges: Record<MatchMode, { text: string; color: string }> = {
-  smart: { text: '推荐 · 新安装默认', color: '#4f46e5' },
-  url: { text: '严格完整匹配', color: '#0284c7' },
-  path: { text: '宽泛 · 忽略参数', color: '#d97706' },
-  domain: { text: '最宽泛 · 限制多开', color: '#dc2626' },
+const modeBadges: Record<MatchMode, { text: string; tone: 'accent' | 'neutral' | 'warn' | 'danger' }> = {
+  smart: { text: '推荐 · 新安装默认', tone: 'accent' },
+  url: { text: '严格完整匹配', tone: 'neutral' },
+  path: { text: '宽泛 · 忽略参数', tone: 'warn' },
+  domain: { text: '最宽泛 · 限制多开', tone: 'danger' },
 };
 
 const descriptions: Record<MatchMode, string> = {
@@ -429,21 +428,16 @@ function OptionsPage() {
         token: {
           colorPrimary: tk.accent,
           borderRadius: 8,
-          fontFamily:
-            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif',
+          fontFamily: 'var(--font-sans)',
           colorBgContainer: tk.surface,
+          colorBgElevated: tk.surface,
           colorBorderSecondary: tk.hairline,
-        },
-        components: {
-          Tabs: {
-            itemSelectedColor: tk.accentInk,
-          },
         },
       }}
     >
       {messageContextHolder}
-      <div style={{ minHeight: '100vh', background: tk.canvas, padding: '36px 20px 64px' }}>
-        <div style={{ maxWidth: 880, margin: '0 auto' }}>
+      <div style={{ minHeight: '100vh', background: tk.canvas, padding: '32px 24px 64px' }}>
+        <div style={{ maxWidth: 1080, margin: '0 auto' }}>
           {/* 页面主标题与状态条 */}
           <div
             style={{
@@ -452,56 +446,43 @@ function OptionsPage() {
               justifyContent: 'space-between',
               flexWrap: 'wrap',
               gap: 12,
-              marginBottom: 20,
+              marginBottom: 22,
               paddingBottom: 16,
               borderBottom: `1px solid ${tk.hairline}`,
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 10,
-                  background: 'linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#ffffff',
-                  boxShadow: '0 4px 10px rgba(79, 70, 229, 0.25)',
-                  fontSize: 18,
-                  fontWeight: 800,
-                }}
-              >
-                Yi
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span className="yt-brand-pill">
+                  <span className="yt-brand-dot" />
+                  <span>YiTab 一签</span>
+                </span>
+                <Title level={3} style={{ margin: 0, fontSize: 19, color: tk.ink, letterSpacing: '-0.02em' }}>
+                  控制中心
+                </Title>
+                <span className="yt-ver-pill">{APP_VERSION}</span>
               </div>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Title level={3} style={{ margin: 0, fontSize: 20, color: tk.ink }}>
-                    YiTab 一签 · 控制中心
-                  </Title>
-                  <Tag color="indigo" style={{ margin: 0, fontSize: 11, borderRadius: 4 }}>
-                    {APP_VERSION}
-                  </Tag>
-                </div>
-                <Text type="secondary" style={{ fontSize: 13 }}>
-                  智能标签页治理、书签生态维护与资源优化套件
-                </Text>
-              </div>
+              <Text type="secondary" style={{ fontSize: 12.5, color: tk.ink3 }}>
+                智能标签页治理、书签生态维护与资源优化套件
+              </Text>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <ThemeModeDropdown mode={themeMode} onChange={setThemeMode} ink3={tk.ink3} />
-              <Tag
-                color={saved ? 'green' : undefined}
+              <span
                 style={{
-                  margin: 0,
                   padding: '4px 10px',
                   borderRadius: 6,
                   fontSize: 12,
+                  fontWeight: 500,
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
+                  background: saved ? tk.successSoft : saving ? tk.warnSoft : tk.surfaceMuted,
+                  color: saved ? tk.successInk : saving ? tk.warnInk : tk.ink2,
+                  border: `1px solid ${
+                    saved ? tk.successBorder : saving ? tk.warnBorder : tk.hairline
+                  }`,
                 }}
               >
                 <span
@@ -509,35 +490,93 @@ function OptionsPage() {
                     width: 6,
                     height: 6,
                     borderRadius: '50%',
-                    background: saved ? '#16a34a' : saving ? '#d97706' : tk.ink3,
+                    background: saved ? tk.successInk : saving ? tk.warnInk : tk.ink3,
                     display: 'inline-block',
                   }}
                 />
                 {loading ? '读取中…' : saving ? '保存中…' : saved ? '已保存' : '更改自动保存'}
-              </Tag>
+              </span>
             </div>
           </div>
 
           {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 20 }} />}
 
-          {/* 导航标签页切换 */}
-          <Tabs
-            activeKey={activeTabKey}
-            onChange={setActiveTabKey}
-            type="card"
-            style={{ marginBottom: 20 }}
-            items={[
-              {
-                key: 'newtab',
-                icon: <AppstoreOutlined />,
-                label: '工作台',
-                children: (
+          {/* 左侧导航轨 + 右侧面板 */}
+          <div className="yt-opt-layout">
+            <nav aria-label="控制中心分类" className="yt-opt-sidebar" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTabKey === 'newtab'}
+                className="yt-opt-nav-item"
+                onClick={() => setActiveTabKey('newtab')}
+              >
+                <span className="yt-opt-nav-left">
+                  <AppstoreOutlined style={{ fontSize: 14 }} />
+                  <span>工作台</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTabKey === 'rules'}
+                className="yt-opt-nav-item"
+                onClick={() => setActiveTabKey('rules')}
+              >
+                <span className="yt-opt-nav-left">
+                  <SettingOutlined style={{ fontSize: 14 }} />
+                  <span>去重拦截策略</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTabKey === 'bookmarks'}
+                className="yt-opt-nav-item"
+                onClick={() => setActiveTabKey('bookmarks')}
+              >
+                <span className="yt-opt-nav-left">
+                  <BookOutlined style={{ fontSize: 14 }} />
+                  <span>书签健康与生态治理</span>
+                </span>
+                {bookmarkReport && bookmarkReport.redundantCount > 0 && (
+                  <span className="yt-count-badge">{bookmarkReport.redundantCount}</span>
+                )}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTabKey === 'tabs'}
+                className="yt-opt-nav-item"
+                onClick={() => setActiveTabKey('tabs')}
+              >
+                <span className="yt-opt-nav-left">
+                  <RestOutlined style={{ fontSize: 14 }} />
+                  <span>闲置休眠与内存治理</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTabKey === 'ai'}
+                className="yt-opt-nav-item"
+                onClick={() => setActiveTabKey('ai')}
+              >
+                <span className="yt-opt-nav-left">
+                  <ThunderboltOutlined style={{ fontSize: 14 }} />
+                  <span>端侧智能与资源管控</span>
+                </span>
+              </button>
+            </nav>
+
+            <div style={{ minWidth: 0 }}>
+              {activeTabKey === 'newtab' && (
                   <div>
                     {/* 图标来源 */}
                     <Card
                       title={
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 16, fontWeight: 600, color: tk.ink }}>
+                          <span style={{ fontSize: 15.5, fontWeight: 600, color: tk.ink }}>
                             快捷方式图标来源
                           </span>
                           <span style={{ fontSize: 12, color: tk.ink3, fontWeight: 'normal' }}>
@@ -548,7 +587,6 @@ function OptionsPage() {
                       style={{
                         marginBottom: 20,
                         borderRadius: 12,
-                        borderColor: tk.hairline,
                         boxShadow: tk.shadowCard,
                       }}
                     >
@@ -584,18 +622,11 @@ function OptionsPage() {
                             return (
                               <div
                                 key={opt.value}
+                                className={isChecked ? 'yt-choice-tile is-selected' : 'yt-choice-tile'}
                                 onClick={() => {
                                   if (!isChecked) {
                                     void handleSaveNewTabSettings({ iconMode: opt.value });
                                   }
-                                }}
-                                style={{
-                                  padding: '14px 16px',
-                                  borderRadius: 10,
-                                  border: isChecked ? '2px solid #4f46e5' : `1px solid ${tk.hairline}`,
-                                  background: isChecked ? tk.accentSoft : tk.surface,
-                                  cursor: 'pointer',
-                                  transition: 'all 0.15s ease',
                                 }}
                               >
                                 <Radio value={opt.value} style={{ fontWeight: 600 }}>
@@ -623,7 +654,6 @@ function OptionsPage() {
                       style={{
                         marginBottom: 20,
                         borderRadius: 12,
-                        borderColor: tk.hairline,
                         boxShadow: tk.shadowCard,
                       }}
                     >
@@ -731,7 +761,7 @@ function OptionsPage() {
                             onChange={(v) => void handleSaveNewTabSettings({ defaultEngineId: v })}
                             options={SEARCH_ENGINES.map((e) => ({
                               value: e.id,
-                              label: `${e.icon} ${e.name}（前缀 ${e.prefix}）`,
+                              label: `${e.name}（前缀 ${e.prefix}）`,
                             }))}
                           />
                           <div style={{ fontSize: 12, color: tk.ink3, marginTop: 6 }}>
@@ -798,7 +828,7 @@ function OptionsPage() {
                                 fontSize: 12.5,
                                 fontWeight: 500,
                                 justifyContent: 'center',
-                                transition: 'all 0.15s ease',
+                                transition: 'border-color 140ms ease-out, background-color 140ms ease-out',
                               }}
                               title="点击后直接按下你想要的快捷键组合"
                             >
@@ -809,6 +839,7 @@ function OptionsPage() {
                                   {formatShortcutParts(paletteShortcut).map((part, idx) => (
                                     <kbd
                                       key={idx}
+                                      className="yt-mono"
                                       style={{
                                         display: 'inline-flex',
                                         alignItems: 'center',
@@ -890,15 +921,23 @@ function OptionsPage() {
                           <div>
                             <div style={{ fontSize: 13.5, fontWeight: 500, color: tk.ink }}>
                               Chrome 全局快捷键
-                              <Tag
+                              <span
+                                className="yt-mono"
                                 style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
                                   marginLeft: 8,
+                                  padding: '1px 7px',
+                                  fontSize: 11.5,
                                   fontWeight: 600,
                                   borderRadius: 5,
+                                  background: tk.surfaceMuted,
+                                  color: tk.ink,
+                                  border: `1px solid ${tk.hairlineStrong}`,
                                 }}
                               >
                                 {chromeCommandShortcut || (isMacPlatform() ? '⌘⇧K' : 'Alt+Shift+K')}
-                              </Tag>
+                              </span>
                             </div>
                             <div style={{ fontSize: 12, color: tk.ink3, marginTop: 2 }}>
                               由浏览器原生接管，在新标签页或 chrome:// 受限页也可触发（需在 Chrome 扩展快捷键页修改）。
@@ -959,19 +998,15 @@ function OptionsPage() {
                       </Space>
                     </Card>
                   </div>
-                ),
-              },
-              {
-                key: 'rules',
-                icon: <SettingOutlined />,
-                label: '去重拦截策略',
-                children: (
+              )}
+
+              {activeTabKey === 'rules' && (
                   <div>
                     {/* 1. 重复判定粒度（全局默认） */}
                     <Card
                       title={
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 16, fontWeight: 600, color: tk.ink }}>
+                          <span style={{ fontSize: 15.5, fontWeight: 600, color: tk.ink }}>
                             重复判定粒度（全局默认）
                           </span>
                           <span style={{ fontSize: 12, color: tk.ink3, fontWeight: 'normal' }}>
@@ -982,7 +1017,6 @@ function OptionsPage() {
                       style={{
                         marginBottom: 20,
                         borderRadius: 12,
-                        borderColor: tk.hairline,
                         boxShadow: tk.shadowCard,
                       }}
                     >
@@ -995,31 +1029,48 @@ function OptionsPage() {
                         <div
                           style={{
                             display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
                             gap: 12,
                           }}
                         >
                           {modes.map((mode) => {
                             const isChecked = settings.matchMode === mode;
                             const badge = modeBadges[mode];
+                            const badgeBg =
+                              badge.tone === 'accent'
+                                ? tk.accentSoft
+                                : badge.tone === 'warn'
+                                  ? tk.warnSoft
+                                  : badge.tone === 'danger'
+                                    ? tk.dangerSoft
+                                    : tk.surfaceMuted;
+                            const badgeFg =
+                              badge.tone === 'accent'
+                                ? tk.accentInk
+                                : badge.tone === 'warn'
+                                  ? tk.warnInk
+                                  : badge.tone === 'danger'
+                                    ? tk.dangerInk
+                                    : tk.ink2;
+                            const badgeBd =
+                              badge.tone === 'accent'
+                                ? tk.accentBorder
+                                : badge.tone === 'warn'
+                                  ? tk.warnBorder
+                                  : badge.tone === 'danger'
+                                    ? tk.dangerBorder
+                                    : tk.hairlineStrong;
                             return (
                               <div
                                 key={mode}
+                                className={isChecked ? 'yt-choice-tile is-selected' : 'yt-choice-tile'}
                                 onClick={() => {
                                   if (!disabled && settings.matchMode !== mode) {
                                     void save({ matchMode: mode });
                                   }
                                 }}
                                 style={{
-                                  padding: '14px 16px',
-                                  borderRadius: 10,
-                                  border: isChecked ? '2px solid #4f46e5' : `1px solid ${tk.hairline}`,
-                                  background: isChecked ? tk.accentSoft : tk.surface,
                                   cursor: disabled ? 'not-allowed' : 'pointer',
-                                  transition: 'all 0.15s ease',
-                                  boxShadow: isChecked
-                                    ? '0 2px 8px rgba(79, 70, 229, 0.12)'
-                                    : '0 1px 2px rgba(0, 0, 0, 0.02)',
                                   display: 'flex',
                                   flexDirection: 'column',
                                   justifyContent: 'space-between',
@@ -1041,12 +1092,12 @@ function OptionsPage() {
                                     <span
                                       style={{
                                         fontSize: 11,
-                                        fontWeight: 600,
-                                        color: badge.color,
-                                        background: tk.surface,
-                                        padding: '2px 8px',
+                                        fontWeight: 500,
+                                        color: badgeFg,
+                                        background: badgeBg,
+                                        padding: '2px 7px',
                                         borderRadius: 4,
-                                        border: `1px solid ${badge.color}33`,
+                                        border: `1px solid ${badgeBd}`,
                                       }}
                                     >
                                       {badge.text}
@@ -1121,6 +1172,11 @@ function OptionsPage() {
                           }}
                         >
                           <div
+                            className={
+                              settings.interceptMode === 'auto'
+                                ? 'yt-choice-tile is-selected'
+                                : 'yt-choice-tile'
+                            }
                             onClick={() => {
                               if (!disabled && settings.interceptMode !== 'auto') {
                                 void save({ interceptMode: 'auto' });
@@ -1128,14 +1184,7 @@ function OptionsPage() {
                             }}
                             style={{
                               padding: '16px',
-                              borderRadius: 10,
-                              border:
-                                settings.interceptMode === 'auto'
-                                  ? '2px solid #4f46e5'
-                                  : `1px solid ${tk.hairline}`,
-                              background: settings.interceptMode === 'auto' ? tk.accentSoft : tk.surface,
                               cursor: disabled ? 'not-allowed' : 'pointer',
-                              transition: 'all 0.15s ease',
                             }}
                           >
                             <Radio
@@ -1157,6 +1206,11 @@ function OptionsPage() {
                           </div>
 
                           <div
+                            className={
+                              settings.interceptMode === 'ask'
+                                ? 'yt-choice-tile is-selected'
+                                : 'yt-choice-tile'
+                            }
                             onClick={() => {
                               if (!disabled && settings.interceptMode !== 'ask') {
                                 void save({ interceptMode: 'ask' });
@@ -1164,14 +1218,7 @@ function OptionsPage() {
                             }}
                             style={{
                               padding: '16px',
-                              borderRadius: 10,
-                              border:
-                                settings.interceptMode === 'ask'
-                                  ? '2px solid #4f46e5'
-                                  : `1px solid ${tk.hairline}`,
-                              background: settings.interceptMode === 'ask' ? tk.accentSoft : tk.surface,
                               cursor: disabled ? 'not-allowed' : 'pointer',
-                              transition: 'all 0.15s ease',
                             }}
                           >
                             <Radio
@@ -1240,9 +1287,19 @@ function OptionsPage() {
                             <span style={{ fontWeight: 600, fontSize: 15, color: tk.ink }}>
                               刷新页面时忽略拦截（推荐 · 仅在新开时拦截）
                             </span>
-                            <Tag color={settings.ignoreReload !== false ? 'green' : 'default'} style={{ margin: 0 }}>
+                            <span
+                              style={{
+                                fontSize: 11.5,
+                                padding: '1px 7px',
+                                borderRadius: 4,
+                                fontWeight: 500,
+                                background: settings.ignoreReload !== false ? tk.successSoft : tk.surfaceMuted,
+                                color: settings.ignoreReload !== false ? tk.successInk : tk.ink2,
+                                border: `1px solid ${settings.ignoreReload !== false ? tk.successBorder : tk.hairline}`,
+                              }}
+                            >
                               {settings.ignoreReload !== false ? '默认开启' : '已关闭'}
-                            </Tag>
+                            </span>
                           </div>
                           <div style={{ fontSize: 13, color: tk.ink3, lineHeight: 1.6 }}>
                             开启后，当你在已有标签页按 F5、点击刷新按钮、执行重新加载或原地提交相同网页时，直接保留并刷新当前标签页，绝不触发拦截或误跳。仅在真正新开标签页、从地址栏输入新网页或点击新链接时，才进行去重检测。
@@ -1269,9 +1326,19 @@ function OptionsPage() {
                           <span style={{ fontWeight: 600, fontSize: 15, color: tk.ink }}>
                             井号（Hash）路由是否参与判重
                           </span>
-                          <Tag color={settings.hashPolicy === 'ignore' ? 'default' : 'green'} style={{ margin: 0 }}>
+                          <span
+                            style={{
+                              fontSize: 11.5,
+                              padding: '1px 7px',
+                              borderRadius: 4,
+                              fontWeight: 500,
+                              background: settings.hashPolicy === 'ignore' ? tk.surfaceMuted : tk.successSoft,
+                              color: settings.hashPolicy === 'ignore' ? tk.ink2 : tk.successInk,
+                              border: `1px solid ${settings.hashPolicy === 'ignore' ? tk.hairline : tk.successBorder}`,
+                            }}
+                          >
                             {settings.hashPolicy === 'ignore' ? '忽略 Hash' : '默认保留'}
-                          </Tag>
+                          </span>
                         </div>
                         <div style={{ fontSize: 13, color: tk.ink3, lineHeight: 1.6, marginBottom: 12 }}>
                           大量单页应用用 <code>#inbox</code>、<code>#settings</code> 这类单段 Hash 表示不同页面。
@@ -1316,9 +1383,19 @@ function OptionsPage() {
                           <span style={{ fontWeight: 600, fontSize: 15, color: tk.ink }}>
                             单页应用站内路由变化的处理方式
                           </span>
-                          <Tag color={settings.spaPolicy === 'auto' ? 'orange' : 'green'} style={{ margin: 0 }}>
+                          <span
+                            style={{
+                              fontSize: 11.5,
+                              padding: '1px 7px',
+                              borderRadius: 4,
+                              fontWeight: 500,
+                              background: settings.spaPolicy === 'auto' ? tk.warnSoft : tk.successSoft,
+                              color: settings.spaPolicy === 'auto' ? tk.warnInk : tk.successInk,
+                              border: `1px solid ${settings.spaPolicy === 'auto' ? tk.warnBorder : tk.successBorder}`,
+                            }}
+                          >
                             {settings.spaPolicy === 'auto' ? '静默切换' : settings.spaPolicy === 'off' ? '不处理' : '页内提示'}
-                          </Tag>
+                          </span>
                         </div>
                         <div style={{ fontSize: 13, color: tk.ink3, lineHeight: 1.6, marginBottom: 12 }}>
                           在单页应用内点击站内链接时（不产生整页加载），若别处已有相同路由的标签页，如何处理。
@@ -1378,15 +1455,44 @@ function OptionsPage() {
                         }}
                       >
                         <span style={{ fontWeight: 600 }}>生效优先级：</span>
-                        <Tag color="cyan" style={{ margin: 0 }}>
+                        <span
+                          style={{
+                            padding: '2px 7px',
+                            borderRadius: 4,
+                            fontSize: 11.5,
+                            background: tk.successSoft,
+                            color: tk.successInk,
+                            border: `1px solid ${tk.successBorder}`,
+                          }}
+                        >
                           1. 域名白名单（优先放行）
-                        </Tag>
+                        </span>
                         <span>→</span>
-                        <Tag color="blue" style={{ margin: 0 }}>
+                        <span
+                          style={{
+                            padding: '2px 7px',
+                            borderRadius: 4,
+                            fontSize: 11.5,
+                            background: tk.accentSoft,
+                            color: tk.accentInk,
+                            border: `1px solid ${tk.accentBorder}`,
+                          }}
+                        >
                           2. 最具体的网站规则
-                        </Tag>
+                        </span>
                         <span>→</span>
-                        <Tag style={{ margin: 0 }}>3. 全局默认粒度</Tag>
+                        <span
+                          style={{
+                            padding: '2px 7px',
+                            borderRadius: 4,
+                            fontSize: 11.5,
+                            background: tk.surface,
+                            color: tk.ink2,
+                            border: `1px solid ${tk.hairlineStrong}`,
+                          }}
+                        >
+                          3. 全局默认粒度
+                        </span>
                       </div>
 
                       {settings.siteRules.length > 0 && (
@@ -1415,13 +1521,34 @@ function OptionsPage() {
                             >
                               <div>
                                 <Space wrap size={8}>
-                                  <Text strong style={{ fontSize: 14 }}>
+                                  <Text strong className="yt-mono" style={{ fontSize: 13.5 }}>
                                     {r.domain}
                                   </Text>
-                                  <Tag color="blue">{MODE_LABELS[r.mode]}</Tag>
-                                  <Tag color={r.includeSubdomains ? 'purple' : 'default'}>
+                                  <span
+                                    style={{
+                                      padding: '1px 7px',
+                                      borderRadius: 4,
+                                      fontSize: 11.5,
+                                      fontWeight: 500,
+                                      background: tk.accentSoft,
+                                      color: tk.accentInk,
+                                      border: `1px solid ${tk.accentBorder}`,
+                                    }}
+                                  >
+                                    {MODE_LABELS[r.mode]}
+                                  </span>
+                                  <span
+                                    style={{
+                                      padding: '1px 7px',
+                                      borderRadius: 4,
+                                      fontSize: 11.5,
+                                      background: tk.surfaceMuted,
+                                      color: tk.ink2,
+                                      border: `1px solid ${tk.hairlineStrong}`,
+                                    }}
+                                  >
                                     {r.includeSubdomains ? '含子域名' : '精确域名'}
-                                  </Tag>
+                                  </span>
                                 </Space>
                                 {r.ignoredParams.length > 0 && (
                                   <div style={{ fontSize: 12, color: tk.ink3, marginTop: 4 }}>
@@ -1573,13 +1700,14 @@ function OptionsPage() {
                           <Tag
                             key={w}
                             closable={!disabled}
+                            className="yt-mono"
                             onClose={(e) => {
                               e.preventDefault();
                               void save({ whitelist: settings.whitelist.filter((x) => x !== w) });
                             }}
                             style={{
                               padding: '4px 8px',
-                              fontSize: 13,
+                              fontSize: 12.5,
                               borderRadius: 6,
                               background: tk.surfaceMuted,
                               border: `1px solid ${tk.hairlineStrong}`,
@@ -1607,23 +1735,9 @@ function OptionsPage() {
                       </Popconfirm>
                     </div>
                   </div>
-                ),
-              },
-              {
-                key: 'bookmarks',
-                icon: <BookOutlined />,
-                label: (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    书签健康与生态治理
-                    {bookmarkReport && bookmarkReport.redundantCount > 0 && (
-                      <Badge
-                        count={bookmarkReport.redundantCount}
-                        style={{ backgroundColor: '#ef4444' }}
-                      />
-                    )}
-                  </span>
-                ),
-                children: (
+              )}
+
+              {activeTabKey === 'bookmarks' && (
                   <BookmarkHealthPanel
                     variant="full"
                     tk={tk}
@@ -1632,13 +1746,9 @@ function OptionsPage() {
                     onScan={scanBookmarks}
                     messageApi={messageApi}
                   />
-                ),
-              },
-              {
-                key: 'tabs',
-                icon: <RestOutlined />,
-                label: '闲置休眠与内存治理',
-                children: (
+              )}
+
+              {activeTabKey === 'tabs' && (
                   <TabHealthPanel
                     variant="full"
                     tk={tk}
@@ -1647,29 +1757,61 @@ function OptionsPage() {
                     onRefresh={fetchTabHealth}
                     messageApi={messageApi}
                   />
-                ),
-              },
-              {
-                key: 'ai',
-                icon: <ThunderboltOutlined />,
-                label: '端侧智能与资源管控 (AI)',
-                children: (
+              )}
+
+              {activeTabKey === 'ai' && (
                   <div>
                     {/* 全局总开关与环境探测卡片 */}
                     <Card
                       title={
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             <RobotOutlined style={{ color: tk.accentInk, fontSize: 16 }} />
-                            <span style={{ fontSize: 16, fontWeight: 600, color: tk.ink }}>
+                            <span style={{ fontSize: 15.5, fontWeight: 600, color: tk.ink }}>
                               Chrome Built-in AI 端侧模型引擎
                             </span>
                             {aiCapabilities.modelReady ? (
-                              <Tag color="success">Gemini Nano 端侧模型就绪</Tag>
+                              <span
+                                style={{
+                                  fontSize: 11.5,
+                                  fontWeight: 500,
+                                  padding: '1px 7px',
+                                  borderRadius: 4,
+                                  background: tk.successSoft,
+                                  color: tk.successInk,
+                                  border: `1px solid ${tk.successBorder}`,
+                                }}
+                              >
+                                Gemini Nano 端侧模型就绪
+                              </span>
                             ) : aiCapabilities.supported ? (
-                              <Tag color="warning">端侧模型准备中 ({aiCapabilities.status})</Tag>
+                              <span
+                                style={{
+                                  fontSize: 11.5,
+                                  fontWeight: 500,
+                                  padding: '1px 7px',
+                                  borderRadius: 4,
+                                  background: tk.warnSoft,
+                                  color: tk.warnInk,
+                                  border: `1px solid ${tk.warnBorder}`,
+                                }}
+                              >
+                                端侧模型准备中 ({aiCapabilities.status})
+                              </span>
                             ) : (
-                              <Tag color="default">未检测到本地模型 (已优雅降级为启发式规则)</Tag>
+                              <span
+                                style={{
+                                  fontSize: 11.5,
+                                  fontWeight: 500,
+                                  padding: '1px 7px',
+                                  borderRadius: 4,
+                                  background: tk.surfaceMuted,
+                                  color: tk.ink2,
+                                  border: `1px solid ${tk.hairlineStrong}`,
+                                }}
+                              >
+                                未检测到本地模型 (已优雅降级为启发式规则)
+                              </span>
                             )}
                           </div>
                           <Switch
@@ -1681,7 +1823,6 @@ function OptionsPage() {
                       style={{
                         marginBottom: 20,
                         borderRadius: 12,
-                        borderColor: tk.hairline,
                         boxShadow: tk.shadowCard,
                       }}
                     >
@@ -1738,7 +1879,7 @@ function OptionsPage() {
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 14, color: tk.ink }}>
                               <span>跨域名任务语义聚类与智能命名 (Cross-Domain Auto-Grouping)</span>
-                              <Tag style={{ margin: 0, fontSize: 11 }}>规划中</Tag>
+                              <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: tk.surfaceMuted, color: tk.ink2, border: `1px solid ${tk.hairline}` }}>规划中</span>
                             </div>
                             <div style={{ fontSize: 12, color: tk.ink3 }}>
                               将跨站点的同一任务页面（Jira工单、GitLab代码、本地开发端口）自动归并为统一工作流标签组
@@ -1751,7 +1892,7 @@ function OptionsPage() {
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 14, color: tk.ink }}>
                               <span>晨间工作现场智能简报 (Morning Standup Briefing)</span>
-                              <Tag style={{ margin: 0, fontSize: 11 }}>规划中</Tag>
+                              <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: tk.surfaceMuted, color: tk.ink2, border: `1px solid ${tk.hairline}` }}>规划中</span>
                             </div>
                             <div style={{ fontSize: 12, color: tk.ink3 }}>
                               每日早晨在新标签页生成一行未完任务与待审 PR 概览，支持一键断点续传
@@ -1764,7 +1905,7 @@ function OptionsPage() {
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 14, color: tk.ink }}>
                               <span>书签空闲时智能语义打标 (Smart Bookmarks Tagging)</span>
-                              <Tag style={{ margin: 0, fontSize: 11 }}>规划中</Tag>
+                              <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: tk.surfaceMuted, color: tk.ink2, border: `1px solid ${tk.hairline}` }}>规划中</span>
                             </div>
                             <div style={{ fontSize: 12, color: tk.ink3 }}>
                               在浏览器空闲时自动分析根目录书签并打标；涉及遍历扫描，默认保持关闭以节约算力
@@ -1779,8 +1920,8 @@ function OptionsPage() {
                     <Card
                       title={
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <SafetyCertificateOutlined style={{ color: '#10b981' }} />
-                          <span style={{ fontSize: 16, fontWeight: 600, color: tk.ink }}>
+                          <SafetyCertificateOutlined style={{ color: tk.successInk }} />
+                          <span style={{ fontSize: 15.5, fontWeight: 600, color: tk.ink }}>
                             端侧 AI 资源开销治理防线
                           </span>
                         </div>
@@ -1788,7 +1929,6 @@ function OptionsPage() {
                       style={{
                         marginBottom: 20,
                         borderRadius: 12,
-                        borderColor: tk.hairline,
                         boxShadow: tk.shadowCard,
                       }}
                     >
@@ -1822,7 +1962,7 @@ function OptionsPage() {
                               本地持久化 LRU 结果缓存
                             </div>
                             <div style={{ fontSize: 12, color: tk.ink3 }}>
-                              当前已缓存 <Text strong>{aiCacheCount}</Text> 条本地推理结果（二次访问享受 0 算力、0 显存占用、0 延迟直出）
+                              当前已缓存 <Text strong className="yt-tnum">{aiCacheCount}</Text> 条本地推理结果（二次访问享受 0 算力、0 显存占用、0 延迟直出）
                             </div>
                           </div>
                           <Button size="small" onClick={handleClearAiCache}>
@@ -1832,10 +1972,9 @@ function OptionsPage() {
                       </div>
                     </Card>
                   </div>
-                ),
-              },
-            ]}
-          />
+              )}
+            </div>
+          </div>
 
           {/* 底部版本栏 */}
           <div
@@ -1843,11 +1982,12 @@ function OptionsPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
-              paddingTop: 12,
+              paddingTop: 14,
+              marginTop: 20,
               borderTop: `1px solid ${tk.hairline}`,
             }}
           >
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" className="yt-tnum" style={{ fontSize: 12 }}>
               YiTab 一签 · {APP_VERSION}
             </Text>
           </div>

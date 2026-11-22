@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  Badge,
   Button,
   Card,
   ConfigProvider,
@@ -13,8 +12,6 @@ import {
   Radio,
   Select,
   Space,
-  Tabs,
-  Tag,
   theme,
   Tooltip,
   Typography,
@@ -61,6 +58,7 @@ import { useThemeMode, applyThemeToDocument } from '@/lib/theme-mode';
 import { ThemeModeButton } from '@/components/ThemeToggle';
 import { TabHealthPanel } from '@/components/TabHealthPanel';
 import { BookmarkHealthPanel } from '@/components/BookmarkHealthPanel';
+import '@/styles/precision-ui.css';
 import {
   DEFAULTS,
   getDedupPausedUntil,
@@ -473,14 +471,10 @@ function PopupApp() {
         token: {
           colorPrimary: tk.accent,
           borderRadius: 8,
-          fontFamily:
-            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif',
-        },
-        components: {
-          Tabs: {
-            itemSelectedColor: tk.accentInk,
-            inkBarColor: tk.accentInk,
-          },
+          colorBgContainer: tk.surface,
+          colorBgElevated: tk.surface,
+          colorBorderSecondary: tk.hairline,
+          fontFamily: 'var(--font-sans)',
         },
       }}
     >
@@ -492,51 +486,24 @@ function PopupApp() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            marginBottom: 12,
+            marginBottom: 10,
             paddingBottom: 10,
             borderBottom: `1px solid ${tk.hairline}`,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 7,
-                background: 'linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#fff',
-                fontWeight: 800,
-                fontSize: 14,
-                boxShadow: '0 2px 6px rgba(79, 70, 229, 0.3)',
-              }}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <span className="yt-brand-pill">
+              <span className="yt-brand-dot" />
+              <span>YiTab 一签</span>
+            </span>
+            <span className="yt-ver-pill">{APP_VERSION}</span>
+            <Text
+              type="secondary"
+              className="yt-tnum"
+              style={{ fontSize: 11, color: tk.ink3, whiteSpace: 'nowrap' }}
             >
-              Yi
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Text strong style={{ fontSize: 15, color: tk.ink }}>
-                  YiTab 一签
-                </Text>
-                <Tag
-                  color="indigo"
-                  style={{
-                    margin: 0,
-                    fontSize: 10,
-                    lineHeight: '16px',
-                    padding: '0 5px',
-                    borderRadius: 4,
-                  }}
-                >
-                  {APP_VERSION}
-                </Tag>
-              </div>
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                当前窗口: {currentTabs.length} 标签 · {uniqueDomainsCount} 域名
-              </Text>
-            </div>
+              {currentTabs.length} 标签 · {uniqueDomainsCount} 域名
+            </Text>
           </div>
           <Space size={4}>
             <ThemeModeButton mode={themeMode} onChange={setThemeMode} ink3={tk.ink3} />
@@ -591,19 +558,49 @@ function PopupApp() {
               </Text>
             ) : activeHost ? (
               <>
-                <Text ellipsis style={{ fontSize: 12, color: tk.ink, fontWeight: 500, maxWidth: 130 }} title={activeHost}>
+                <Text
+                  ellipsis
+                  className="yt-mono"
+                  style={{ fontSize: 11.5, color: tk.ink, fontWeight: 600, maxWidth: 132 }}
+                  title={activeHost}
+                >
                   {activeHost}
                 </Text>
-                <Tag
-                  color={isCurrentWhitelisted ? 'green' : currentRule?.rule ? 'blue' : 'default'}
-                  style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 5px', borderRadius: 4 }}
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    height: 18,
+                    padding: '0 6px',
+                    borderRadius: 4,
+                    fontSize: 10.5,
+                    fontWeight: 500,
+                    background: isCurrentWhitelisted
+                      ? tk.successSoft
+                      : currentRule?.rule
+                        ? tk.accentSoft
+                        : tk.surfaceMuted,
+                    color: isCurrentWhitelisted
+                      ? tk.successInk
+                      : currentRule?.rule
+                        ? tk.accentInk
+                        : tk.ink2,
+                    border: `1px solid ${
+                      isCurrentWhitelisted
+                        ? tk.successBorder
+                        : currentRule?.rule
+                          ? tk.accentBorder
+                          : tk.hairline
+                    }`,
+                    whiteSpace: 'nowrap',
+                  }}
                 >
                   {isCurrentWhitelisted
                     ? '白名单'
                     : currentRule?.rule
                       ? `规则·${MODE_LABELS[currentRule.mode]}`
                       : MODE_LABELS[dedupSettings.matchMode]}
-                </Tag>
+                </span>
               </>
             ) : (
               <Text type="secondary" style={{ fontSize: 12 }}>
@@ -670,29 +667,71 @@ function PopupApp() {
           </Space>
         </div>
 
-        {/* Tabs */}
-        <Tabs
-          activeKey={activeTabKey}
-          onChange={setActiveTabKey}
-          size="small"
-          tabBarGutter={18}
-          centered
-          items={[
-            {
-              key: 'organize',
-              icon: <AppstoreOutlined />,
-              label: '治理',
-              children: (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {/* 1. 域名智能归拢卡片 */}
-                  <Card
-                    size="small"
-                    style={{
-                      borderRadius: 10,
-                      boxShadow: tk.shadowCard,
-                      border: `1px solid ${tk.hairline}`,
-                    }}
-                  >
+        {/* Segmented Navigation Rail */}
+        <div
+          role="tablist"
+          aria-label="YiTab 弹窗视图切换"
+          className="yt-rail-tabs"
+          style={{ marginBottom: 12 }}
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTabKey === 'organize'}
+            className="yt-rail-tab"
+            onClick={() => setActiveTabKey('organize')}
+          >
+            <AppstoreOutlined style={{ fontSize: 12 }} />
+            <span>治理</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTabKey === 'search'}
+            className="yt-rail-tab"
+            onClick={() => setActiveTabKey('search')}
+          >
+            <SearchOutlined style={{ fontSize: 12 }} />
+            <span>检索</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTabKey === 'bookmarks'}
+            className="yt-rail-tab"
+            onClick={() => setActiveTabKey('bookmarks')}
+          >
+            <BookOutlined style={{ fontSize: 12 }} />
+            <span>书签</span>
+            {bookmarkReport && bookmarkReport.redundantCount > 0 && (
+              <span className="yt-count-badge">{bookmarkReport.redundantCount}</span>
+            )}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTabKey === 'snapshots'}
+            className="yt-rail-tab"
+            onClick={() => setActiveTabKey('snapshots')}
+          >
+            <CameraOutlined style={{ fontSize: 12 }} />
+            <span>快照</span>
+            {snapshots.length > 0 && (
+              <span className="yt-count-badge accent">{snapshots.length}</span>
+            )}
+          </button>
+        </div>
+
+        {activeTabKey === 'organize' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* 1. 域名智能归拢卡片 */}
+            <Card
+              size="small"
+              style={{
+                borderRadius: 12,
+                boxShadow: tk.shadowCard,
+              }}
+            >
                     <div style={{ marginBottom: 10 }}>
                       <Text strong style={{ fontSize: 13, color: tk.ink }}>
                         域名智能聚合与标签归拢
@@ -714,19 +753,23 @@ function PopupApp() {
                           marginBottom: 12,
                         }}
                       >
-                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 6 }}>
+                        <Text type="secondary" className="yt-tnum" style={{ fontSize: 11, display: 'block', marginBottom: 6 }}>
                           检测到可聚合域名（共 {domainAnalysis.reduce((acc, d) => acc + d.count, 0)} 个标签）：
                         </Text>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                           {domainAnalysis.map((item) => (
-                            <Tag
+                            <span
                               key={item.domain}
                               style={{
-                                margin: 0,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '2px 6px',
                                 fontSize: 11,
                                 borderRadius: 4,
                                 border: `1px solid ${tk.hairlineStrong}`,
                                 background: tk.surface,
+                                color: tk.ink,
                               }}
                             >
                               <span
@@ -736,12 +779,11 @@ function PopupApp() {
                                   height: 6,
                                   borderRadius: '50%',
                                   background: getDeterministicColor(item.domain),
-                                  marginRight: 4,
                                 }}
                               />
-                              {item.domain}{' '}
-                              <strong style={{ color: tk.accentInk }}>({item.count})</strong>
-                            </Tag>
+                              <span className="yt-mono">{item.domain}</span>
+                              <strong className="yt-tnum" style={{ color: tk.accentInk }}>({item.count})</strong>
+                            </span>
                           ))}
                         </div>
                       </div>
@@ -793,15 +835,11 @@ function PopupApp() {
                     onRefresh={refreshCurrentWindow}
                     messageApi={messageApi}
                   />
-                </div>
-              ),
-            },
-            {
-              key: 'search',
-              icon: <SearchOutlined />,
-              label: '检索',
-              children: (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          </div>
+        )}
+
+        {activeTabKey === 'search' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <Input
                     prefix={<SearchOutlined style={{ color: tk.ink3 }} />}
                     placeholder="搜索标签、书签或快捷指令"
@@ -831,7 +869,7 @@ function PopupApp() {
                       <Radio.Button value="bookmark">书签</Radio.Button>
                       <Radio.Button value="history">历史</Radio.Button>
                     </Radio.Group>
-                    <Text type="secondary" style={{ fontSize: 11 }}>
+                    <Text type="secondary" className="yt-tnum" style={{ fontSize: 11 }}>
                       共 {searchResults.length} 项
                     </Text>
                   </div>
@@ -855,14 +893,8 @@ function PopupApp() {
                       />
                     ) : (
                       searchResults.map((item) => {
-                        const kindTagColor =
-                          item.kind === 'tab'
-                            ? 'blue'
-                            : item.kind === 'command'
-                              ? 'purple'
-                              : item.kind === 'bookmark'
-                                ? 'green'
-                                : 'orange';
+                        const isTabKind = item.kind === 'tab';
+                        const isCmdKind = item.kind === 'command';
                         const kindText =
                           item.kind === 'tab'
                             ? '标签'
@@ -875,26 +907,15 @@ function PopupApp() {
                         return (
                           <div
                             key={item.id}
+                            role="button"
+                            tabIndex={0}
+                            className="yt-list-row"
                             onClick={() => handleExecuteSearchItem(item)}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 10,
-                              padding: '8px 10px',
-                              borderRadius: 8,
-                              background: tk.surface,
-                              border: `1px solid ${tk.hairline}`,
-                              cursor: 'pointer',
-                              transition: 'all 0.15s ease',
-                              boxShadow: tk.shadowCard,
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = tk.accent;
-                              e.currentTarget.style.background = tk.surfaceHover;
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = tk.hairline;
-                              e.currentTarget.style.background = tk.surface;
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleExecuteSearchItem(item);
+                              }
                             }}
                           >
                             <div
@@ -917,10 +938,22 @@ function PopupApp() {
                                   style={{ width: 14, height: 14 }}
                                   onError={(e) => (e.currentTarget.style.display = 'none')}
                                 />
-                              ) : item.kind === 'command' ? (
+                              ) : isCmdKind ? (
                                 <ThunderboltOutlined style={{ fontSize: 13, color: tk.accentInk }} />
                               ) : (
-                                <span style={{ fontSize: 12 }}>🌐</span>
+                                <svg
+                                  width="13"
+                                  height="13"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke={tk.ink3}
+                                  strokeWidth="1.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <circle cx="12" cy="12" r="9" />
+                                  <path d="M3.6 9h16.8M3.6 15h16.8M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18" />
+                                </svg>
                               )}
                             </div>
 
@@ -948,78 +981,53 @@ function PopupApp() {
                                       width: 5,
                                       height: 5,
                                       borderRadius: '50%',
-                                      background: item.groupColor || '#4f46e5',
+                                      background: item.groupColor || tk.accent,
                                       marginRight: 4,
                                     }}
                                   />
                                 )}
                                 {item.groupTitle ? `${item.groupTitle} · ` : ''}
-                                {item.domain || item.description || item.url}
+                                <span className={item.domain ? 'yt-mono' : undefined}>
+                                  {item.domain || item.description || item.url}
+                                </span>
                               </Text>
                             </div>
 
-                            <Tag
-                              color={kindTagColor}
-                              style={{ margin: 0, fontSize: 10, borderRadius: 4 }}
+                            <span
+                              style={{
+                                flexShrink: 0,
+                                padding: '1px 6px',
+                                fontSize: 10,
+                                fontWeight: 500,
+                                borderRadius: 4,
+                                background: isTabKind ? tk.accentSoft : tk.surfaceMuted,
+                                color: isTabKind ? tk.accentInk : tk.ink2,
+                                border: `1px solid ${isTabKind ? tk.accentBorder : tk.hairline}`,
+                              }}
                             >
                               {kindText}
-                            </Tag>
+                            </span>
                           </div>
                         );
                       })
                     )}
                   </div>
-                </div>
-              ),
-            },
-            {
-              key: 'bookmarks',
-              icon: <BookOutlined />,
-              label: (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  书签
-                  {bookmarkReport && bookmarkReport.redundantCount > 0 && (
-                    <Badge
-                      count={bookmarkReport.redundantCount}
-                      style={{
-                        backgroundColor: '#ef4444',
-                        boxShadow: 'none',
-                      }}
-                    />
-                  )}
-                </span>
-              ),
-              children: (
-                <BookmarkHealthPanel
-                  variant="compact"
-                  tk={tk}
-                  report={bookmarkReport}
-                  scanning={bookmarkScanning}
-                  onScan={scanBookmarks}
-                  messageApi={messageApi}
-                />
-              ),
-            },
-            {
-              key: 'snapshots',
-              icon: <CameraOutlined />,
-              label: (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  快照
-                  {snapshots.length > 0 && (
-                    <Badge
-                      count={snapshots.length}
-                      style={{
-                        backgroundColor: tk.accentSoft,
-                        color: tk.accentInk,
-                        boxShadow: 'none',
-                      }}
-                    />
-                  )}
-                </span>
-              ),
-              children: (
-                <div>
+          </div>
+        )}
+
+        {activeTabKey === 'bookmarks' && (
+          <BookmarkHealthPanel
+            variant="compact"
+            tk={tk}
+            report={bookmarkReport}
+            scanning={bookmarkScanning}
+            onScan={scanBookmarks}
+            messageApi={messageApi}
+          />
+        )}
+
+        {activeTabKey === 'snapshots' && (
+          <div>
                   <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
                     <Input
                       size="small"
@@ -1060,12 +1068,10 @@ function PopupApp() {
                         return (
                           <div
                             key={snap.id}
+                            className="yt-deck-card"
                             style={{
-                              background: tk.surface,
-                              border: `1px solid ${tk.hairline}`,
-                              borderRadius: 8,
                               padding: '10px 12px',
-                              boxShadow: tk.shadowCard,
+                              borderRadius: 10,
                             }}
                           >
                             <div
@@ -1102,20 +1108,22 @@ function PopupApp() {
                                       {snap.name}
                                     </Text>
                                   )}
-                                  <Tag
-                                    color="blue"
+                                  <span
+                                    className="yt-tnum"
                                     style={{
-                                      margin: 0,
-                                      fontSize: 10,
+                                      fontSize: 10.5,
                                       lineHeight: '16px',
-                                      padding: '0 4px',
+                                      padding: '0 5px',
                                       borderRadius: 4,
+                                      background: tk.accentSoft,
+                                      color: tk.accentInk,
+                                      border: `1px solid ${tk.accentBorder}`,
                                     }}
                                   >
                                     {snap.tabs.length} 项
-                                  </Tag>
+                                  </span>
                                 </div>
-                                <Text type="secondary" style={{ fontSize: 11 }}>
+                                <Text type="secondary" className="yt-tnum" style={{ fontSize: 11 }}>
                                   {new Date(snap.createdAt).toLocaleString()}
                                 </Text>
                               </div>
@@ -1144,7 +1152,7 @@ function PopupApp() {
                                   <Button
                                     size="small"
                                     type="text"
-                                    icon={<FolderOpenOutlined style={{ color: '#0284c7' }} />}
+                                    icon={<FolderOpenOutlined style={{ color: tk.ink2 }} />}
                                     onClick={() => handleRestoreSnapshot(snap, false)}
                                   />
                                 </Tooltip>
@@ -1188,6 +1196,7 @@ function PopupApp() {
                                   >
                                     <Text
                                       type="secondary"
+                                      className="yt-tnum"
                                       style={{ width: 16, fontSize: 10, textAlign: 'center' }}
                                     >
                                       {idx + 1}
@@ -1255,7 +1264,8 @@ function PopupApp() {
                         icon={copied ? <CheckOutlined /> : <CopyOutlined />}
                         onClick={handleCopy}
                         style={{
-                          background: copied ? '#10b981' : '#4f46e5',
+                          background: copied ? tk.successInk : tk.accent,
+                          borderColor: copied ? tk.successInk : tk.accent,
                           fontWeight: 500,
                         }}
                       >
@@ -1270,11 +1280,8 @@ function PopupApp() {
                       </Button>
                     </div>
                   </div>
-                </div>
-              ),
-            },
-          ]}
-        />
+          </div>
+        )}
       </div>
     </ConfigProvider>
   );

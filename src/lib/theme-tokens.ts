@@ -1,13 +1,12 @@
-// 控制中心 / 控制弹窗 / 拦截确认页共用的配色令牌。
-// 这三页的样式原本是内联字面量，深色模式需要按语义取值，故集中在此处。
-// 语义参考工作台 style.css 的 --canvas / --surface / --ink 体系。
+// 控制中心 / 控制弹窗 / 拦截确认页共用的 Precision Slate 配色令牌。
+// 统一对齐 DESIGN.md 规范与工作台 style.css 的色彩层级。
 
 export interface ThemeTokens {
   /** 页面底色 */
   canvas: string;
   /** 卡片、输入框等承载面 */
   surface: string;
-  /** 次级填充（标签、代码块、图标底座） */
+  /** 次级填充（凹槽轨道、标签、代码块、图标底座） */
   surfaceMuted: string;
   /** 悬停态填充 */
   surfaceHover: string;
@@ -25,17 +24,19 @@ export interface ThemeTokens {
   stickyBg: string;
   /** 吸顶栏描边 */
   stickyBorder: string;
-  /** 卡片投影 */
+  /** 卡片投影（单声明环形阴影） */
   shadowCard: string;
   /** 吸顶栏投影 */
   shadowSticky: string;
   /** 品牌主色（按钮背景、边框强调） */
   accent: string;
+  /** 品牌悬停色 */
+  accentHover: string;
   /** 品牌文字色（深色模式下提亮以满足 WCAG AA 对比度） */
   accentInk: string;
-  /** 选中态浅底（对应浅色 #f5f3ff / #eef2ff） */
+  /** 选中态浅底 */
   accentSoft: string;
-  /** 选中态描边 */
+  /** 选中态描边 / 环形边框 */
   accentBorder: string;
   /** 成功浅底与描边 */
   successSoft: string;
@@ -46,74 +47,88 @@ export interface ThemeTokens {
   /** 信息浅底与描边 */
   infoSoft: string;
   infoBorder: string;
-  /** 危险文字（浅底上的深红 / 深底上的浅红） */
+  /** 警告浅底与描边 */
+  warnSoft: string;
+  warnBorder: string;
+  /** 危险文字 */
   dangerInk: string;
   /** 信息文字 */
   infoInk: string;
   /** 成功文字 */
   successInk: string;
-  /** 中性提示浅底（浅色 #fafafa） */
+  /** 警告文字 */
+  warnInk: string;
+  /** 中性提示浅底 */
   neutralSoft: string;
 }
 
 export const LIGHT_TOKENS: ThemeTokens = {
-  canvas: '#f8fafc',
+  canvas: '#f2f4f7',
   surface: '#ffffff',
-  surfaceMuted: '#f1f5f9',
-  surfaceHover: '#f8fafc',
-  ink: '#0f172a',
-  ink2: '#475569',
-  ink3: '#64748b',
-  hairline: '#e2e8f0',
-  hairlineStrong: '#cbd5e1',
-  stickyBg: 'rgba(255, 255, 255, 0.88)',
-  stickyBorder: 'rgba(226, 232, 240, 0.8)',
-  shadowCard: '0 1px 3px rgba(0, 0, 0, 0.04)',
-  shadowSticky: '0 4px 20px -2px rgba(15, 23, 42, 0.05)',
-  accent: '#4f46e5',
-  accentInk: '#4f46e5',
-  accentSoft: '#f5f3ff',
-  accentBorder: '#ddd6fe',
-  successSoft: '#f0fdf4',
-  successBorder: '#86efac',
-  dangerSoft: '#fef2f2',
-  dangerBorder: '#fecaca',
-  infoSoft: '#eff6ff',
-  infoBorder: '#bfdbfe',
-  dangerInk: '#991b1b',
-  infoInk: '#1e40af',
-  successInk: '#065f46',
-  neutralSoft: '#fafafa',
+  surfaceMuted: '#eaeef4',
+  surfaceHover: '#f4f6f9',
+  ink: '#111318',
+  ink2: '#464f5e',
+  ink3: '#525d70',
+  hairline: '#dfe4ec',
+  hairlineStrong: '#c8d0dc',
+  stickyBg: 'rgba(255, 255, 255, 0.90)',
+  stickyBorder: '#dfe4ec',
+  shadowCard:
+    '0 0 0 1px oklch(0 0 0 / 0.06), 0 1px 2px -1px oklch(0 0 0 / 0.05), 0 4px 14px -4px oklch(0 0 0 / 0.05)',
+  shadowSticky: '0 1px 0 #dfe4ec, 0 6px 20px -6px rgba(17, 19, 24, 0.08)',
+  accent: '#2563eb',
+  accentHover: '#1d4ed8',
+  accentInk: '#2563eb',
+  accentSoft: 'rgba(37, 99, 235, 0.09)',
+  accentBorder: 'rgba(37, 99, 235, 0.24)',
+  successSoft: 'rgba(15, 118, 110, 0.10)',
+  successBorder: 'rgba(15, 118, 110, 0.24)',
+  dangerSoft: 'rgba(220, 38, 38, 0.10)',
+  dangerBorder: 'rgba(220, 38, 38, 0.24)',
+  infoSoft: 'rgba(37, 99, 235, 0.08)',
+  infoBorder: 'rgba(37, 99, 235, 0.22)',
+  warnSoft: 'rgba(180, 83, 9, 0.09)',
+  warnBorder: 'rgba(180, 83, 9, 0.24)',
+  dangerInk: '#b91c1c',
+  infoInk: '#1d4ed8',
+  successInk: '#0f766e',
+  warnInk: '#b45309',
+  neutralSoft: '#eaeef4',
 };
 
 export const DARK_TOKENS: ThemeTokens = {
-  canvas: '#0f1115',
-  surface: '#16181d',
-  surfaceMuted: '#1e2127',
-  surfaceHover: '#1e2127',
-  ink: '#e8eaee',
-  ink2: '#b3bac5',
-  ink3: '#8f96a2',
-  hairline: '#262a31',
-  hairlineStrong: '#343941',
-  stickyBg: 'rgba(22, 24, 29, 0.88)',
-  stickyBorder: 'rgba(52, 58, 68, 0.8)',
-  shadowCard: '0 1px 3px rgba(0, 0, 0, 0.4)',
-  shadowSticky: '0 4px 20px -2px rgba(0, 0, 0, 0.5)',
-  accent: '#6366f1',
-  accentInk: '#818cf8',
-  accentSoft: '#23243a',
-  accentBorder: '#3b3d63',
-  successSoft: '#12261f',
-  successBorder: '#1f4a3a',
-  dangerSoft: '#2a1618',
-  dangerBorder: '#4d2529',
-  infoSoft: '#131e2e',
-  infoBorder: '#23395a',
-  dangerInk: '#f0a3a3',
-  infoInk: '#9dbcf0',
-  successInk: '#7fd6b4',
-  neutralSoft: '#1a1d23',
+  canvas: '#0b0d11',
+  surface: '#13161c',
+  surfaceMuted: '#1a1e26',
+  surfaceHover: '#1d222b',
+  ink: '#edf0f5',
+  ink2: '#a6b0c0',
+  ink3: '#939dae',
+  hairline: '#232833',
+  hairlineStrong: '#323947',
+  stickyBg: 'rgba(19, 22, 28, 0.90)',
+  stickyBorder: '#232833',
+  shadowCard: '0 0 0 1px oklch(1 0 0 / 0.07), 0 8px 24px -8px rgba(0, 0, 0, 0.55)',
+  shadowSticky: '0 1px 0 #232833, 0 8px 24px -6px rgba(0, 0, 0, 0.55)',
+  accent: '#2563eb',
+  accentHover: '#1d4ed8',
+  accentInk: '#60a5fa',
+  accentSoft: 'rgba(96, 165, 250, 0.14)',
+  accentBorder: 'rgba(96, 165, 250, 0.28)',
+  successSoft: 'rgba(45, 212, 191, 0.14)',
+  successBorder: 'rgba(45, 212, 191, 0.28)',
+  dangerSoft: 'rgba(248, 113, 113, 0.14)',
+  dangerBorder: 'rgba(248, 113, 113, 0.28)',
+  infoSoft: 'rgba(96, 165, 250, 0.14)',
+  infoBorder: 'rgba(96, 165, 250, 0.28)',
+  warnSoft: 'rgba(251, 191, 36, 0.12)',
+  warnBorder: 'rgba(251, 191, 36, 0.28)',
+  dangerInk: '#f87171',
+  infoInk: '#93c5fd',
+  successInk: '#2dd4bf',
+  warnInk: '#fbbf24',
+  neutralSoft: '#1a1e26',
 };
 
 /** 监听系统配色变化；返回取消订阅函数。 */

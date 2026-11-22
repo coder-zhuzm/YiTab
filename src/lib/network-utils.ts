@@ -437,14 +437,15 @@ export function browserFaviconUrl(pageUrl: string, size = 32): string {
 }
 
 /** 优雅生成高辨识度双色渐变 SVG Favicon */
-const GRADIENTS = [
-  ['#3b82f6', '#1d4ed8'], // 科技蓝
-  ['#10b981', '#047857'], // 翡翠绿
-  ['#8b5cf6', '#6d28d9'], // 紫罗兰
-  ['#f59e0b', '#b45309'], // 琥珀橙
-  ['#ec4899', '#be185d'], // 玫红
-  ['#06b6d4', '#0e7490'], // 青蓝
-  ['#64748b', '#334155'], // 极简灰
+// Precision Slate 克制矿石色板：低饱和、高可读性单色底座，告别 AI 霓虹渐变
+const MONOGRAM_PALETTE = [
+  { bg: '#1e3a5f', fg: '#f1f5f9', ring: 'rgba(255,255,255,0.14)' }, // 钢蓝
+  { bg: '#1e293b', fg: '#f1f5f9', ring: 'rgba(255,255,255,0.14)' }, // 石墨
+  { bg: '#134e4a', fg: '#f0fdfa', ring: 'rgba(255,255,255,0.14)' }, // 深青
+  { bg: '#27272a', fg: '#f4f4f5', ring: 'rgba(255,255,255,0.14)' }, // 钨灰
+  { bg: '#1e40af', fg: '#eff6ff', ring: 'rgba(255,255,255,0.16)' }, // 钴蓝
+  { bg: '#3730a3', fg: '#eef2ff', ring: 'rgba(255,255,255,0.14)' }, // 深靛
+  { bg: '#3f3f46', fg: '#fafafa', ring: 'rgba(255,255,255,0.14)' }, // 铁灰
 ];
 
 function stringHash(str: string): number {
@@ -462,7 +463,7 @@ function stringHash(str: string): number {
 export function generateSvgFavicon(title: string, hostname: string): string {
   const seed = (hostname || title || 'YiTab').toLowerCase();
   const hash = stringHash(seed);
-  const [col1, col2] = GRADIENTS[hash % GRADIENTS.length];
+  const swatch = MONOGRAM_PALETTE[hash % MONOGRAM_PALETTE.length];
 
   // 提取 1~2 个大写字符作为首字母标识
   let initials = 'YT';
@@ -482,16 +483,11 @@ export function generateSvgFavicon(title: string, hostname: string): string {
   }
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
-  <defs>
-    <linearGradient id="g_${hash}" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="${col1}" />
-      <stop offset="100%" stop-color="${col2}" />
-    </linearGradient>
-  </defs>
-  <rect width="48" height="48" rx="12" fill="url(#g_${hash})" />
-  <text x="24" y="30" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="${
-    initials.length > 1 ? '18' : '22'
-  }" font-weight="600" fill="#ffffff" text-anchor="middle" dominant-baseline="central">${initials}</text>
+  <rect width="48" height="48" rx="10" fill="${swatch.bg}" />
+  <rect x="0.75" y="0.75" width="46.5" height="46.5" rx="9.25" fill="none" stroke="${swatch.ring}" stroke-width="1.5" />
+  <text x="24" y="25" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Segoe UI', sans-serif" font-size="${
+    initials.length > 1 ? '17' : '21'
+  }" font-weight="600" letter-spacing="-0.02em" fill="${swatch.fg}" text-anchor="middle" dominant-baseline="central">${initials}</text>
 </svg>`;
 
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;

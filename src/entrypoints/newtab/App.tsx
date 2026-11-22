@@ -4,6 +4,7 @@ import {
   BookOutlined,
   CheckCircleFilled,
   ClockCircleOutlined,
+  CloseOutlined,
   CopyOutlined,
   DeleteOutlined,
   DownOutlined,
@@ -18,7 +19,6 @@ import {
   RocketOutlined,
   SearchOutlined,
   SettingOutlined,
-  SwapOutlined,
   UpOutlined,
 } from '@ant-design/icons';
 import {
@@ -91,6 +91,14 @@ import {
 } from '@/lib/ai-assistant';
 import { getAiSettings, type AiSettings, DEFAULT_AI_SETTINGS } from '@/lib/settings';
 import { applyThemeToDocument, useThemeMode } from '@/lib/theme-mode';
+import {
+  getDefaultPaletteShortcut,
+  getPaletteShortcut,
+  matchesPaletteShortcut,
+  PALETTE_SHORTCUT_STORAGE_KEY,
+  sanitizePaletteShortcut,
+  type PaletteShortcutConfig,
+} from '@/lib/palette-shortcut';
 import { ThemeModeButton } from '@/components/ThemeToggle';
 import { AdaptiveFavicon } from '@/components/AdaptiveFavicon';
 import { sendToBackground } from '@/lib/messaging';
@@ -108,12 +116,68 @@ function hostnameOf(url: string): string {
   }
 }
 
+/**
+ * 搜索引擎矢量图标：统一 1.75px 描边几何图标，替代原生 Emoji 占位
+ */
+function EngineGlyph({ id }: { id: string }) {
+  const common = {
+    width: 13,
+    height: 13,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.5,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+  if (id === 'github') {
+    return (
+      <svg {...common}>
+        <polyline points="16 18 22 12 16 6" />
+        <polyline points="8 6 2 12 8 18" />
+      </svg>
+    );
+  }
+  if (id === 'baidu') {
+    return (
+      <svg {...common}>
+        <circle cx="11" cy="11" r="7" />
+        <line x1="20" y1="20" x2="16.2" y2="16.2" />
+      </svg>
+    );
+  }
+  if (id === 'bing') {
+    return (
+      <svg {...common}>
+        <polygon points="12 2 19 21 12 17 5 21 12 2" />
+      </svg>
+    );
+  }
+  if (id === 'zhihu') {
+    return (
+      <svg {...common}>
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <circle cx="12" cy="12" r="9" />
+      <line x1="3.6" y1="9" x2="20.4" y2="9" />
+      <line x1="3.6" y1="15" x2="20.4" y2="15" />
+      <path d="M12 3a13.5 13.5 0 0 0 0 18" />
+      <path d="M12 3a13.5 13.5 0 0 1 0 18" />
+    </svg>
+  );
+}
+
 export default function NewTabApp() {
   const { isDark, mode: themeMode, setMode: setThemeMode } = useThemeMode();
 
   // CSS 令牌由 data-theme 驱动；「跟随系统」已在 useThemeMode 内解析成 isDark。
   useEffect(() => {
-    applyThemeToDocument(isDark, isDark ? '#0f1115' : '#f6f7f9');
+    applyThemeToDocument(isDark, isDark ? '#0b0d11' : '#f2f4f7');
   }, [isDark]);
 
   const [greetingInfo, setGreetingInfo] = useState(() => formatTimeGreeting());
@@ -165,19 +229,41 @@ export default function NewTabApp() {
   const [form] = Form.useForm();
   const [groupForm] = Form.useForm();
 
-  // 按 '/' 聚焦搜索框，Escape 失焦
+  // 按 '/' 或开启的命令面板快捷键（如 ⌘ K）聚焦搜索框，Escape 失焦
+  const paletteShortcutRef = useRef<PaletteShortcutConfig>(getDefaultPaletteShortcut());
   useEffect(() => {
+    void getPaletteShortcut().then((cfg) => {
+      paletteShortcutRef.current = cfg;
+    });
+    const onStorageChange = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      area: string,
+    ) => {
+      if (area === 'sync' && PALETTE_SHORTCUT_STORAGE_KEY in changes) {
+        paletteShortcutRef.current = sanitizePaletteShortcut(
+          changes[PALETTE_SHORTCUT_STORAGE_KEY].newValue,
+        );
+      }
+    };
+    chrome.storage?.onChanged?.addListener(onStorageChange);
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = document.activeElement?.tagName;
       if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (matchesPaletteShortcut(e, paletteShortcutRef.current)) {
         e.preventDefault();
         searchInputRef.current?.focus();
       } else if (e.key === 'Escape') {
         searchInputRef.current?.blur();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+      chrome.storage?.onChanged?.removeListener(onStorageChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -1073,10 +1159,13 @@ export default function NewTabApp() {
       theme={{
         algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
-          colorPrimary: isDark ? '#6366f1' : '#4f46e5',
+          colorPrimary: isDark ? '#60a5fa' : '#2563eb',
           borderRadius: 8,
+          colorBgContainer: isDark ? '#13161c' : '#ffffff',
+          colorBgElevated: isDark ? '#13161c' : '#ffffff',
+          colorBorder: isDark ? '#232833' : '#dfe4ec',
           fontFamily:
-            "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', 'Microsoft YaHei', sans-serif",
+            "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Segoe UI', 'Microsoft YaHei', sans-serif",
         },
       }}
     >
@@ -1086,15 +1175,25 @@ export default function NewTabApp() {
         {/* ---------- 顶部：时钟 / 模式 / 搜索 / 设置 ---------- */}
         <header className="yt-top">
           <div>
-            <div className="yt-clock">{greetingInfo.timeStr}</div>
-            <div className="yt-meta">
-              <span>{greetingInfo.dateStr} · {greetingInfo.greeting}</span>
-              <span>
-                当前 <b>{openTabs.length}</b> 个活动页面
-                {recentSnapshot && recentSnapshot.tabs.length > 0 && (
-                  <> · <b>{recentSnapshot.tabs.length}</b> 个未完工现场</>
-                )}
+            <div className="yt-clock-row">
+              <div className="yt-clock">{greetingInfo.timeStr}</div>
+              <span className="yt-date-pill">
+                {greetingInfo.dateStr} · {greetingInfo.greeting}
               </span>
+            </div>
+            <div className="yt-meta">
+              <span className="yt-status-item">
+                <span className="yt-live-dot" aria-hidden="true" />
+                当前 <b>{openTabs.length}</b> 个活动页面
+              </span>
+              {recentSnapshot && recentSnapshot.tabs.length > 0 && (
+                <>
+                  <span className="sep" aria-hidden="true" />
+                  <span className="yt-status-item">
+                    <b>{recentSnapshot.tabs.length}</b> 个未完工现场
+                  </span>
+                </>
+              )}
             </div>
           </div>
 
@@ -1105,15 +1204,20 @@ export default function NewTabApp() {
                   menu={{
                     items: SEARCH_ENGINES.map((e) => ({
                       key: e.id,
-                      label: `${e.icon} ${e.name} [前缀: ${e.prefix}]`,
+                      icon: <EngineGlyph id={e.id} />,
+                      label: `${e.name} [前缀: ${e.prefix}]`,
                       onClick: () => void handleSelectEngine(e),
                     })),
                   }}
                   trigger={['click']}
                 >
-                  <span className="yt-engine" title="切换搜索引擎">
-                    {activeEngine.icon} {activeEngine.name} <SwapOutlined style={{ fontSize: 10 }} />
-                  </span>
+                  <button type="button" className="yt-engine" title="切换搜索引擎">
+                    <span className="yt-engine-glyph">
+                      <EngineGlyph id={activeEngine.id} />
+                    </span>
+                    <span>{activeEngine.name}</span>
+                    <DownOutlined style={{ fontSize: 9 }} />
+                  </button>
                 </Dropdown>
                 <Input
                   ref={searchInputRef}
@@ -1170,12 +1274,14 @@ export default function NewTabApp() {
 
             <div className="yt-seg" role="group" aria-label="模式">
               <button
+                type="button"
                 aria-pressed={settings.profile === 'work'}
                 onClick={() => void handleToggleProfile('work')}
               >
                 办公内网
               </button>
               <button
+                type="button"
                 aria-pressed={settings.profile === 'home'}
                 onClick={() => void handleToggleProfile('home')}
               >
@@ -1183,9 +1289,15 @@ export default function NewTabApp() {
               </button>
             </div>
 
-            <ThemeModeButton mode={themeMode} onChange={setThemeMode} ink3="var(--ink-3)" />
+            <ThemeModeButton
+              mode={themeMode}
+              onChange={setThemeMode}
+              ink3="var(--ink-2)"
+              className="yt-icon-btn"
+            />
 
             <button
+              type="button"
               className="yt-icon-btn"
               title="打开 YiTab 控制中心"
               aria-label="设置"
@@ -1197,73 +1309,81 @@ export default function NewTabApp() {
                 }
               }}
             >
-              <SettingOutlined style={{ fontSize: 17 }} />
+              <SettingOutlined style={{ fontSize: 15 }} />
             </button>
           </div>
         </header>
 
-        {/* ---------- 分组条 ---------- */}
-        <div className="yt-groupbar">
-          {groupChips.map((g) => {
-            const chipButton = (
-              <button
-                key={g.id}
-                className="yt-gchip"
-                aria-current={activeGroupId === g.id}
-                title={g.id === 'all' ? '全部快捷方式' : '右键可重命名或删除分组'}
-                onClick={() => setActiveGroupId(g.id)}
-              >
-                {g.name}
-                <span className="n">{g.count}</span>
-              </button>
-            );
-            if (g.id === 'all') return chipButton;
-            return (
-              <Dropdown
-                key={g.id}
-                trigger={['contextMenu']}
-                menu={{
-                  items: [
-                    {
-                      key: 'rename',
-                      icon: <EditOutlined />,
-                      label: '重命名分组',
-                      onClick: () => handleOpenGroupModal({ id: g.id, name: g.name }),
-                    },
-                    {
-                      key: 'delete',
-                      icon: <DeleteOutlined />,
-                      danger: true,
-                      disabled: pinnedData.groups.length <= 1,
-                      label: '删除分组',
-                      onClick: () => handleDeleteGroup({ id: g.id, name: g.name }),
-                    },
-                  ],
-                }}
-              >
-                {chipButton}
-              </Dropdown>
-            );
-          })}
-          <span className="spacer" />
-          <button className="yt-text-btn" onClick={() => handleOpenGroupModal()}>
-            ＋ 新建分组
-          </button>
-          <button className="yt-text-btn accent" onClick={() => handleOpenItemModal()}>
-            ＋ 添加快捷方式
-          </button>
-        </div>
-
-        {/* ---------- 快捷方式磁贴 ---------- */}
-        {filteredItems.length === 0 ? (
-          <div className="yt-empty">
-            <p>「{groupChips.find((g) => g.id === activeGroupId)?.name}」还没有快捷方式。</p>
-            <button className="yt-btn" onClick={() => handleOpenItemModal()}>
-              <PlusOutlined /> 添加快捷方式
+        {/* ---------- 主工作台甲板：分组轨 + 磁贴 + 继续上次 ---------- */}
+        <section className="yt-deck" aria-label="快捷工作台">
+          <div className="yt-groupbar">
+            {groupChips.map((g) => {
+              const chipButton = (
+                <button
+                  key={g.id}
+                  type="button"
+                  className="yt-gchip"
+                  aria-current={activeGroupId === g.id}
+                  title={g.id === 'all' ? '全部快捷方式' : '右键可重命名或删除分组'}
+                  onClick={() => setActiveGroupId(g.id)}
+                >
+                  {g.name}
+                  <span className="n">{g.count}</span>
+                </button>
+              );
+              if (g.id === 'all') return chipButton;
+              return (
+                <Dropdown
+                  key={g.id}
+                  trigger={['contextMenu']}
+                  menu={{
+                    items: [
+                      {
+                        key: 'rename',
+                        icon: <EditOutlined />,
+                        label: '重命名分组',
+                        onClick: () => handleOpenGroupModal({ id: g.id, name: g.name }),
+                      },
+                      {
+                        key: 'delete',
+                        icon: <DeleteOutlined />,
+                        danger: true,
+                        disabled: pinnedData.groups.length <= 1,
+                        label: '删除分组',
+                        onClick: () => handleDeleteGroup({ id: g.id, name: g.name }),
+                      },
+                    ],
+                  }}
+                >
+                  {chipButton}
+                </Dropdown>
+              );
+            })}
+            <span className="spacer" />
+            <button type="button" className="yt-text-btn" onClick={() => handleOpenGroupModal()}>
+              <PlusOutlined style={{ fontSize: 11 }} />
+              <span>新建分组</span>
+            </button>
+            <button
+              type="button"
+              className="yt-text-btn accent"
+              onClick={() => handleOpenItemModal()}
+            >
+              <PlusOutlined style={{ fontSize: 11 }} />
+              <span>添加快捷方式</span>
             </button>
           </div>
-        ) : (
-          <div className="yt-tiles">
+
+          {/* ---------- 快捷方式磁贴 ---------- */}
+          {filteredItems.length === 0 ? (
+            <div className="yt-empty">
+              <p>「{groupChips.find((g) => g.id === activeGroupId)?.name}」还没有快捷方式。</p>
+              <button type="button" className="yt-btn" onClick={() => handleOpenItemModal()}>
+                <PlusOutlined /> 添加快捷方式
+              </button>
+            </div>
+          ) : (
+            <div className="yt-tiles">
             {filteredItems.map((item) => {
               const hostname = hostnameOf(item.url);
               const isIntranet = isIntranetHost(hostname);
@@ -1392,9 +1512,13 @@ export default function NewTabApp() {
           </div>
         )}
 
+        </section>
+
         {/* ---------- 书签 ---------- */}
         {bookmarkCards.length > 0 && (
-          <section className="yt-bookmarks">
+          <section
+            className={`yt-bookmarks${settings.bookmarksExpanded ? ' is-expanded' : ''}`}
+          >
             <div className="yt-bm-head">
               <span className="yt-bm-title">
                 <BookOutlined /> 书签
@@ -1408,6 +1532,16 @@ export default function NewTabApp() {
                   value={bookmarkSearch}
                   onChange={(e) => setBookmarkSearch(e.target.value)}
                 />
+                {bookmarkSearch && (
+                  <button
+                    type="button"
+                    className="yt-bm-clear"
+                    aria-label="清空筛选"
+                    onClick={() => setBookmarkSearch('')}
+                  >
+                    <CloseOutlined style={{ fontSize: 10 }} />
+                  </button>
+                )}
               </label>
               <span className="spacer" />
               <button
@@ -1474,6 +1608,8 @@ export default function NewTabApp() {
                               >
                                 <div
                                   className="yt-bm-row"
+                                  role="link"
+                                  tabIndex={0}
                                   title={`${item.title}\n${item.url}\n(右键呼出更多操作)`}
                                   onClick={(e) => {
                                     if (
@@ -1484,6 +1620,15 @@ export default function NewTabApp() {
                                       return;
                                     }
                                     handleOpenUrl(item.url);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (
+                                      e.target === e.currentTarget &&
+                                      (e.key === 'Enter' || e.key === ' ')
+                                    ) {
+                                      e.preventDefault();
+                                      handleOpenUrl(item.url);
+                                    }
                                   }}
                                 >
                                   <span className="fi">

@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-22T08:03:00Z",
+  "title": "Design System: YiTab 一签",
+  "extensions": {
+    "colorMeta": {
+      "cobalt-signal": {
+        "role": "primary",
+        "displayName": "Cobalt Signal",
+        "canonical": "#2563eb",
+        "tonalRamp": [
+          "oklch(24% 0.09 262)",
+          "oklch(34% 0.14 262)",
+          "oklch(44% 0.19 262)",
+          "oklch(54% 0.22 262)",
+          "oklch(62% 0.19 262)",
+          "oklch(72% 0.14 262)",
+          "oklch(84% 0.08 262)",
+          "oklch(94% 0.03 262)"
+        ]
+      },
+      "slate-canvas": {
+        "role": "neutral",
+        "displayName": "Slate Canvas",
+        "canonical": "#f2f4f7",
+        "tonalRamp": [
+          "oklch(16% 0.01 255)",
+          "oklch(26% 0.01 255)",
+          "oklch(38% 0.01 255)",
+          "oklch(52% 0.01 255)",
+          "oklch(68% 0.01 255)",
+          "oklch(82% 0.008 255)",
+          "oklch(91% 0.006 255)",
+          "oklch(96% 0.005 255)"
+        ]
+      },
+      "obsidian-canvas": {
+        "role": "neutral",
+        "displayName": "Obsidian Canvas",
+        "canonical": "#0b0d11",
+        "tonalRamp": [
+          "oklch(15% 0.012 255)",
+          "oklch(20% 0.012 255)",
+          "oklch(26% 0.012 255)",
+          "oklch(36% 0.012 255)",
+          "oklch(50% 0.012 255)",
+          "oklch(66% 0.012 255)",
+          "oklch(82% 0.01 255)",
+          "oklch(95% 0.006 255)"
+        ]
+      },
+      "live-emerald": {
+        "role": "status",
+        "displayName": "Live Emerald",
+        "canonical": "#0f766e",
+        "tonalRamp": [
+          "oklch(24% 0.06 178)",
+          "oklch(34% 0.08 178)",
+          "oklch(44% 0.10 178)",
+          "oklch(52% 0.10 178)",
+          "oklch(64% 0.10 178)",
+          "oklch(76% 0.09 178)",
+          "oklch(88% 0.05 178)",
+          "oklch(95% 0.02 178)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display Clock", "purpose": "NewTab header clock with tabular-nums." },
+      "headline": { "displayName": "Command Input", "purpose": "Command Palette input field." },
+      "title": { "displayName": "Section Title", "purpose": "Card/deck headers and row titles." },
+      "body": { "displayName": "Body & Controls", "purpose": "Search input, group chips, bookmark titles." },
+      "label": { "displayName": "Telemetry Label", "purpose": "Counts, filter tabs, and status captions." },
+      "mono": { "displayName": "Technical Mono", "purpose": "Domains, intranet IPs/ports, and keycaps only." }
+    },
+    "shadows": [
+      {
+        "name": "shadow-deck",
+        "value": "0 0 0 1px oklch(0 0 0 / 0.06), 0 1px 2px -1px oklch(0 0 0 / 0.05), 0 4px 14px -4px oklch(0 0 0 / 0.05)",
+        "purpose": "Single-declaration border+elevation for main workspace decks in light mode."
+      },
+      {
+        "name": "shadow-popover",
+        "value": "0 0 0 1px oklch(0 0 0 / 0.07), 0 16px 36px -12px rgba(17, 19, 24, 0.16)",
+        "purpose": "Floating Command Palette, search suggestions, and SPA Toast."
+      }
+    ],
+    "motion": [
+      { "name": "ease-out-micro", "value": "140ms ease-out", "purpose": "Interactive hover, color, and scale(0.96) press transitions." },
+      { "name": "ease-enter", "value": "160ms cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Command Palette and SPA Toast entrance." }
+    ],
+    "breakpoints": [
+      { "name": "tablet", "value": "1080px" },
+      { "name": "options-stack", "value": "820px" },
+      { "name": "mobile", "value": "760px" },
+      { "name": "narrow-overlay", "value": "520px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Action Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary execution CTA used in SPA Toast and empty states.",
+      "html": "<button type=\"button\" class=\"ds-btn-primary\">切换并关闭</button>",
+      "css": ".ds-btn-primary { position: relative; background: #2563eb; color: #ffffff; border: none; height: 30px; padding: 0 12px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background-color 140ms ease-out, transform 140ms ease-out; } .ds-btn-primary:hover { background: #1d4ed8; } .ds-btn-primary:active { transform: scale(0.96); } .ds-btn-primary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Neutral Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Low-emphasis secondary action paired with Primary Action Button.",
+      "html": "<button type=\"button\" class=\"ds-btn-secondary\">仅切换</button>",
+      "css": ".ds-btn-secondary { position: relative; background: #eaeef4; color: #464f5e; border: 1px solid #dfe4ec; height: 30px; padding: 0 11px; border-radius: 7px; font-size: 12px; font-weight: 500; cursor: pointer; transition: background-color 140ms ease-out, color 140ms ease-out, transform 140ms ease-out; } .ds-btn-secondary:hover { background: #dfe4ec; color: #111318; } .ds-btn-secondary:active { transform: scale(0.96); } .ds-btn-secondary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }"
+    },
+    {
+      "name": "Concentric Command Search Box",
+      "kind": "input",
+      "refersTo": "input-command",
+      "description": "NewTab command/URL input with concentric inner engine switcher and / keycap.",
+      "html": "<div class=\"ds-search-box\"><button type=\"button\" class=\"ds-engine\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><line x1=\"3.6\" y1=\"9\" x2=\"20.4\" y2=\"9\"></line><line x1=\"3.6\" y1=\"15\" x2=\"20.4\" y2=\"15\"></line></svg><span>Google</span></button><input class=\"ds-search-input\" placeholder=\"搜索或输入网址\" /><span class=\"ds-kbd\">/</span></div>",
+      "css": ".ds-search-box { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 9px 0 5px; background: #ffffff; border: 1px solid #dfe4ec; border-radius: 11px; transition: border-color 140ms ease-out, box-shadow 140ms ease-out; } .ds-search-box:focus-within { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22); } .ds-engine { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px 0 7px; border: 0; border-radius: 6px; background: #eaeef4; font-size: 12px; font-weight: 500; color: #464f5e; cursor: pointer; } .ds-search-input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; font-size: 13px; color: #111318; } .ds-kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; color: #525d70; background: #eaeef4; border: 1px solid #c8d0dc; border-radius: 5px; box-shadow: 0 1px 0 #c8d0dc; }"
+    },
+    {
+      "name": "Group Filter Chip",
+      "kind": "chip",
+      "refersTo": "chip-group",
+      "description": "Group rail tab with tabular count and active Cobalt Wash state.",
+      "html": "<button type=\"button\" class=\"ds-gchip\" aria-current=\"true\">全部 <span class=\"ds-gchip-n\">3</span></button>",
+      "css": ".ds-gchip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 0; border-radius: 7px; background: rgba(37, 99, 235, 0.09); color: #2563eb; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background-color 140ms ease-out, transform 140ms ease-out; } .ds-gchip:active { transform: scale(0.96); } .ds-gchip-n { font-size: 11px; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Selected Command Palette Row",
+      "kind": "custom",
+      "refersTo": "deck-container",
+      "description": "Command Palette item using full 1px inset hairline ring and soft tint.",
+      "html": "<div class=\"ds-palette-row\" role=\"option\" aria-selected=\"true\"><div class=\"ds-row-icon\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"14\" rx=\"2\"></rect><line x1=\"8\" y1=\"21\" x2=\"16\" y2=\"21\"></line><line x1=\"12\" y1=\"18\" x2=\"12\" y2=\"21\"></line></svg></div><div class=\"ds-row-text\"><div class=\"ds-row-title\">Issue #42 · YiTab</div><div class=\"ds-row-sub\">127.0.0.1</div></div><span class=\"ds-row-hint\">切换 ↵</span></div>",
+      "css": ".ds-palette-row { display: flex; align-items: center; gap: 11px; padding: 8px 10px; border-radius: 7px; background: rgba(37, 99, 235, 0.09); box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.24); color: #111318; font-size: 13.5px; } .ds-row-icon { width: 28px; height: 28px; border-radius: 7px; background: #ffffff; display: flex; align-items: center; justify-content: center; color: #464f5e; } .ds-row-text { flex: 1; min-width: 0; } .ds-row-title { font-weight: 500; } .ds-row-sub { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; color: #525d70; } .ds-row-hint { font-size: 11px; font-weight: 500; color: #2563eb; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Precision Instrument Deck",
+    "overview": "YiTab is built as a quiet, engineered desktop utility where chrome disappears behind speed and clarity. The system rejects decorative gradients, rainbow progress tracks, high-saturation pill badges, and stacked white cards in favor of calibrated tonal slate surfaces, crisp 1px structural hairlines, and a single authoritative Cobalt Signal accent reserved strictly for active focus, primary execution, and live state.",
+    "keyCharacteristics": [
+      "Calibrated three-step neutral surface ladder (canvas -> surface -> surface-well) in cool slate (light) and deep obsidian-graphite (dark).",
+      "Single-declaration layered shadows for floating/deck elevation (--shadow-deck, --shadow-popover); 1px solid hairlines reserved strictly for structural dividers.",
+      "Zero external font/CDN dependencies; native system UI sans paired with monospace strictly for domains, ports, IPs, and keycaps.",
+      "Keyboard-first ergonomics (/ focus, arrow selection, Enter activation, Esc dismiss, Tab traversal) with >= 40px extended hit areas and tactile scale(0.96) press feedback."
+    ],
+    "rules": [
+      {
+        "name": "The Single-Accent Discipline Rule",
+        "body": "Cobalt Signal never appears as decorative gradients or multi-hue badges; it marks only the primary action, keyboard focus, or current active selection.",
+        "section": "colors"
+      },
+      {
+        "name": "The Neutral Image Outline Rule",
+        "body": "Favicon frames carry a pure neutral inset outline (oklch(0 0 0 / 0.1) light, oklch(1 0 0 / 0.1) dark) so surrounding surface tint never bleeds onto icon edges.",
+        "section": "colors"
+      },
+      {
+        "name": "The Monospace Truth Rule",
+        "body": "Monospace is used strictly for domains, IP/port addresses, and keyboard keycaps—never as decorative labels on prose or headings.",
+        "section": "typography"
+      },
+      {
+        "name": "The Single-Boundary Elevation Rule",
+        "body": "Cards and overlays declare their outer edge once via layered box-shadow; internal structural separation uses 1px solid var(--hairline) borders only.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep every interactive target at >= 40px hit area (via non-colliding ::after hit-slop when visual size is compact).",
+      "Do specify exact CSS transition properties (110ms–150ms ease-out) and honor @media (prefers-reduced-motion: reduce).",
+      "Do apply font-variant-numeric: tabular-nums to every dynamic count, clock, and result tally.",
+      "Do add explicit :focus-visible 2px solid var(--accent) outlines inside Shadow DOM roots after all: initial."
+    ],
+    "donts": [
+      "Don't use linear gradients, rainbow countdown bars, or multi-hue decorative pills anywhere on Operate surfaces.",
+      "Don't place a vertical accent bar down one side of a rounded list row (::before side stripe); use full-perimeter inset rings or surface tint.",
+      "Don't use Unicode emoji as UI icons; render uniform 1.5px-stroke vector SVGs.",
+      "Don't use display: none for keyboard-reachable row actions or transition: all on interactive controls."
+    ]
+  }
+}

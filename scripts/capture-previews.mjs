@@ -220,8 +220,16 @@ try {
     readyText: '域名智能聚合',
   });
 
-  // 5. Global Command Palette（Alt+K 触发，需在触发前设定配色）
+  // 5. Global Command Palette（启用页内快捷键并触发 Alt+K，需在触发前设定配色）
   {
+    const { targetId: cfgId } = await browser.call('Target.createTarget', { url: `${origin}/options.html` });
+    const cfgTarget = await until(async () => (await targets()).find(t => t.id === cfgId), 'palette cfgTarget');
+    const cfgClient = await connect(cfgTarget.webSocketDebuggerUrl);
+    await until(() => cfgClient.evaluate('Boolean(window.chrome?.storage?.sync)'), 'palette cfg storage ready');
+    await cfgClient.evaluate(`(async () => { await chrome.storage.sync.set({ yitab_palette_shortcut: { enabled: true, code: 'KeyK', label: 'K', meta: false, ctrl: false, alt: true, shift: false } }); })()`);
+    cfgClient.close();
+    await browser.call('Target.closeTarget', { targetId: cfgId });
+
     for (const theme of THEMES) {
       const { targetId } = await browser.call('Target.createTarget', { url: `${serverBase}/dashboard` });
       const target = await until(async () => (await targets()).find(t => t.id === targetId), 'palette target tab');
@@ -229,9 +237,9 @@ try {
       await client.call('Emulation.setDeviceMetricsOverride', { width: 1200, height: 720, deviceScaleFactor: 2, mobile: false });
       await emulateTheme(client, theme);
       await until(() => client.evaluate('document.readyState === "complete"'), 'target loaded');
-      await delay(400);
+      await delay(500);
 
-      await client.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', altKey: true, bubbles: true }))`);
+      await client.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', altKey: true, bubbles: true }))`);
       await until(() => client.evaluate(`Boolean(document.getElementById('yitab-command-palette-root'))`), 'palette opened');
 
       await saveScreenshot(client, 'yitab-preview-palette', theme);
@@ -249,7 +257,7 @@ try {
     readyText: '书签健康与生态治理',
     afterReady: async (client) => {
       await client.evaluate(`(() => {
-        const tabHeader = [...document.querySelectorAll('.ant-tabs-tab')].find(el => el.innerText.includes('书签健康'));
+        const tabHeader = [...document.querySelectorAll('.ant-tabs-tab, .yt-opt-nav-item')].find(el => el.innerText.includes('书签健康'));
         tabHeader?.click();
       })()`);
       await delay(600);

@@ -53,25 +53,39 @@ export function ThemeModeButton({
   onChange,
   ink3,
   size = 'small',
+  className,
 }: {
   mode: ThemeMode;
   onChange: (mode: ThemeMode) => void;
   ink3: string;
   size?: 'small' | 'middle';
+  className?: string;
 }) {
   const next = CYCLE[(CYCLE.indexOf(mode) + 1) % CYCLE.length];
+  const iconEl = React.cloneElement(
+    THEME_MODE_META[mode].icon as React.ReactElement<{ style?: React.CSSProperties }>,
+    { style: { fontSize: 15, color: ink3 } },
+  );
   return (
     <Tooltip title={`主题：${THEME_MODE_META[mode].label}（点击切换为${THEME_MODE_META[next].label}）`}>
-      <Button
-        type="text"
-        size={size}
-        aria-label={`主题：${THEME_MODE_META[mode].label}`}
-        icon={React.cloneElement(
-          THEME_MODE_META[mode].icon as React.ReactElement,
-          { style: { fontSize: 13, color: ink3 } },
-        )}
-        onClick={() => onChange(next)}
-      />
+      {className ? (
+        <button
+          type="button"
+          className={className}
+          aria-label={`主题：${THEME_MODE_META[mode].label}`}
+          onClick={() => onChange(next)}
+        >
+          {iconEl}
+        </button>
+      ) : (
+        <Button
+          type="text"
+          size={size}
+          aria-label={`主题：${THEME_MODE_META[mode].label}`}
+          icon={iconEl}
+          onClick={() => onChange(next)}
+        />
+      )}
     </Tooltip>
   );
 }

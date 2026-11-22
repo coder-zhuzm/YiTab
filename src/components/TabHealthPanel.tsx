@@ -102,25 +102,37 @@ export function TabHealthPanel({
       <Card
         size="small"
         style={{
-          borderRadius: 10,
+          borderRadius: 12,
           boxShadow: tk.shadowCard,
-          border: `1px solid ${tk.hairline}`,
+          border: 'none',
+          background: tk.surface,
         }}
       >
         <div style={{ marginBottom: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <Text strong style={{ fontSize: 13, color: tk.ink }}>
               闲置休眠与内存沉淀
             </Text>
             {tabHealth && (
-              <Tag color="cyan" style={{ margin: 0, fontSize: 11, borderRadius: 4 }}>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  fontVariantNumeric: 'tabular-nums',
+                  padding: '2px 7px',
+                  borderRadius: 5,
+                  background: tk.accentSoft,
+                  color: tk.accentInk,
+                  border: `1px solid ${tk.accentBorder}`,
+                }}
+              >
                 可释放 ~{tabHealth.estimatedMemorySavedMb} MB
-              </Tag>
+              </span>
             )}
           </div>
           <Paragraph
             type="secondary"
-            style={{ fontSize: 12, margin: '2px 0 0', lineHeight: 1.4 }}
+            style={{ fontSize: 12, margin: '3px 0 0', lineHeight: 1.45, color: tk.ink3 }}
           >
             非活动标签释放常驻内存（保留在标签栏）；或一键保存为快照后安全关闭。
           </Paragraph>
@@ -128,11 +140,13 @@ export function TabHealthPanel({
 
         <div
           style={{
-            background: tk.canvas,
+            background: tk.surfaceMuted,
+            border: `1px solid ${tk.hairline}`,
             padding: '8px 10px',
-            borderRadius: 6,
+            borderRadius: 7,
             marginBottom: 12,
-            fontSize: 11,
+            fontSize: 11.5,
+            fontVariantNumeric: 'tabular-nums',
             color: tk.ink3,
             display: 'flex',
             justifyContent: 'space-between',
@@ -226,30 +240,32 @@ export function TabHealthPanel({
       style={{
         marginBottom: 20,
         borderRadius: 12,
-        borderColor: tk.hairline,
+        border: 'none',
+        background: tk.surface,
         boxShadow: tk.shadowCard,
       }}
     >
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
           gap: 12,
           marginBottom: 16,
+          fontVariantNumeric: 'tabular-nums',
         }}
       >
         <div
           style={{
-            background: tk.canvas,
-            padding: '14px 16px',
-            borderRadius: 10,
+            background: tk.surfaceMuted,
+            padding: '13px 15px',
+            borderRadius: 9,
             border: `1px solid ${tk.hairline}`,
           }}
         >
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 12, color: tk.ink3 }}>
             当前窗口总标签
           </Text>
-          <div style={{ fontSize: 22, fontWeight: 700, color: tk.ink, marginTop: 4 }}>
+          <div style={{ fontSize: 22, fontWeight: 600, color: tk.ink, marginTop: 4 }}>
             {tabHealth?.totalCount ?? 0}
           </div>
         </div>
@@ -257,15 +273,15 @@ export function TabHealthPanel({
         <div
           style={{
             background: tk.infoSoft,
-            padding: '14px 16px',
-            borderRadius: 10,
+            padding: '13px 15px',
+            borderRadius: 9,
             border: `1px solid ${tk.infoBorder}`,
           }}
         >
           <Text type="secondary" style={{ fontSize: 12, color: tk.infoInk }}>
             已休眠标签
           </Text>
-          <div style={{ fontSize: 22, fontWeight: 700, color: tk.infoInk, marginTop: 4 }}>
+          <div style={{ fontSize: 22, fontWeight: 600, color: tk.infoInk, marginTop: 4 }}>
             {tabHealth?.discardedCount ?? 0}
           </div>
         </div>
@@ -273,15 +289,15 @@ export function TabHealthPanel({
         <div
           style={{
             background: tk.successSoft,
-            padding: '14px 16px',
-            borderRadius: 10,
+            padding: '13px 15px',
+            borderRadius: 9,
             border: `1px solid ${tk.successBorder}`,
           }}
         >
           <Text type="secondary" style={{ fontSize: 12, color: tk.successInk }}>
             受保护标签 (活动/发声/固定)
           </Text>
-          <div style={{ fontSize: 22, fontWeight: 700, color: tk.successInk, marginTop: 4 }}>
+          <div style={{ fontSize: 22, fontWeight: 600, color: tk.successInk, marginTop: 4 }}>
             {(tabHealth?.audibleCount ?? 0) +
               (tabHealth?.pinnedCount ?? 0) +
               (tabHealth?.activeTabId ? 1 : 0)}
@@ -291,15 +307,15 @@ export function TabHealthPanel({
         <div
           style={{
             background: tk.accentSoft,
-            padding: '14px 16px',
-            borderRadius: 10,
+            padding: '13px 15px',
+            borderRadius: 9,
             border: `1px solid ${tk.accentBorder}`,
           }}
         >
           <Text type="secondary" style={{ fontSize: 12, color: tk.accentInk }}>
             可释放内存估算
           </Text>
-          <div style={{ fontSize: 22, fontWeight: 700, color: tk.accentInk, marginTop: 4 }}>
+          <div style={{ fontSize: 22, fontWeight: 600, color: tk.accentInk, marginTop: 4 }}>
             ~{tabHealth?.estimatedMemorySavedMb ?? 0} MB
           </div>
         </div>
@@ -359,9 +375,19 @@ export function TabHealthPanel({
             <ClockCircleOutlined style={{ color: tk.accentInk }} />
             <span>定时自动休眠闲置标签</span>
             {autoDiscard.enabled && (
-              <Tag color="green" style={{ margin: 0, fontSize: 11 }}>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                  background: tk.successSoft,
+                  color: tk.successInk,
+                  border: `1px solid ${tk.successBorder}`,
+                }}
+              >
                 运行中
-              </Tag>
+              </span>
             )}
           </div>
           <div style={{ fontSize: 12, color: tk.ink3, marginTop: 4 }}>

@@ -8,6 +8,23 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-22
+
+### 🎨 全面视觉重构：Precision Slate 精密工具面板体系 (UI Overhaul)
+
+- **建立统一设计系统**：新增 `PRODUCT.md`、`DESIGN.md`、`.impeccable/design.json` 与共享桌面工具样式 `src/styles/precision-ui.css`；全站收敛为冷灰/石墨三阶中性画布、单一钴蓝信号色（Cobalt Signal）、单声明环形阴影（消除双层描边）与统一 `1.5px` 线性矢量图标，彻底移除装饰性渐变与高饱和彩色标签噪音，100% 本地零外链资源渲染，完整支持浅色 / 深色双模式。
+- **NewTab 工作台升级**：重构头部与工具栏对齐，统一 `36×36px` 方形图标按钮（修复主题切换按钮被 AntD `.ant-btn-sm` 压窄的问题），优化分组轨、同心圆角搜索框与「继续上次」/ 书签目录的键盘可达性与悬停动作区；同步重构 `generateSvgFavicon` 为哑光石板色纯色字首徽标。
+- **页内命令面板与 SPA 去重轻提示重构**：移除命令面板选中行左侧竖条与 SPA 轻提示渐变徽章/彩虹进度条，改用内嵌 `1px` 高亮选区环、内置 `2px` 钴蓝倒计时轨道及清晰聚焦轮廓。
+- **控制弹窗（Popup）、拦截确认页（Confirm）与控制中心（Options）全面对齐**：
+  - **Popup**：新增 4 列分段导航轨（`.yt-rail-tabs`）替代 AntD `<Tabs>`，消除 `400px` 宽度下「快照」Tab 被折叠截断的问题；搜索行升级为键盘可达的 `.yt-list-row`。
+  - **Confirm**：移除吸顶栏与按钮渐变，新增高对比 `.yt-card-selected` 内嵌选择环与统一 `var(--font-mono)` 地址摘要渲染。
+  - **Options**：升级为左侧粘滞导航栏架构（`1080px` `.yt-opt-layout` + `.yt-opt-sidebar`），替换全部默认彩色标签与高饱和边框为 `.yt-choice-tile` 与语义微标。
+
+### 🐛 交互与快捷键优化 (Fixes)
+
+- **工作台接入命令面板快捷键**：工作台（`newtab.html`）新增对 `yitab_palette_shortcut` 配置的实时订阅，开启页内自定义快捷键（如 `⌘ K`）后在新标签页按下同样可即时聚焦搜索框。
+- **修复主题切换按钮尺寸失调**：重构 `ThemeModeButton`，传入工作台工具栏 `yt-icon-btn` 类名时改用原生 `<button>`，避免 AntD 小尺寸按钮规则覆盖导致宽度坍缩。
+
 ## [1.5.2] - 2026-11-20
 
 ### ✨ 新特性 (Features)

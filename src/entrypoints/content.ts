@@ -139,12 +139,12 @@ function showStatusNotice(text: string) {
       :host { all: initial; display: block; }
       .pill {
         background: #ffffff;
-        color: #14161b;
-        border: 1px solid #e3e6ec;
-        box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.16);
+        color: #111318;
+        box-shadow: 0 0 0 1px oklch(0 0 0 / 0.08), 0 12px 28px -8px rgba(17, 19, 24, 0.18);
         border-radius: 999px;
         padding: 8px 16px;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
         font-size: 13px;
         font-weight: 500;
         display: inline-flex;
@@ -153,17 +153,19 @@ function showStatusNotice(text: string) {
         white-space: nowrap;
       }
       :host([data-theme='dark']) .pill {
-        background: #16181d;
-        color: #e8eaee;
-        border-color: #262a31;
-        box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.55);
+        background: #13161c;
+        color: #edf0f5;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 16px 36px -10px rgba(0, 0, 0, 0.65);
       }
       .dot {
         width: 7px;
         height: 7px;
         border-radius: 50%;
-        background: #10b981;
+        background: #0f766e;
         flex: none;
+      }
+      :host([data-theme='dark']) .dot {
+        background: #2dd4bf;
       }
     </style>
     <div class="pill" role="status"><span class="dot"></span><span>${escapeHtml(text)}</span></div>
@@ -197,7 +199,7 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
     toastContainer.style.top = '16px';
     toastContainer.style.right = '20px';
     toastContainer.style.zIndex = '2147483647';
-    toastContainer.style.maxWidth = '390px';
+    toastContainer.style.maxWidth = 'min(390px, calc(100vw - 40px))';
     toastContainer.style.pointerEvents = 'auto';
     document.documentElement.appendChild(toastContainer);
   }
@@ -215,112 +217,170 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         display: block;
       }
 
-      /* 深色：对齐主界面 --canvas(#0f1115) / --surface(#16181d) / --hairline(#262a31) */
+      /* 深色：对齐主界面 Precision Slate 令牌 */
       :host([data-theme='dark']) .card {
-        background: rgba(22, 24, 29, 0.96);
-        color: #e8eaee;
-        border-color: #262a31;
-        box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+        background: #13161c;
+        color: #edf0f5;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 24px 48px -12px rgba(0, 0, 0, 0.72);
       }
 
-      :host([data-theme='dark']) .head-title { color: #e8eaee; }
+      :host([data-theme='dark']) .brand-pill {
+        background: #1a1e26;
+        color: #a6b0c0;
+        border-color: #232833;
+      }
+
+      :host([data-theme='dark']) .brand-dot {
+        background: #60a5fa;
+      }
+
+      :host([data-theme='dark']) .head-title { color: #edf0f5; }
+
+      :host([data-theme='dark']) .close-btn { color: #939dae; }
+      :host([data-theme='dark']) .close-btn:hover {
+        color: #edf0f5;
+        background: #1d222b;
+      }
 
       :host([data-theme='dark']) .favicon-box {
-        background: #1e2127;
-        border-color: #262a31;
+        background: #1a1e26;
+        outline-color: oklch(1 0 0 / 0.1);
       }
 
-      :host([data-theme='dark']) .tab-title { color: #e8eaee; }
+      :host([data-theme='dark']) .tab-title { color: #edf0f5; }
 
       :host([data-theme='dark']) .reason-tag {
-        background: transparent;
-        color: #8f96a2;
-        border-color: transparent;
+        color: #939dae;
       }
 
       :host([data-theme='dark']) .btn-secondary {
-        background: #1e2127;
-        color: #b3bac5;
-        border-color: #262a31;
+        background: #1a1e26;
+        color: #a6b0c0;
+        border-color: #232833;
       }
       :host([data-theme='dark']) .btn-secondary:hover {
-        background: #262a31;
-        color: #e8eaee;
+        background: #232833;
+        color: #edf0f5;
+      }
+
+      :host([data-theme='dark']) .btn-link {
+        color: #939dae;
+      }
+      :host([data-theme='dark']) .btn-link:hover {
+        color: #60a5fa;
+        background: rgba(96, 165, 250, 0.14);
+      }
+
+      :host([data-theme='dark']) .countdown-track {
+        background: #232833;
+      }
+      :host([data-theme='dark']) .countdown-bar {
+        background: #60a5fa;
+      }
+      :host([data-theme='dark']) :focus-visible {
+        outline-color: #60a5fa;
+      }
+
+      :focus-visible {
+        outline: 2px solid #2563eb;
+        outline-offset: 2px;
+        border-radius: 6px;
       }
 
       .card {
         position: relative;
         overflow: hidden;
-        background: rgba(255, 255, 255, 0.94);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        color: #0f172a;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif;
+        background: #ffffff;
+        color: #111318;
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
         font-size: 13px;
         line-height: 1.5;
         border-radius: 12px;
-        box-shadow: 0 20px 35px -10px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(15, 23, 42, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.8);
-        padding: 14px 16px 16px;
+        box-shadow: 0 0 0 1px oklch(0 0 0 / 0.08), 0 18px 36px -12px rgba(17, 19, 24, 0.18);
+        padding: 14px 14px 18px;
         box-sizing: border-box;
-        animation: yitab-slide-in 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: yitab-slide-in 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
       }
-      
+
       .card.closing {
-        animation: yitab-slide-out 0.16s cubic-bezier(0.4, 0, 1, 1) forwards;
+        animation: yitab-slide-out 150ms ease-out forwards;
       }
       @keyframes yitab-slide-in {
-        from { opacity: 0; transform: translateY(-12px) scale(0.96); }
+        from { opacity: 0; transform: translateY(-8px) scale(0.98); }
         to { opacity: 1; transform: translateY(0) scale(1); }
       }
       @keyframes yitab-slide-out {
         from { opacity: 1; transform: translateY(0) scale(1); }
-        to { opacity: 0; transform: translateY(-10px) scale(0.96); }
+        to { opacity: 0; transform: translateY(-6px) scale(0.98); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .card, .card.closing { animation: none; }
+        .countdown-bar { animation: none; }
       }
       .header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
       }
       .title-group {
         display: flex;
         align-items: center;
-        gap: 7px;
+        gap: 8px;
       }
-      .logo-badge {
+      .brand-pill {
         display: inline-flex;
         align-items: center;
-        gap: 3px;
-        background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
-        color: #ffffff;
+        gap: 5px;
+        background: #eaeef4;
+        color: #464f5e;
+        border: 1px solid #dfe4ec;
         font-size: 11px;
-        font-weight: 700;
+        font-weight: 600;
         padding: 2px 7px;
-        border-radius: 5px;
-        letter-spacing: 0.3px;
-        box-shadow: 0 2px 4px rgba(79, 70, 229, 0.25);
+        border-radius: 6px;
+        letter-spacing: 0.01em;
+      }
+      .brand-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #2563eb;
       }
       .head-title {
         font-weight: 600;
         font-size: 13px;
-        color: #0f172a;
+        color: #111318;
       }
-      
+
       .close-btn {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
         background: transparent;
         border: none;
-        color: #94a3b8;
+        color: #667085;
         cursor: pointer;
-        font-size: 14px;
-        line-height: 1;
-        padding: 4px 6px;
+        padding: 0;
         border-radius: 6px;
-        transition: all 0.15s ease;
+        transition: background-color 140ms ease-out, color 140ms ease-out, transform 140ms ease-out;
+      }
+      .close-btn::after {
+        content: '';
+        position: absolute;
+        inset: -8px;
       }
       .close-btn:hover {
-        color: #475569;
-        background: rgba(148, 163, 184, 0.15);
+        color: #111318;
+        background: #eaeef4;
+      }
+      .close-btn:active {
+        transform: scale(0.96);
       }
       .content {
         display: flex;
@@ -329,23 +389,25 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         margin-bottom: 12px;
       }
       .favicon-box {
-        width: 28px;
-        height: 28px;
+        width: 30px;
+        height: 30px;
         flex-shrink: 0;
         border-radius: 7px;
-        background: #f1f5f9;
+        background: #eaeef4;
         display: flex;
         align-items: center;
         justify-content: center;
         overflow: hidden;
-        border: 1px solid rgba(0, 0, 0, 0.06);
+        outline: 1px solid oklch(0 0 0 / 0.1);
+        outline-offset: -1px;
         margin-top: 1px;
       }
-      
+
       .favicon-img {
         width: 18px;
         height: 18px;
         object-fit: contain;
+        border-radius: 4px;
       }
       .text-area {
         flex: 1;
@@ -353,7 +415,7 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
       }
       .tab-title {
         font-weight: 500;
-        color: #1e293b;
+        color: #111318;
         font-size: 13px;
         line-height: 1.4;
         display: -webkit-box;
@@ -361,89 +423,111 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         -webkit-box-orient: vertical;
         overflow: hidden;
         text-overflow: ellipsis;
-        margin-bottom: 4px;
+        margin-bottom: 3px;
       }
-      
+
       .reason-tag {
         display: block;
-        background: transparent;
-        color: #64748b;
+        color: #525d70;
         font-size: 11.5px;
         font-weight: 400;
-        padding: 0;
-        border: none;
         line-height: 1.4;
       }
-      
+
       .actions {
         display: flex;
-        gap: 8px;
+        gap: 7px;
         align-items: center;
       }
       .btn-primary {
-        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+        position: relative;
+        background: #2563eb;
         color: #ffffff;
         border: none;
-        padding: 6px 13px;
+        height: 30px;
+        padding: 0 12px;
         border-radius: 7px;
         font-size: 12px;
         font-weight: 600;
         cursor: pointer;
-        transition: all 0.15s ease;
-        box-shadow: 0 1px 3px rgba(79, 70, 229, 0.3);
+        transition: background-color 140ms ease-out, transform 140ms ease-out;
+      }
+      .btn-primary::after {
+        content: '';
+        position: absolute;
+        inset: -5px -1px;
       }
       .btn-primary:hover {
-        background: linear-gradient(135deg, #4338ca 0%, #3730a3 100%);
-        transform: translateY(-0.5px);
-        box-shadow: 0 2px 6px rgba(79, 70, 229, 0.4);
+        background: #1d4ed8;
       }
       .btn-primary:active {
-        transform: translateY(0);
+        transform: scale(0.96);
       }
       .btn-secondary {
-        background: #f1f5f9;
-        color: #475569;
-        border: 1px solid rgba(226, 232, 240, 0.8);
-        padding: 6px 12px;
+        position: relative;
+        background: #eaeef4;
+        color: #464f5e;
+        border: 1px solid #dfe4ec;
+        height: 30px;
+        padding: 0 11px;
         border-radius: 7px;
         font-size: 12px;
         font-weight: 500;
         cursor: pointer;
-        transition: all 0.15s ease;
+        transition: background-color 140ms ease-out, color 140ms ease-out, transform 140ms ease-out;
+      }
+      .btn-secondary::after {
+        content: '';
+        position: absolute;
+        inset: -5px -1px;
       }
       .btn-secondary:hover {
-        background: #e2e8f0;
-        color: #0f172a;
+        background: #dfe4ec;
+        color: #111318;
+      }
+      .btn-secondary:active {
+        transform: scale(0.96);
       }
       .btn-link {
+        position: relative;
         margin-left: auto;
         background: transparent;
         border: none;
-        color: #64748b;
+        color: #525d70;
         font-size: 11.5px;
+        font-weight: 500;
         cursor: pointer;
-        padding: 4px 6px;
-        border-radius: 5px;
-        transition: color 0.15s ease, background 0.15s ease;
+        height: 28px;
+        padding: 0 8px;
+        border-radius: 6px;
+        transition: color 140ms ease-out, background-color 140ms ease-out, transform 140ms ease-out;
+      }
+      .btn-link::after {
+        content: '';
+        position: absolute;
+        inset: -6px -1px;
       }
       .btn-link:hover {
-        color: #4f46e5;
-        background: rgba(79, 70, 229, 0.08);
+        color: #2563eb;
+        background: rgba(37, 99, 235, 0.09);
       }
-      :host([data-theme='dark']) .btn-link {
-        color: #94a3b8;
+      .btn-link:active {
+        transform: scale(0.96);
       }
-      :host([data-theme='dark']) .btn-link:hover {
-        color: #a5b4fc;
-        background: rgba(129, 140, 248, 0.15);
-      }
-      
-      .countdown-bar {
+
+      .countdown-track {
         position: absolute;
-        bottom: 0;
-        left: 0;
-        height: 2.5px;
-        background: linear-gradient(90deg, #4f46e5, #06b6d4);
+        bottom: 8px;
+        left: 12px;
+        right: 12px;
+        height: 2px;
+        border-radius: 1px;
+        overflow: hidden;
+        background: #dfe4ec;
+      }
+      .countdown-bar {
+        height: 100%;
+        background: #2563eb;
         width: 100%;
         transform-origin: left;
         animation: yitab-countdown 12s linear forwards;
@@ -456,24 +540,22 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
     <div class="card" id="yitab-card">
       <div class="header">
         <div class="title-group">
-          <span class="logo-badge">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-              <line x1="8" y1="21" x2="16" y2="21"></line>
-              <line x1="12" y1="17" x2="12" y2="21"></line>
-            </svg>
+          <span class="brand-pill">
+            <span class="brand-dot" aria-hidden="true"></span>
             YiTab
           </span>
           <span class="head-title">已有匹配标签</span>
         </div>
-        <button class="close-btn" id="yitab-close" title="留在本页">✕</button>
+        <button class="close-btn" id="yitab-close" title="留在本页" aria-label="留在本页">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
       </div>
       <div class="content">
         <div class="favicon-box">
           ${
             favicon
               ? `<img class="favicon-img" src="${escapeHtml(favicon)}" alt="" onerror="this.style.display='none'" />`
-              : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`
+              : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#525d70" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="4" width="18" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="18" x2="12" y2="21"></line></svg>`
           }
         </div>
         <div class="text-area">
@@ -486,7 +568,7 @@ function showDuplicateToast(candidateUrl: string, targetTab: TabInfo) {
         <button class="btn-secondary" id="yitab-switch">仅切换</button>
         <button class="btn-link" id="yitab-whitelist" title="将当前站点加入白名单，后续不再提示">此站不再提示</button>
       </div>
-      <div class="countdown-bar"></div>
+      <div class="countdown-track"><div class="countdown-bar"></div></div>
     </div>
   `;
 
@@ -709,59 +791,83 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
 
   shadow.innerHTML = `
     <style>
-      /* 对齐 YiTab 主界面设计令牌（中性画布 + 单一强调色，克制层级） */
+      /* 对齐 YiTab Precision Slate 设计令牌（冷灰/石墨表面层级 + 单一钴蓝信号色） */
       :host {
         all: initial;
         display: block;
-        --canvas: #f6f7f9;
+        --canvas: #f2f4f7;
         --surface: #ffffff;
-        --surface-hover: #eef0f5;
-        --hairline: #e3e6ec;
-        --hairline-strong: #d3d8e0;
-        --ink: #14161b;
-        --ink-2: #4e5663;
-        --ink-3: #666d79;
-        --accent: #4f46e5;
-        --accent-soft: #ecebfd;
-        --ok: #0f9d6e;
-        --danger: #c0392b;
-        --backdrop: rgba(15, 17, 21, 0.36);
-        --shadow: 0 24px 56px -14px rgba(15, 17, 21, 0.24), 0 0 0 1px rgba(20, 22, 27, 0.08);
-        --tag-bg: #eef0f5;
-        --tag-ink: #4e5663;
-        --cmd-bg: #ecebfd;
-        --cmd-ink: #4338ca;
-        --ok-soft: rgba(15, 157, 110, 0.12);
-        --skeleton: #eef0f5;
-        --skeleton-shine: #f6f7f9;
+        --surface-well: #eaeef4;
+        --surface-hover: #f4f6f9;
+        --hairline: #dfe4ec;
+        --hairline-strong: #c8d0dc;
+        --ink: #111318;
+        --ink-2: #464f5e;
+        --ink-3: #525d70;
+        --accent: #2563eb;
+        --accent-soft: rgba(37, 99, 235, 0.09);
+        --accent-ring: rgba(37, 99, 235, 0.24);
+        --ok: #0f766e;
+        --ok-soft: rgba(15, 118, 110, 0.10);
+        --danger: #dc2626;
+        --danger-soft: rgba(220, 38, 38, 0.10);
+        --backdrop: rgba(17, 19, 24, 0.42);
+        --shadow: 0 0 0 1px oklch(0 0 0 / 0.08), 0 24px 56px -14px rgba(17, 19, 24, 0.24);
+        --tag-bg: #eaeef4;
+        --tag-ink: #464f5e;
+        --cmd-bg: rgba(37, 99, 235, 0.10);
+        --cmd-ink: #1d4ed8;
+        --skeleton: #eaeef4;
+        --skeleton-shine: #f4f6f9;
+        --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC',
+          'Segoe UI', 'Microsoft YaHei', sans-serif;
+        --font-mono: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace;
       }
 
       :host([data-theme='dark']) {
-        --canvas: #0f1115;
-        --surface: #16181d;
-        --surface-hover: #1e2127;
-        --hairline: #262a31;
-        --hairline-strong: #343941;
-        --ink: #e8eaee;
-        --ink-2: #b3bac5;
-        --ink-3: #8f96a2;
-        --accent: #8b8bf5;
-        --accent-soft: #23243a;
-        --ok: #34c793;
-        --danger: #f08080;
-        --backdrop: rgba(0, 0, 0, 0.58);
-        --shadow: 0 28px 64px -14px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-        --tag-bg: #1e2127;
-        --tag-ink: #9aa2af;
-        --cmd-bg: #23243a;
-        --cmd-ink: #a5b4fc;
-        --ok-soft: rgba(52, 199, 147, 0.14);
-        --skeleton: #1e2127;
-        --skeleton-shine: #262a31;
+        --canvas: #0b0d11;
+        --surface: #13161c;
+        --surface-well: #1a1e26;
+        --surface-hover: #1d222b;
+        --hairline: #232833;
+        --hairline-strong: #323947;
+        --ink: #edf0f5;
+        --ink-2: #a6b0c0;
+        --ink-3: #939dae;
+        --accent: #60a5fa;
+        --accent-soft: rgba(96, 165, 250, 0.14);
+        --accent-ring: rgba(96, 165, 250, 0.28);
+        --ok: #2dd4bf;
+        --ok-soft: rgba(45, 212, 191, 0.14);
+        --danger: #f87171;
+        --danger-soft: rgba(248, 113, 113, 0.14);
+        --backdrop: rgba(0, 0, 0, 0.62);
+        --shadow: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 28px 64px -14px rgba(0, 0, 0, 0.78);
+        --tag-bg: #1a1e26;
+        --tag-ink: #a6b0c0;
+        --cmd-bg: rgba(96, 165, 250, 0.14);
+        --cmd-ink: #93c5fd;
+        --skeleton: #1a1e26;
+        --skeleton-shine: #232833;
       }
 
       * {
         box-sizing: border-box;
+      }
+
+      ::selection {
+        background: var(--accent-soft);
+        color: var(--ink);
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+        border-radius: 6px;
+      }
+
+      .search-input:focus-visible {
+        outline: none;
       }
 
       .backdrop {
@@ -787,15 +893,15 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
         max-width: 100%;
         background: var(--surface);
         color: var(--ink);
-        border-radius: 14px;
+        border-radius: 12px;
         box-shadow: var(--shadow);
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI',
-          'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+        font-family: var(--font-sans);
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
+        caret-color: var(--accent);
         animation: yitab-scale-up 0.16s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       }
 
@@ -856,6 +962,7 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
       }
 
       .clear-btn {
+        position: relative;
         display: none;
         align-items: center;
         justify-content: center;
@@ -868,7 +975,13 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
         cursor: pointer;
         padding: 0;
         flex-shrink: 0;
-        transition: background 0.12s ease, color 0.12s ease;
+        transition: background-color 120ms ease-out, color 120ms ease-out, transform 120ms ease-out;
+      }
+
+      .clear-btn::after {
+        content: '';
+        position: absolute;
+        inset: -9px;
       }
 
       .clear-btn.visible {
@@ -876,8 +989,12 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
       }
 
       .clear-btn:hover {
-        background: var(--surface-hover);
+        background: var(--surface-well);
         color: var(--ink);
+      }
+
+      .clear-btn:active {
+        transform: scale(0.96);
       }
 
       .kbd {
@@ -887,12 +1004,12 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
         min-width: 20px;
         height: 20px;
         padding: 0 5px;
-        font-family: inherit;
+        font-family: var(--font-mono);
         font-size: 10.5px;
         font-weight: 500;
         line-height: 1;
         color: var(--ink-3);
-        background: var(--canvas);
+        background: var(--surface-well);
         border: 1px solid var(--hairline-strong);
         border-radius: 5px;
         box-shadow: 0 1px 0 var(--hairline-strong);
@@ -907,7 +1024,7 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
         justify-content: space-between;
         gap: 8px;
         padding: 7px 14px;
-        background: var(--canvas);
+        background: var(--surface-well);
         border-bottom: 1px solid var(--hairline);
       }
 
@@ -915,6 +1032,8 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
         display: flex;
         align-items: center;
         gap: 4px;
+        flex: 1;
+        min-width: 0;
         overflow-x: auto;
         scrollbar-width: none;
       }
@@ -931,10 +1050,10 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
         font-weight: 500;
         color: var(--ink-2);
         padding: 4px 10px;
-        border-radius: 7px;
+        border-radius: 6px;
         cursor: pointer;
         white-space: nowrap;
-        transition: background 0.12s ease, color 0.12s ease;
+        transition: background-color 120ms ease-out, color 120ms ease-out, transform 120ms ease-out;
       }
 
       .filter-tab:hover {
@@ -942,10 +1061,15 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
         color: var(--ink);
       }
 
+      .filter-tab:active {
+        transform: scale(0.96);
+      }
+
       .filter-tab.active {
-        background: var(--accent-soft);
-        color: var(--accent);
+        background: var(--surface);
+        color: var(--ink);
         font-weight: 600;
+        box-shadow: 0 1px 2px rgba(17, 19, 24, 0.08), 0 0 0 1px var(--hairline);
       }
 
       .result-count {
@@ -993,23 +1117,11 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
         display: flex;
         align-items: center;
         gap: 11px;
-        padding: 8px 10px 8px 12px;
-        border-radius: 9px;
+        padding: 8px 10px;
+        border-radius: 7px;
         cursor: pointer;
         position: relative;
-        transition: background 0.1s ease;
-      }
-
-      .result-item::before {
-        content: '';
-        position: absolute;
-        left: 2px;
-        top: 8px;
-        bottom: 8px;
-        width: 2.5px;
-        border-radius: 2px;
-        background: transparent;
-        transition: background 0.1s ease;
+        transition: background-color 100ms ease-out, box-shadow 100ms ease-out;
       }
 
       .result-item:hover {
@@ -1018,10 +1130,7 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
 
       .result-item.selected {
         background: var(--accent-soft);
-      }
-
-      .result-item.selected::before {
-        background: var(--accent);
+        box-shadow: inset 0 0 0 1px var(--accent-ring);
       }
 
       .item-icon-box {
@@ -1127,6 +1236,8 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
       }
 
       .sub-text {
+        font-family: var(--font-mono);
+        font-size: 11px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -1155,6 +1266,7 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
       }
 
       .tab-close-btn {
+        position: relative;
         display: none;
         align-items: center;
         justify-content: center;
@@ -1166,7 +1278,17 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
         color: var(--ink-3);
         cursor: pointer;
         padding: 0;
-        transition: background 0.12s ease, color 0.12s ease;
+        transition: background-color 120ms ease-out, color 120ms ease-out, transform 120ms ease-out;
+      }
+
+      .tab-close-btn::after {
+        content: '';
+        position: absolute;
+        inset: -9px -4px;
+      }
+
+      .tab-close-btn:active {
+        transform: scale(0.96);
       }
 
       .result-item:hover .tab-close-btn,
@@ -1282,7 +1404,7 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
       .footer-bar {
         padding: 8px 16px;
         border-top: 1px solid var(--hairline);
-        background: var(--canvas);
+        background: var(--surface-well);
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -1302,24 +1424,39 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
         display: inline-flex;
         align-items: center;
         gap: 4px;
+        white-space: nowrap;
+      }
+
+      @media (max-width: 520px) {
+        .filter-tab {
+          padding: 4px 7px;
+          font-size: 11.5px;
+        }
+        .footer-bar {
+          flex-wrap: wrap;
+          gap: 6px 12px;
+        }
+        .footer-tips {
+          gap: 8px 10px;
+        }
       }
     </style>
     <div class="backdrop" id="yitab-palette-backdrop" role="dialog" aria-modal="true" aria-label="YiTab 全局命令与标签搜索">
       <div class="palette-box">
         <div class="search-bar">
           <div class="search-leading" id="yitab-palette-leading" aria-hidden="true">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           </div>
           <input
             type="text"
             class="search-input"
             id="yitab-palette-input"
-            placeholder="搜索标签页、书签、历史，或输入 > 快捷执行指令..."
+            placeholder="搜索标签、书签、历史，或 > 执行指令..."
             autocomplete="off"
             spellcheck="false"
           />
           <button type="button" class="clear-btn" id="yitab-palette-clear" title="清空输入" aria-label="清空输入">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
           <span class="kbd">Esc</span>
         </div>
@@ -1359,9 +1496,9 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
   const filterBtns = shadow.querySelectorAll<HTMLButtonElement>('.filter-tab');
 
   const searchIconSvg =
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>';
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>';
   const commandIconSvg =
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>';
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>';
 
   // 聚焦输入框
   requestAnimationFrame(() => inputEl?.focus());
@@ -1524,7 +1661,7 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
           <div class="item-trailing">
             ${
               item.kind === 'tab' && item.tabId != null
-                ? `<button type="button" class="tab-close-btn" data-close-tab="${item.tabId}" title="关闭此标签页 (${modKey}⌫)" aria-label="关闭此标签页"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>`
+                ? `<button type="button" class="tab-close-btn" data-close-tab="${item.tabId}" title="关闭此标签页 (${modKey}⌫)" aria-label="关闭此标签页"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>`
                 : ''
             }
             ${showKindBadge ? `<span class="kind-tag ${kindClass}">${kindLabel}</span>` : ''}
@@ -1846,15 +1983,15 @@ function openCommandPalette(initialItems?: SearchItem[] | null) {
 
 function getCategoryIcon(kind: SearchItemKind): string {
   if (kind === 'command') {
-    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`;
+    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>`;
   }
   if (kind === 'bookmark') {
-    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
   }
   if (kind === 'history') {
-    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline></svg>`;
+    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline></svg>`;
   }
-  return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="18" x2="12" y2="21"></line></svg>`;
+  return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="18" x2="12" y2="21"></line></svg>`;
 }
 
 function escapeHtml(str: unknown): string {

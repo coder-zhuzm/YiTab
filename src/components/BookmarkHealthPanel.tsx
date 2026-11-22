@@ -148,13 +148,34 @@ export function BookmarkHealthPanel({
                   <Text strong ellipsis style={{ fontSize: 13, color: tk.ink, display: 'block' }}>
                     {group.title}
                   </Text>
-                  <Text type="secondary" ellipsis style={{ fontSize: 11, display: 'block' }}>
+                  <Text
+                    type="secondary"
+                    ellipsis
+                    style={{
+                      fontSize: 11,
+                      display: 'block',
+                      fontFamily: 'var(--font-mono)',
+                      color: tk.ink3,
+                    }}
+                  >
                     {group.normalizedUrl}
                   </Text>
                 </div>
-                <Tag color="volcano" style={{ margin: 0, fontSize: 10, borderRadius: 4 }}>
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    fontWeight: 600,
+                    fontVariantNumeric: 'tabular-nums',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: tk.dangerSoft,
+                    color: tk.dangerInk,
+                    border: `1px solid ${tk.dangerBorder}`,
+                    flexShrink: 0,
+                  }}
+                >
                   {group.items.length} 个副本
-                </Tag>
+                </span>
               </div>
 
               {isExpanded && (
@@ -187,17 +208,21 @@ export function BookmarkHealthPanel({
                       >
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <Tag
-                              color={isKeep ? 'green' : 'default'}
+                            <span
                               style={{
-                                margin: 0,
                                 fontSize: 10,
+                                fontWeight: 600,
                                 lineHeight: '16px',
-                                padding: '0 4px',
+                                padding: '0 5px',
+                                borderRadius: 4,
+                                background: isKeep ? tk.successSoft : tk.surfaceMuted,
+                                color: isKeep ? tk.successInk : tk.ink3,
+                                border: `1px solid ${isKeep ? tk.successBorder : tk.hairline}`,
+                                flexShrink: 0,
                               }}
                             >
                               {isKeep ? '推荐保留' : '待清理'}
-                            </Tag>
+                            </span>
                             <Text ellipsis style={{ fontSize: 12, color: tk.ink2 }}>
                               {it.title}
                             </Text>
@@ -244,9 +269,10 @@ export function BookmarkHealthPanel({
         <Card
           size="small"
           style={{
-            borderRadius: 10,
+            borderRadius: 12,
             boxShadow: tk.shadowCard,
-            border: `1px solid ${tk.hairline}`,
+            border: 'none',
+            background: tk.surface,
           }}
         >
           <div
@@ -261,7 +287,7 @@ export function BookmarkHealthPanel({
               <Text strong style={{ fontSize: 13, color: tk.ink }}>
                 书签智能去重
               </Text>
-              <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
+              <Text type="secondary" style={{ fontSize: 11, display: 'block', color: tk.ink3 }}>
                 扫描收藏夹全树，按目录深度与标题质量推荐保留最佳书签
               </Text>
             </div>
@@ -275,11 +301,13 @@ export function BookmarkHealthPanel({
           {report ? (
             <div
               style={{
-                background: tk.canvas,
+                background: tk.surfaceMuted,
+                border: `1px solid ${tk.hairline}`,
                 padding: '8px 10px',
-                borderRadius: 6,
+                borderRadius: 7,
                 marginBottom: 10,
-                fontSize: 11,
+                fontSize: 11.5,
+                fontVariantNumeric: 'tabular-nums',
                 display: 'flex',
                 justifyContent: 'space-between',
                 color: tk.ink3,
@@ -390,7 +418,8 @@ export function BookmarkHealthPanel({
         style={{
           marginBottom: 20,
           borderRadius: 12,
-          borderColor: tk.hairline,
+          border: 'none',
+          background: tk.surface,
           boxShadow: tk.shadowCard,
         }}
       >
@@ -402,50 +431,51 @@ export function BookmarkHealthPanel({
                 gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
                 gap: 12,
                 marginBottom: 16,
+                fontVariantNumeric: 'tabular-nums',
               }}
             >
               <div
                 style={{
-                  background: tk.canvas,
-                  padding: '14px 16px',
-                  borderRadius: 10,
+                  background: tk.surfaceMuted,
+                  padding: '13px 15px',
+                  borderRadius: 9,
                   border: `1px solid ${tk.hairline}`,
                 }}
               >
-                <Text type="secondary" style={{ fontSize: 12 }}>
+                <Text type="secondary" style={{ fontSize: 12, color: tk.ink3 }}>
                   总书签总数
                 </Text>
-                <div style={{ fontSize: 22, fontWeight: 700, color: tk.ink, marginTop: 4 }}>
+                <div style={{ fontSize: 22, fontWeight: 600, color: tk.ink, marginTop: 4 }}>
                   {report.totalBookmarks}
                 </div>
               </div>
               <div
                 style={{
-                  background: tk.canvas,
-                  padding: '14px 16px',
-                  borderRadius: 10,
+                  background: tk.surfaceMuted,
+                  padding: '13px 15px',
+                  borderRadius: 9,
                   border: `1px solid ${tk.hairline}`,
                 }}
               >
-                <Text type="secondary" style={{ fontSize: 12 }}>
+                <Text type="secondary" style={{ fontSize: 12, color: tk.ink3 }}>
                   目录文件夹总数
                 </Text>
-                <div style={{ fontSize: 22, fontWeight: 700, color: tk.ink, marginTop: 4 }}>
+                <div style={{ fontSize: 22, fontWeight: 600, color: tk.ink, marginTop: 4 }}>
                   {report.totalFolders}
                 </div>
               </div>
               <div
                 style={{
                   background: tk.dangerSoft,
-                  padding: '14px 16px',
-                  borderRadius: 10,
+                  padding: '13px 15px',
+                  borderRadius: 9,
                   border: `1px solid ${tk.dangerBorder}`,
                 }}
               >
                 <Text type="secondary" style={{ fontSize: 12, color: tk.dangerInk }}>
                   重复书签组 / 冗余项
                 </Text>
-                <div style={{ fontSize: 22, fontWeight: 700, color: tk.dangerInk, marginTop: 4 }}>
+                <div style={{ fontSize: 22, fontWeight: 600, color: tk.dangerInk, marginTop: 4 }}>
                   {report.duplicateGroupCount} 组 · {report.redundantCount} 项
                 </div>
               </div>
@@ -520,7 +550,8 @@ export function BookmarkHealthPanel({
           }
           style={{
             borderRadius: 12,
-            borderColor: tk.hairline,
+            border: 'none',
+            background: tk.surface,
             boxShadow: tk.shadowCard,
           }}
         >
