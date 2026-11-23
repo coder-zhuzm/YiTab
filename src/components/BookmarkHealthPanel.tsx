@@ -138,7 +138,7 @@ export function BookmarkHealthPanel({
               style={{
                 background: tk.surface,
                 border: `1px solid ${tk.hairline}`,
-                borderRadius: 8,
+                borderRadius: 'var(--radius-sm)',
                 padding: isCompact ? '8px 10px' : '12px 14px',
                 boxShadow: isCompact ? tk.shadowCard : undefined,
               }}
@@ -183,7 +183,7 @@ export function BookmarkHealthPanel({
                     fontWeight: 600,
                     fontVariantNumeric: 'tabular-nums',
                     padding: '2px 6px',
-                    borderRadius: 4,
+                    borderRadius: 'var(--radius-xs)',
                     background: tk.dangerSoft,
                     color: tk.dangerInk,
                     border: `1px solid ${tk.dangerBorder}`,
@@ -215,7 +215,7 @@ export function BookmarkHealthPanel({
                           alignItems: 'center',
                           justifyContent: 'space-between',
                           padding: isCompact ? '4px 6px' : '6px 10px',
-                          borderRadius: 6,
+                          borderRadius: 'var(--radius-sm)',
                           background: isKeep ? tk.successSoft : tk.surface,
                           border: isKeep
                             ? `1px solid ${tk.successBorder}`
@@ -230,7 +230,7 @@ export function BookmarkHealthPanel({
                                 fontWeight: 600,
                                 lineHeight: '16px',
                                 padding: '0 5px',
-                                borderRadius: 4,
+                                borderRadius: 'var(--radius-xs)',
                                 background: isKeep ? tk.successSoft : tk.surfaceMuted,
                                 color: isKeep ? tk.successInk : tk.ink3,
                                 border: `1px solid ${isKeep ? tk.successBorder : tk.hairline}`,
@@ -285,7 +285,7 @@ export function BookmarkHealthPanel({
         <Card
           size="small"
           style={{
-            borderRadius: 12,
+            borderRadius: 'var(--radius-lg)',
             boxShadow: tk.shadowCard,
             border: 'none',
             background: tk.surface,
@@ -320,7 +320,7 @@ export function BookmarkHealthPanel({
                 background: tk.surfaceMuted,
                 border: `1px solid ${tk.hairline}`,
                 padding: '8px 10px',
-                borderRadius: 7,
+                borderRadius: 'var(--radius-sm)',
                 marginBottom: 10,
                 fontSize: 11.5,
                 fontVariantNumeric: 'tabular-nums',
@@ -433,7 +433,7 @@ export function BookmarkHealthPanel({
         }
         style={{
           marginBottom: 20,
-          borderRadius: 12,
+          borderRadius: 'var(--radius-lg)',
           border: 'none',
           background: tk.surface,
           boxShadow: tk.shadowCard,
@@ -454,7 +454,7 @@ export function BookmarkHealthPanel({
                 style={{
                   background: tk.surfaceMuted,
                   padding: '13px 15px',
-                  borderRadius: 9,
+                  borderRadius: 'var(--radius-sm)',
                   border: `1px solid ${tk.hairline}`,
                 }}
               >
@@ -469,7 +469,7 @@ export function BookmarkHealthPanel({
                 style={{
                   background: tk.surfaceMuted,
                   padding: '13px 15px',
-                  borderRadius: 9,
+                  borderRadius: 'var(--radius-sm)',
                   border: `1px solid ${tk.hairline}`,
                 }}
               >
@@ -484,7 +484,7 @@ export function BookmarkHealthPanel({
                 style={{
                   background: tk.dangerSoft,
                   padding: '13px 15px',
-                  borderRadius: 9,
+                  borderRadius: 'var(--radius-sm)',
                   border: `1px solid ${tk.dangerBorder}`,
                 }}
               >
@@ -570,7 +570,7 @@ export function BookmarkHealthPanel({
             </div>
           }
           style={{
-            borderRadius: 12,
+            borderRadius: 'var(--radius-lg)',
             border: 'none',
             background: tk.surface,
             boxShadow: tk.shadowCard,

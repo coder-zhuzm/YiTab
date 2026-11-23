@@ -483,6 +483,13 @@ function PopupApp() {
           colorBgElevated: tk.surface,
           colorBorderSecondary: tk.hairline,
           fontFamily: 'var(--font-sans)',
+          motionEaseOut: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          motionEaseInOut: 'cubic-bezier(0.42, 0, 0.58, 1)',
+          motionEaseOutCirc: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          motionEaseInOutCirc: 'cubic-bezier(0.42, 0, 0.58, 1)',
+          motionEaseOutBack: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+          motionUnit: 0.05,
+          motionBase: 0.1,
         },
       }}
     >
@@ -543,7 +550,7 @@ function PopupApp() {
             gap: 8,
             padding: '7px 10px',
             marginBottom: 10,
-            borderRadius: 8,
+            borderRadius: 'var(--radius-sm)',
             background: isDedupPaused ? tk.dangerSoft : tk.surface,
             border: `1px solid ${isDedupPaused ? tk.dangerBorder : tk.hairline}`,
           }}
@@ -580,7 +587,7 @@ function PopupApp() {
                     alignItems: 'center',
                     height: 18,
                     padding: '0 6px',
-                    borderRadius: 4,
+                    borderRadius: 'var(--radius-xs)',
                     fontSize: 10.5,
                     fontWeight: 500,
                     background: isCurrentWhitelisted
@@ -736,7 +743,7 @@ function PopupApp() {
             <Card
               size="small"
               style={{
-                borderRadius: 12,
+                borderRadius: 'var(--radius-lg)',
                 boxShadow: tk.shadowCard,
               }}
             >
@@ -757,7 +764,7 @@ function PopupApp() {
                         style={{
                           background: tk.surfaceMuted,
                           padding: '8px 10px',
-                          borderRadius: 6,
+                          borderRadius: 'var(--radius-sm)',
                           marginBottom: 12,
                         }}
                       >
@@ -774,7 +781,7 @@ function PopupApp() {
                                 gap: 4,
                                 padding: '2px 6px',
                                 fontSize: 11,
-                                borderRadius: 4,
+                                borderRadius: 'var(--radius-xs)',
                                 border: `1px solid ${tk.hairlineStrong}`,
                                 background: tk.surface,
                                 color: tk.ink,
@@ -800,7 +807,7 @@ function PopupApp() {
                         style={{
                           background: tk.canvas,
                           padding: '8px 10px',
-                          borderRadius: 6,
+                          borderRadius: 'var(--radius-sm)',
                           marginBottom: 12,
                           textAlign: 'center',
                         }}
@@ -854,7 +861,7 @@ function PopupApp() {
                     allowClear
                     value={searchQuery}
                     onChange={(e) => handleSearchInputChange(e.target.value)}
-                    style={{ borderRadius: 8 }}
+                    style={{ borderRadius: 'var(--radius-sm)' }}
                   />
 
                   <div
@@ -930,7 +937,7 @@ function PopupApp() {
                               style={{
                                 width: 24,
                                 height: 24,
-                                borderRadius: 6,
+                                borderRadius: 'var(--radius-sm)',
                                 background: tk.surfaceMuted,
                                 display: 'flex',
                                 alignItems: 'center',
@@ -1007,7 +1014,7 @@ function PopupApp() {
                                 padding: '1px 6px',
                                 fontSize: 10,
                                 fontWeight: 500,
-                                borderRadius: 4,
+                                borderRadius: 'var(--radius-xs)',
                                 background: isTabKind ? tk.accentSoft : tk.surfaceMuted,
                                 color: isTabKind ? tk.accentInk : tk.ink2,
                                 border: `1px solid ${isTabKind ? tk.accentBorder : tk.hairline}`,
@@ -1079,7 +1086,7 @@ function PopupApp() {
                             className="yt-deck-card"
                             style={{
                               padding: '10px 12px',
-                              borderRadius: 10,
+                              borderRadius: 'var(--radius-md)',
                             }}
                           >
                             <div
@@ -1122,7 +1129,7 @@ function PopupApp() {
                                       fontSize: 10.5,
                                       lineHeight: '16px',
                                       padding: '0 5px',
-                                      borderRadius: 4,
+                                      borderRadius: 'var(--radius-xs)',
                                       background: tk.accentSoft,
                                       color: tk.accentInk,
                                       border: `1px solid ${tk.accentBorder}`,

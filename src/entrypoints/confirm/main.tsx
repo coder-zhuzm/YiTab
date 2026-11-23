@@ -59,7 +59,7 @@ function Kbd({ children, tk }: { children: React.ReactNode; tk: ThemeTokens }) {
         background: tk.surfaceMuted,
         border: `1px solid ${tk.hairlineStrong}`,
         borderBottom: `2px solid ${tk.hairlineStrong}`,
-        borderRadius: 4,
+        borderRadius: 'var(--radius-xs)',
         marginLeft: 6,
         lineHeight: 1,
       }}
@@ -456,6 +456,13 @@ function ConfirmPage() {
           colorBgContainer: tk.surface,
           colorBgElevated: tk.surface,
           colorBorderSecondary: tk.hairline,
+          motionEaseOut: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          motionEaseInOut: 'cubic-bezier(0.42, 0, 0.58, 1)',
+          motionEaseOutCirc: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          motionEaseInOutCirc: 'cubic-bezier(0.42, 0, 0.58, 1)',
+          motionEaseOutBack: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+          motionUnit: 0.05,
+          motionBase: 0.1,
         },
       }}
     >
@@ -572,7 +579,7 @@ function ConfirmPage() {
               type="warning"
               showIcon
               message="这是同域名匹配，已有标签可能是该网站的其他页面。请对比地址后选择。"
-              style={{ marginBottom: 16, borderRadius: 8 }}
+              style={{ marginBottom: 16, borderRadius: 'var(--radius-sm)' }}
             />
           )}
           {primaryMode === 'path' && (
@@ -580,7 +587,7 @@ function ConfirmPage() {
               type="warning"
               showIcon
               message="这是同路径匹配，已忽略所有查询参数。页面内容可能不同，请核实后选择。"
-              style={{ marginBottom: 16, borderRadius: 8 }}
+              style={{ marginBottom: 16, borderRadius: 'var(--radius-sm)' }}
             />
           )}
 
@@ -589,7 +596,7 @@ function ConfirmPage() {
             size="small"
             style={{
               marginBottom: 20,
-              borderRadius: 12,
+              borderRadius: 'var(--radius-lg)',
               background: tk.surface,
               boxShadow: tk.shadowCard,
             }}
@@ -666,7 +673,7 @@ function ConfirmPage() {
                 fontFamily: 'var(--font-mono)',
                 padding: '8px 12px',
                 background: tk.canvas,
-                borderRadius: 8,
+                borderRadius: 'var(--radius-sm)',
                 border: `1px solid ${tk.hairline}`,
                 display: 'flex',
                 alignItems: 'baseline',
@@ -683,7 +690,7 @@ function ConfirmPage() {
                     fontSize: 11,
                     fontFamily: 'var(--font-sans)',
                     padding: '1px 6px',
-                    borderRadius: 4,
+                    borderRadius: 'var(--radius-xs)',
                     background: tk.accentSoft,
                     color: tk.accentInk,
                     border: `1px solid ${tk.accentBorder}`,
@@ -698,7 +705,7 @@ function ConfirmPage() {
                     fontSize: 11,
                     fontFamily: 'var(--font-sans)',
                     padding: '1px 6px',
-                    borderRadius: 4,
+                    borderRadius: 'var(--radius-xs)',
                     background: tk.surfaceMuted,
                     color: tk.ink2,
                     border: `1px solid ${tk.hairlineStrong}`,
@@ -731,7 +738,7 @@ function ConfirmPage() {
                       marginBottom: 0,
                       background: tk.surfaceMuted,
                       padding: '8px 12px',
-                      borderRadius: 6,
+                      borderRadius: 'var(--radius-sm)',
                       fontSize: 12,
                       fontFamily: 'var(--font-mono)',
                       color: tk.ink,
@@ -782,7 +789,7 @@ function ConfirmPage() {
                       alignItems: 'center',
                       height: 22,
                       padding: '0 8px',
-                      borderRadius: 5,
+                      borderRadius: 'var(--radius-xs)',
                       fontSize: 12,
                       fontWeight: 500,
                       background: tk.accentSoft,
@@ -879,9 +886,9 @@ function ConfirmPage() {
                 }}
                 style={{
                   marginBottom: 12,
-                  borderRadius: 12,
+                  borderRadius: 'var(--radius-lg)',
                   cursor: 'pointer',
-                  transition: 'background-color 140ms ease-out, box-shadow 140ms ease-out',
+                  transition: 'background-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out)',
                   background: tk.surface,
                 }}
                 styles={{ body: { padding: '14px 18px' } }}
@@ -918,7 +925,7 @@ function ConfirmPage() {
                       width: 38,
                       height: 38,
                       flexShrink: 0,
-                      borderRadius: 9,
+                      borderRadius: 'var(--radius-sm)',
                       background: tk.canvas,
                       border: `1px solid ${tk.hairline}`,
                       display: 'flex',
@@ -989,7 +996,7 @@ function ConfirmPage() {
                             margin: 0,
                             fontSize: 11,
                             fontFamily: 'sans-serif',
-                            borderRadius: 4,
+                            borderRadius: 'var(--radius-xs)',
                           }}
                         >
                           +{tSummary.queryCount} 参数
@@ -1010,7 +1017,7 @@ function ConfirmPage() {
                             padding: '0 7px',
                             fontSize: 11.5,
                             fontWeight: 500,
-                            borderRadius: 4,
+                            borderRadius: 'var(--radius-xs)',
                             background: tk.accentSoft,
                             color: tk.accentInk,
                             border: `1px solid ${tk.accentBorder}`,
@@ -1028,7 +1035,7 @@ function ConfirmPage() {
                             height: 20,
                             padding: '0 7px',
                             fontSize: 11,
-                            borderRadius: 4,
+                            borderRadius: 'var(--radius-xs)',
                             background: tk.surfaceMuted,
                             color: tk.ink2,
                             border: `1px solid ${tk.hairlineStrong}`,
@@ -1046,7 +1053,7 @@ function ConfirmPage() {
                             height: 20,
                             padding: '0 7px',
                             fontSize: 11.5,
-                            borderRadius: 4,
+                            borderRadius: 'var(--radius-xs)',
                             background: tk.surfaceMuted,
                             color: tk.ink,
                             border: `1px solid ${tk.hairlineStrong}`,
@@ -1073,7 +1080,7 @@ function ConfirmPage() {
                           fontSize: 11.5,
                           background: tk.surfaceMuted,
                           color: tk.ink3,
-                          borderRadius: 4,
+                          borderRadius: 'var(--radius-xs)',
                         }}
                       >
                         {windowLabelMap.get(t.windowId) ?? '当前窗口'}
@@ -1101,7 +1108,7 @@ function ConfirmPage() {
                             marginBottom: 4,
                             background: tk.canvas,
                             padding: '6px 10px',
-                            borderRadius: 6,
+                            borderRadius: 'var(--radius-sm)',
                             fontFamily: 'var(--font-mono)',
                             fontSize: 12,
                           }}
@@ -1201,7 +1208,7 @@ function ConfirmPage() {
                 textAlign: 'center',
                 padding: '48px 20px',
                 background: tk.surface,
-                borderRadius: 12,
+                borderRadius: 'var(--radius-lg)',
                 border: `1px solid ${tk.hairline}`,
                 boxShadow: tk.shadowCard,
               }}
@@ -1210,7 +1217,7 @@ function ConfirmPage() {
                 style={{
                   width: 48,
                   height: 48,
-                  borderRadius: 12,
+                  borderRadius: 'var(--radius-lg)',
                   background: tk.surfaceMuted,
                   display: 'flex',
                   alignItems: 'center',
@@ -1264,7 +1271,7 @@ function ConfirmPage() {
                 placeholder="例如：开发、参考资料（可留空）"
                 value={groupTitle}
                 onChange={(e) => setGroupTitle(e.target.value)}
-                style={{ marginTop: 6, borderRadius: 6 }}
+                style={{ marginTop: 6, borderRadius: 'var(--radius-sm)' }}
                 maxLength={30}
               />
             </div>
@@ -1283,7 +1290,7 @@ function ConfirmPage() {
                         alignItems: 'center',
                         gap: 6,
                         padding: '5px 10px',
-                        borderRadius: 6,
+                        borderRadius: 'var(--radius-sm)',
                       }}
                     >
                       <span

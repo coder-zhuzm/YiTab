@@ -102,7 +102,7 @@ export function TabHealthPanel({
       <Card
         size="small"
         style={{
-          borderRadius: 12,
+          borderRadius: 'var(--radius-lg)',
           boxShadow: tk.shadowCard,
           border: 'none',
           background: tk.surface,
@@ -120,7 +120,7 @@ export function TabHealthPanel({
                   fontWeight: 600,
                   fontVariantNumeric: 'tabular-nums',
                   padding: '2px 7px',
-                  borderRadius: 5,
+                  borderRadius: 'var(--radius-xs)',
                   background: tk.accentSoft,
                   color: tk.accentInk,
                   border: `1px solid ${tk.accentBorder}`,
@@ -143,7 +143,7 @@ export function TabHealthPanel({
             background: tk.surfaceMuted,
             border: `1px solid ${tk.hairline}`,
             padding: '8px 10px',
-            borderRadius: 7,
+            borderRadius: 'var(--radius-sm)',
             marginBottom: 12,
             fontSize: 11.5,
             fontVariantNumeric: 'tabular-nums',
@@ -239,7 +239,7 @@ export function TabHealthPanel({
       }
       style={{
         marginBottom: 20,
-        borderRadius: 12,
+        borderRadius: 'var(--radius-lg)',
         border: 'none',
         background: tk.surface,
         boxShadow: tk.shadowCard,
@@ -258,7 +258,7 @@ export function TabHealthPanel({
           style={{
             background: tk.surfaceMuted,
             padding: '13px 15px',
-            borderRadius: 9,
+            borderRadius: 'var(--radius-sm)',
             border: `1px solid ${tk.hairline}`,
           }}
         >
@@ -274,7 +274,7 @@ export function TabHealthPanel({
           style={{
             background: tk.infoSoft,
             padding: '13px 15px',
-            borderRadius: 9,
+            borderRadius: 'var(--radius-sm)',
             border: `1px solid ${tk.infoBorder}`,
           }}
         >
@@ -290,7 +290,7 @@ export function TabHealthPanel({
           style={{
             background: tk.successSoft,
             padding: '13px 15px',
-            borderRadius: 9,
+            borderRadius: 'var(--radius-sm)',
             border: `1px solid ${tk.successBorder}`,
           }}
         >
@@ -308,7 +308,7 @@ export function TabHealthPanel({
           style={{
             background: tk.accentSoft,
             padding: '13px 15px',
-            borderRadius: 9,
+            borderRadius: 'var(--radius-sm)',
             border: `1px solid ${tk.accentBorder}`,
           }}
         >
@@ -380,7 +380,7 @@ export function TabHealthPanel({
                   fontSize: 11,
                   fontWeight: 600,
                   padding: '1px 6px',
-                  borderRadius: 4,
+                  borderRadius: 'var(--radius-xs)',
                   background: tk.successSoft,
                   color: tk.successInk,
                   border: `1px solid ${tk.successBorder}`,

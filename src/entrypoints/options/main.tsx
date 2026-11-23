@@ -432,6 +432,13 @@ function OptionsPage() {
           colorBgContainer: tk.surface,
           colorBgElevated: tk.surface,
           colorBorderSecondary: tk.hairline,
+          motionEaseOut: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          motionEaseInOut: 'cubic-bezier(0.42, 0, 0.58, 1)',
+          motionEaseOutCirc: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          motionEaseInOutCirc: 'cubic-bezier(0.42, 0, 0.58, 1)',
+          motionEaseOutBack: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+          motionUnit: 0.05,
+          motionBase: 0.1,
         },
       }}
     >
@@ -472,7 +479,7 @@ function OptionsPage() {
               <span
                 style={{
                   padding: '4px 10px',
-                  borderRadius: 6,
+                  borderRadius: 'var(--radius-sm)',
                   fontSize: 12,
                   fontWeight: 500,
                   display: 'inline-flex',
@@ -586,7 +593,7 @@ function OptionsPage() {
                       }
                       style={{
                         marginBottom: 20,
-                        borderRadius: 12,
+                        borderRadius: 'var(--radius-lg)',
                         boxShadow: tk.shadowCard,
                       }}
                     >
@@ -653,7 +660,7 @@ function OptionsPage() {
                       }
                       style={{
                         marginBottom: 20,
-                        borderRadius: 12,
+                        borderRadius: 'var(--radius-lg)',
                         boxShadow: tk.shadowCard,
                       }}
                     >
@@ -720,7 +727,7 @@ function OptionsPage() {
                       }
                       style={{
                         marginBottom: 20,
-                        borderRadius: 12,
+                        borderRadius: 'var(--radius-lg)',
                         borderColor: tk.hairline,
                         boxShadow: tk.shadowCard,
                       }}
@@ -785,7 +792,7 @@ function OptionsPage() {
                       }
                       style={{
                         marginBottom: 20,
-                        borderRadius: 12,
+                        borderRadius: 'var(--radius-lg)',
                         borderColor: tk.hairline,
                         boxShadow: tk.shadowCard,
                       }}
@@ -820,7 +827,7 @@ function OptionsPage() {
                                 minWidth: 148,
                                 height: 34,
                                 padding: '0 12px',
-                                borderRadius: 8,
+                                borderRadius: 'var(--radius-sm)',
                                 border: `1.5px solid ${recordingShortcut ? tk.accent : tk.hairlineStrong}`,
                                 background: recordingShortcut ? tk.accentSoft : tk.canvas,
                                 color: recordingShortcut ? tk.accent : tk.ink,
@@ -828,7 +835,7 @@ function OptionsPage() {
                                 fontSize: 12.5,
                                 fontWeight: 500,
                                 justifyContent: 'center',
-                                transition: 'border-color 140ms ease-out, background-color 140ms ease-out',
+                                transition: 'border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out)',
                               }}
                               title="点击后直接按下你想要的快捷键组合"
                             >
@@ -849,7 +856,7 @@ function OptionsPage() {
                                         padding: '0 6px',
                                         fontSize: 11.5,
                                         fontWeight: 600,
-                                        borderRadius: 5,
+                                        borderRadius: 'var(--radius-xs)',
                                         background: tk.surface,
                                         color: paletteShortcut.enabled ? tk.ink : tk.ink3,
                                         border: `1px solid ${tk.hairlineStrong}`,
@@ -930,7 +937,7 @@ function OptionsPage() {
                                   padding: '1px 7px',
                                   fontSize: 11.5,
                                   fontWeight: 600,
-                                  borderRadius: 5,
+                                  borderRadius: 'var(--radius-xs)',
                                   background: tk.surfaceMuted,
                                   color: tk.ink,
                                   border: `1px solid ${tk.hairlineStrong}`,
@@ -964,7 +971,7 @@ function OptionsPage() {
                       }
                       style={{
                         marginBottom: 20,
-                        borderRadius: 12,
+                        borderRadius: 'var(--radius-lg)',
                         borderColor: tk.hairline,
                         boxShadow: tk.shadowCard,
                       }}
@@ -1016,7 +1023,7 @@ function OptionsPage() {
                       }
                       style={{
                         marginBottom: 20,
-                        borderRadius: 12,
+                        borderRadius: 'var(--radius-lg)',
                         boxShadow: tk.shadowCard,
                       }}
                     >
@@ -1096,7 +1103,7 @@ function OptionsPage() {
                                         color: badgeFg,
                                         background: badgeBg,
                                         padding: '2px 7px',
-                                        borderRadius: 4,
+                                        borderRadius: 'var(--radius-xs)',
                                         border: `1px solid ${badgeBd}`,
                                       }}
                                     >
@@ -1121,7 +1128,7 @@ function OptionsPage() {
                                     marginLeft: 24,
                                     padding: '6px 10px',
                                     background: isChecked ? tk.surface : tk.surfaceHover,
-                                    borderRadius: 6,
+                                    borderRadius: 'var(--radius-sm)',
                                     fontSize: 12,
                                     color: tk.ink2,
                                     fontFamily:
@@ -1153,7 +1160,7 @@ function OptionsPage() {
                       }
                       style={{
                         marginBottom: 20,
-                        borderRadius: 12,
+                        borderRadius: 'var(--radius-lg)',
                         borderColor: tk.hairline,
                         boxShadow: tk.shadowCard,
                       }}
@@ -1245,7 +1252,7 @@ function OptionsPage() {
                         <Alert
                           type="warning"
                           showIcon
-                          style={{ marginTop: 16, borderRadius: 8 }}
+                          style={{ marginTop: 16, borderRadius: 'var(--radius-sm)' }}
                           message="全局或网站规则启用了宽泛匹配 + 静默切换，可能跳到不同内容。建议选择页内确认。"
                         />
                       )}
@@ -1265,7 +1272,7 @@ function OptionsPage() {
                       }
                       style={{
                         marginBottom: 20,
-                        borderRadius: 12,
+                        borderRadius: 'var(--radius-lg)',
                         borderColor: tk.hairline,
                         boxShadow: tk.shadowCard,
                       }}
@@ -1273,7 +1280,7 @@ function OptionsPage() {
                       <div
                         style={{
                           padding: '16px',
-                          borderRadius: 10,
+                          borderRadius: 'var(--radius-md)',
                           border: `1px solid ${tk.hairline}`,
                           background: settings.ignoreReload !== false ? tk.surfaceHover : tk.surface,
                           display: 'flex',
@@ -1291,7 +1298,7 @@ function OptionsPage() {
                               style={{
                                 fontSize: 11.5,
                                 padding: '1px 7px',
-                                borderRadius: 4,
+                                borderRadius: 'var(--radius-xs)',
                                 fontWeight: 500,
                                 background: settings.ignoreReload !== false ? tk.successSoft : tk.surfaceMuted,
                                 color: settings.ignoreReload !== false ? tk.successInk : tk.ink2,
@@ -1317,7 +1324,7 @@ function OptionsPage() {
                         style={{
                           marginTop: 12,
                           padding: '16px',
-                          borderRadius: 10,
+                          borderRadius: 'var(--radius-md)',
                           border: `1px solid ${tk.hairline}`,
                           background: tk.surface,
                         }}
@@ -1330,7 +1337,7 @@ function OptionsPage() {
                             style={{
                               fontSize: 11.5,
                               padding: '1px 7px',
-                              borderRadius: 4,
+                              borderRadius: 'var(--radius-xs)',
                               fontWeight: 500,
                               background: settings.hashPolicy === 'ignore' ? tk.surfaceMuted : tk.successSoft,
                               color: settings.hashPolicy === 'ignore' ? tk.ink2 : tk.successInk,
@@ -1348,7 +1355,7 @@ function OptionsPage() {
                           <Alert
                             type="warning"
                             showIcon
-                            style={{ marginBottom: 12, borderRadius: 8 }}
+                            style={{ marginBottom: 12, borderRadius: 'var(--radius-sm)' }}
                             message="当前是全局设置：所有网站的 Hash 都会被忽略"
                             description="这会同时影响其它单页应用。例如 #/inbox 与 #/sent 将被视为同一页面并被判为重复。如需按站点区分，请改用「网站例外规则」调整该站点的匹配粒度。"
                           />
@@ -1374,7 +1381,7 @@ function OptionsPage() {
                         style={{
                           marginTop: 12,
                           padding: '16px',
-                          borderRadius: 10,
+                          borderRadius: 'var(--radius-md)',
                           border: `1px solid ${tk.hairline}`,
                           background: tk.surface,
                         }}
@@ -1387,7 +1394,7 @@ function OptionsPage() {
                             style={{
                               fontSize: 11.5,
                               padding: '1px 7px',
-                              borderRadius: 4,
+                              borderRadius: 'var(--radius-xs)',
                               fontWeight: 500,
                               background: settings.spaPolicy === 'auto' ? tk.warnSoft : tk.successSoft,
                               color: settings.spaPolicy === 'auto' ? tk.warnInk : tk.successInk,
@@ -1435,7 +1442,7 @@ function OptionsPage() {
                       }
                       style={{
                         marginBottom: 20,
-                        borderRadius: 12,
+                        borderRadius: 'var(--radius-lg)',
                         borderColor: tk.hairline,
                         boxShadow: tk.shadowCard,
                       }}
@@ -1448,7 +1455,7 @@ function OptionsPage() {
                           flexWrap: 'wrap',
                           padding: '8px 12px',
                           background: tk.surfaceMuted,
-                          borderRadius: 8,
+                          borderRadius: 'var(--radius-sm)',
                           fontSize: 12,
                           color: tk.ink2,
                           marginBottom: 16,
@@ -1458,7 +1465,7 @@ function OptionsPage() {
                         <span
                           style={{
                             padding: '2px 7px',
-                            borderRadius: 4,
+                            borderRadius: 'var(--radius-xs)',
                             fontSize: 11.5,
                             background: tk.successSoft,
                             color: tk.successInk,
@@ -1471,7 +1478,7 @@ function OptionsPage() {
                         <span
                           style={{
                             padding: '2px 7px',
-                            borderRadius: 4,
+                            borderRadius: 'var(--radius-xs)',
                             fontSize: 11.5,
                             background: tk.accentSoft,
                             color: tk.accentInk,
@@ -1484,7 +1491,7 @@ function OptionsPage() {
                         <span
                           style={{
                             padding: '2px 7px',
-                            borderRadius: 4,
+                            borderRadius: 'var(--radius-xs)',
                             fontSize: 11.5,
                             background: tk.surface,
                             color: tk.ink2,
@@ -1510,7 +1517,7 @@ function OptionsPage() {
                               style={{
                                 padding: '12px 16px',
                                 background: tk.surface,
-                                borderRadius: 8,
+                                borderRadius: 'var(--radius-sm)',
                                 border: `1px solid ${tk.hairline}`,
                                 display: 'flex',
                                 alignItems: 'center',
@@ -1527,7 +1534,7 @@ function OptionsPage() {
                                   <span
                                     style={{
                                       padding: '1px 7px',
-                                      borderRadius: 4,
+                                      borderRadius: 'var(--radius-xs)',
                                       fontSize: 11.5,
                                       fontWeight: 500,
                                       background: tk.accentSoft,
@@ -1540,7 +1547,7 @@ function OptionsPage() {
                                   <span
                                     style={{
                                       padding: '1px 7px',
-                                      borderRadius: 4,
+                                      borderRadius: 'var(--radius-xs)',
                                       fontSize: 11.5,
                                       background: tk.surfaceMuted,
                                       color: tk.ink2,
@@ -1598,7 +1605,7 @@ function OptionsPage() {
                         style={{
                           padding: '16px',
                           background: tk.canvas,
-                          borderRadius: 10,
+                          borderRadius: 'var(--radius-md)',
                           border: `1px dashed ${tk.hairlineStrong}`,
                         }}
                       >
@@ -1611,7 +1618,7 @@ function OptionsPage() {
                             value={domain}
                             disabled={disabled}
                             onChange={(e) => setDomain(e.target.value)}
-                            style={{ borderRadius: 6 }}
+                            style={{ borderRadius: 'var(--radius-sm)' }}
                           />
                           <Space wrap size={12}>
                             <Select
@@ -1636,7 +1643,7 @@ function OptionsPage() {
                               value={params}
                               disabled={disabled}
                               onChange={(e) => setParams(e.target.value)}
-                              style={{ borderRadius: 6 }}
+                              style={{ borderRadius: 'var(--radius-sm)' }}
                             />
                           )}
 
@@ -1677,7 +1684,7 @@ function OptionsPage() {
                       }
                       style={{
                         marginBottom: 20,
-                        borderRadius: 12,
+                        borderRadius: 'var(--radius-lg)',
                         borderColor: tk.hairline,
                         boxShadow: tk.shadowCard,
                       }}
@@ -1708,7 +1715,7 @@ function OptionsPage() {
                             style={{
                               padding: '4px 8px',
                               fontSize: 12.5,
-                              borderRadius: 6,
+                              borderRadius: 'var(--radius-sm)',
                               background: tk.surfaceMuted,
                               border: `1px solid ${tk.hairlineStrong}`,
                             }}
@@ -1776,7 +1783,7 @@ function OptionsPage() {
                                   fontSize: 11.5,
                                   fontWeight: 500,
                                   padding: '1px 7px',
-                                  borderRadius: 4,
+                                  borderRadius: 'var(--radius-xs)',
                                   background: tk.successSoft,
                                   color: tk.successInk,
                                   border: `1px solid ${tk.successBorder}`,
@@ -1790,7 +1797,7 @@ function OptionsPage() {
                                   fontSize: 11.5,
                                   fontWeight: 500,
                                   padding: '1px 7px',
-                                  borderRadius: 4,
+                                  borderRadius: 'var(--radius-xs)',
                                   background: tk.warnSoft,
                                   color: tk.warnInk,
                                   border: `1px solid ${tk.warnBorder}`,
@@ -1804,7 +1811,7 @@ function OptionsPage() {
                                   fontSize: 11.5,
                                   fontWeight: 500,
                                   padding: '1px 7px',
-                                  borderRadius: 4,
+                                  borderRadius: 'var(--radius-xs)',
                                   background: tk.surfaceMuted,
                                   color: tk.ink2,
                                   border: `1px solid ${tk.hairlineStrong}`,
@@ -1822,7 +1829,7 @@ function OptionsPage() {
                       }
                       style={{
                         marginBottom: 20,
-                        borderRadius: 12,
+                        borderRadius: 'var(--radius-lg)',
                         boxShadow: tk.shadowCard,
                       }}
                     >
@@ -1838,7 +1845,7 @@ function OptionsPage() {
                           gap: 14,
                           padding: 16,
                           background: tk.canvas,
-                          borderRadius: 8,
+                          borderRadius: 'var(--radius-sm)',
                           border: `1px solid ${tk.hairline}`,
                           opacity: aiSettings.enabled ? 1 : 0.6,
                         }}
@@ -1879,7 +1886,7 @@ function OptionsPage() {
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 14, color: tk.ink }}>
                               <span>跨域名任务语义聚类与智能命名 (Cross-Domain Auto-Grouping)</span>
-                              <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: tk.surfaceMuted, color: tk.ink2, border: `1px solid ${tk.hairline}` }}>规划中</span>
+                              <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 'var(--radius-xs)', background: tk.surfaceMuted, color: tk.ink2, border: `1px solid ${tk.hairline}` }}>规划中</span>
                             </div>
                             <div style={{ fontSize: 12, color: tk.ink3 }}>
                               将跨站点的同一任务页面（Jira工单、GitLab代码、本地开发端口）自动归并为统一工作流标签组
@@ -1892,7 +1899,7 @@ function OptionsPage() {
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 14, color: tk.ink }}>
                               <span>晨间工作现场智能简报 (Morning Standup Briefing)</span>
-                              <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: tk.surfaceMuted, color: tk.ink2, border: `1px solid ${tk.hairline}` }}>规划中</span>
+                              <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 'var(--radius-xs)', background: tk.surfaceMuted, color: tk.ink2, border: `1px solid ${tk.hairline}` }}>规划中</span>
                             </div>
                             <div style={{ fontSize: 12, color: tk.ink3 }}>
                               每日早晨在新标签页生成一行未完任务与待审 PR 概览，支持一键断点续传
@@ -1905,7 +1912,7 @@ function OptionsPage() {
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 14, color: tk.ink }}>
                               <span>书签空闲时智能语义打标 (Smart Bookmarks Tagging)</span>
-                              <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: tk.surfaceMuted, color: tk.ink2, border: `1px solid ${tk.hairline}` }}>规划中</span>
+                              <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 'var(--radius-xs)', background: tk.surfaceMuted, color: tk.ink2, border: `1px solid ${tk.hairline}` }}>规划中</span>
                             </div>
                             <div style={{ fontSize: 12, color: tk.ink3 }}>
                               在浏览器空闲时自动分析根目录书签并打标；涉及遍历扫描，默认保持关闭以节约算力
@@ -1928,7 +1935,7 @@ function OptionsPage() {
                       }
                       style={{
                         marginBottom: 20,
-                        borderRadius: 12,
+                        borderRadius: 'var(--radius-lg)',
                         boxShadow: tk.shadowCard,
                       }}
                     >

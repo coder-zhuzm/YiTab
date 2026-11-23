@@ -101,6 +101,8 @@ import {
 } from '@/lib/palette-shortcut';
 import { ThemeModeButton } from '@/components/ThemeToggle';
 import { AdaptiveFavicon } from '@/components/AdaptiveFavicon';
+import { EmptyShortcutIcon, EmptyState, EmptyStateSwap } from '@/components/EmptyState';
+import { TruncatedText } from '@/components/TruncatedText';
 import { sendToBackground } from '@/lib/messaging';
 
 /** 「继续上次」最多展示的入口数 */
@@ -114,6 +116,33 @@ function hostnameOf(url: string): string {
   } catch {
     return url;
   }
+}
+
+/**
+ * 「继续上次」只展示页面标题：标题缺失或是原始 URL 时，
+ * 回退到地址末段/域名，绝不把整条 URL 当作可见文本。
+ */
+function displayTitleOf(title: string, url?: string): string {
+  const text = (title || '').trim();
+  if (text && !/^https?:\/\//i.test(text)) return text;
+  if (url) {
+    try {
+      const parsed = new URL(url);
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      const last = segments[segments.length - 1];
+      if (last) {
+        try {
+          return decodeURIComponent(last);
+        } catch {
+          return last;
+        }
+      }
+      return parsed.hostname;
+    } catch {
+      // fall through
+    }
+  }
+  return text || '未命名页面';
 }
 
 /**
@@ -183,6 +212,7 @@ export default function NewTabApp() {
   const [greetingInfo, setGreetingInfo] = useState(() => formatTimeGreeting());
 
   const [pinnedData, setPinnedData] = useState<PinnedData>({ groups: [], items: [] });
+  const [pinnedLoaded, setPinnedLoaded] = useState(false);
   const [activeGroupId, setActiveGroupId] = useState<string>('all');
 
   const [settings, setSettings] = useState<NewTabSettings>(DEFAULT_NEWTAB_SETTINGS);
@@ -201,6 +231,7 @@ export default function NewTabApp() {
   const [recommendations, setRecommendations] = useState<RecommendedStation[]>([]);
 
   const [bookmarkCards, setBookmarkCards] = useState<BookmarkFolderCard[]>([]);
+  const [bookmarksLoaded, setBookmarksLoaded] = useState(false);
   const [bookmarkSearch, setBookmarkSearch] = useState('');
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
   // 正在确认删除的磁贴。Popconfirm 渲染在 body 上，鼠标移过去时磁贴失去 :hover，
@@ -288,6 +319,7 @@ export default function NewTabApp() {
         getCachedRecommendations(),
       ]);
       setPinnedData(pData);
+      setPinnedLoaded(true);
       setSettings(nSettings);
       if (cachedRecs && cachedRecs.length > 0) {
         setRecommendations(cachedRecs);
@@ -346,7 +378,10 @@ export default function NewTabApp() {
       });
 
       // 4. 书签目录与会话快照
-      loadBookmarkCards().then((cards) => setBookmarkCards(cards));
+      loadBookmarkCards().then((cards) => {
+        setBookmarkCards(cards);
+        setBookmarksLoaded(true);
+      });
       getSnapshots().then((snaps) => {
         if (snaps && snaps.length > 0) setRecentSnapshot(snaps[0]);
       });
@@ -1022,6 +1057,14 @@ export default function NewTabApp() {
     }
   };
 
+  const handleOpenBookmarkManager = () => {
+    if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+      chrome.tabs.create({ url: 'chrome://bookmarks/' });
+    } else {
+      window.open('chrome://bookmarks/', '_blank');
+    }
+  };
+
   const handleOpenFolderAll = (card: BookmarkFolderCard) => {
     const pool = card.allItems || card.items;
     const validItems = pool.filter((it) => it.url && !it.isInvalid);
@@ -1179,6 +1222,13 @@ export default function NewTabApp() {
           colorBgContainer: isDark ? '#13161c' : '#ffffff',
           colorBgElevated: isDark ? '#13161c' : '#ffffff',
           colorBorder: isDark ? '#232833' : '#dfe4ec',
+          motionEaseOut: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          motionEaseInOut: 'cubic-bezier(0.42, 0, 0.58, 1)',
+          motionEaseOutCirc: 'cubic-bezier(0.22, 1, 0.36, 1)',
+          motionEaseInOutCirc: 'cubic-bezier(0.42, 0, 0.58, 1)',
+          motionEaseOutBack: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+          motionUnit: 0.05,
+          motionBase: 0.1,
           fontFamily:
             "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Segoe UI', 'Microsoft YaHei', sans-serif",
         },
@@ -1254,35 +1304,43 @@ export default function NewTabApp() {
                 {!searchInput && <span className="yt-kbd">/</span>}
               </div>
 
-              {isSearchFocused && searchSuggestions.length > 0 && (
+              {isSearchFocused && Boolean(searchInput.trim()) && (
                 <div className="yt-suggest">
-                  <div className="yt-suggest-hint">已开标签 · 快捷方式 · 书签（↑↓ 选择，回车直达）</div>
-                  {searchSuggestions.map((item, index) => {
-                    const kindLabel =
-                      item.kind === 'tab'
-                        ? '标签'
-                        : item.id.startsWith('pin_')
-                          ? '快捷'
-                          : '书签';
-                    return (
-                      <div
-                        key={item.id}
-                        className="yt-suggest-item"
-                        role="option"
-                        aria-selected={index === selectedSuggestionIndex}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => handleActivateSearchItem(item)}
-                        onMouseEnter={() => setSelectedSuggestionIndex(index)}
-                      >
-                        <span className={`yt-suggest-tag ${item.kind === 'tab' ? 'tab' : ''}`}>
-                          {kindLabel}
-                        </span>
-                        <span className="t">{item.title}</span>
-                        <span className="d">{item.domain}</span>
-                        <span className="d">{index === selectedSuggestionIndex ? '⏎' : '↗'}</span>
+                  {searchSuggestions.length > 0 ? (
+                    <>
+                      <div className="yt-suggest-hint">
+                        已开标签 · 快捷方式 · 书签（↑↓ 选择，回车直达）
                       </div>
-                    );
-                  })}
+                      {searchSuggestions.map((item, index) => {
+                        const kindLabel =
+                          item.kind === 'tab'
+                            ? '标签'
+                            : item.id.startsWith('pin_')
+                              ? '快捷'
+                              : '书签';
+                        return (
+                          <div
+                            key={item.id}
+                            className="yt-suggest-item"
+                            role="option"
+                            aria-selected={index === selectedSuggestionIndex}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => handleActivateSearchItem(item)}
+                            onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                          >
+                            <span className={`yt-suggest-tag ${item.kind === 'tab' ? 'tab' : ''}`}>
+                              {kindLabel}
+                            </span>
+                            <TruncatedText className="t" text={item.title} />
+                            <span className="d">{item.domain}</span>
+                            <span className="d">{index === selectedSuggestionIndex ? '⏎' : '↗'}</span>
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <EmptyState size="menu" title="无匹配结果" live />
+                  )}
                 </div>
               )}
             </div>
@@ -1390,14 +1448,22 @@ export default function NewTabApp() {
           </div>
 
           {/* ---------- 快捷方式磁贴 ---------- */}
-          {filteredItems.length === 0 ? (
-            <div className="yt-empty">
-              <p>「{groupChips.find((g) => g.id === activeGroupId)?.name}」还没有快捷方式。</p>
-              <button type="button" className="yt-btn" onClick={() => handleOpenItemModal()}>
+          <EmptyStateSwap
+            show={pinnedLoaded && filteredItems.length === 0}
+            size="card"
+            icon={<EmptyShortcutIcon />}
+            title="暂无快捷方式"
+            description="添加常用页面，下次打开时一键直达。"
+            action={
+              <button
+                type="button"
+                className="yt-btn yt-btn-ghost"
+                onClick={() => handleOpenItemModal()}
+              >
                 <PlusOutlined /> 添加快捷方式
               </button>
-            </div>
-          ) : (
+            }
+          >
             <div className="yt-tiles">
             {filteredItems.map((item) => {
               const hostname = hostnameOf(item.url);
@@ -1494,21 +1560,29 @@ export default function NewTabApp() {
               );
             })}
           </div>
-        )}
+          </EmptyStateSwap>
 
         {/* ---------- 继续上次 ---------- */}
-        {resumeEntries.length > 0 && (
-          <div className="yt-resume">
-            <span className="cap">继续上次</span>
+        <div className="yt-resume">
+          <span className="cap">继续上次</span>
+          <EmptyStateSwap
+            show={resumeEntries.length === 0}
+            size="row"
+            title="暂无上次会话"
+            description="打开几个页面后，这里会保留你的工作现场。"
+            live
+          >
             {resumeEntries.map((entry) => {
+              const displayTitle = entry.snapshot
+                ? entry.title
+                : displayTitleOf(entry.title, entry.url);
               const icon = entry.iconUrl
-                ? iconFor(entry.iconUrl, entry.title, 32)
+                ? iconFor(entry.iconUrl, displayTitle, 32)
                 : null;
               return (
                 <button
                   key={entry.key}
                   className="yt-chip"
-                  title={entry.url || entry.title}
                   onClick={() => {
                     if (entry.snapshot) handleRestoreSnapshot(entry.snapshot);
                     else if (entry.url) handleOpenUrl(entry.url);
@@ -1519,18 +1593,21 @@ export default function NewTabApp() {
                   ) : (
                     <ClockCircleOutlined style={{ fontSize: 12 }} />
                   )}
-                  <span>{entry.title}</span>
+                  <TruncatedText
+                    text={displayTitle}
+                    tooltip={entry.url || displayTitle}
+                  />
                   <span className="u">↗</span>
                 </button>
               );
             })}
-          </div>
-        )}
+          </EmptyStateSwap>
+        </div>
 
         </section>
 
         {/* ---------- 书签 ---------- */}
-        {bookmarkCards.length > 0 && (
+        {(bookmarkCards.length > 0 || bookmarksLoaded) && (
           <section
             className={`yt-bookmarks${settings.bookmarksExpanded ? ' is-expanded' : ''}`}
           >
@@ -1569,14 +1646,38 @@ export default function NewTabApp() {
               </button>
             </div>
 
-            {settings.bookmarksExpanded && (
+            {(settings.bookmarksExpanded || (bookmarksLoaded && bookmarkCards.length === 0)) && (
               <div className="yt-bm-panel">
-                {displayBookmarkCards.length === 0 ? (
-                  <div className="yt-empty" style={{ marginTop: 16 }}>
-                    <p>没有匹配「{bookmarkSearch}」的书签。</p>
-                  </div>
-                ) : (
-                  displayBookmarkCards.map((card) => {
+                <EmptyStateSwap
+                  show={displayBookmarkCards.length === 0}
+                  size="row"
+                  title={
+                    bookmarkSearch.trim()
+                      ? `没有匹配「${bookmarkSearch.trim()}」的书签`
+                      : '暂无书签'
+                  }
+                  action={
+                    bookmarkSearch.trim() ? (
+                      <button
+                        type="button"
+                        className="yt-empty-link"
+                        onClick={() => setBookmarkSearch('')}
+                      >
+                        清除筛选
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="yt-empty-link"
+                        onClick={handleOpenBookmarkManager}
+                      >
+                        打开书签管理器
+                      </button>
+                    )
+                  }
+                  live
+                >
+                  {displayBookmarkCards.map((card) => {
                     const isSearching = Boolean(bookmarkSearch.trim());
                     const isExpanded = expandedFolderIds.has(card.id);
                     const pool = card.allItems || card.items;
@@ -1649,7 +1750,7 @@ export default function NewTabApp() {
                                   <span className="fi">
                                     <AdaptiveFavicon src={icon.src} fallback={icon.fallback} isDark={isDark} />
                                   </span>
-                                  <span className="bt">{item.title}</span>
+                                  <TruncatedText className="bt" text={item.title} />
                                   <span className="bd">{item.domain}</span>
                                   <span className="bacts">
                                     <button
@@ -1742,8 +1843,8 @@ export default function NewTabApp() {
                         )}
                       </div>
                     );
-                  })
-                )}
+                  })}
+                </EmptyStateSwap>
               </div>
             )}
           </section>
@@ -1782,7 +1883,7 @@ export default function NewTabApp() {
                       }}
                     >
                       <span className="tag">{cand.source === 'tab' ? '标签' : '常用'}</span>
-                      <span className="name">{cand.title}</span>
+                      <TruncatedText className="name" text={cand.title} />
                     </button>
                   ))}
                 </div>

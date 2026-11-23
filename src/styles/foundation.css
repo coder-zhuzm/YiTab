@@ -1,0 +1,366 @@
+/* YiTab 设计地基：动效 / 排版 / 递进圆角
+   011 缓动与时长令牌 · 007 中英文排版 · 004 连续曲率
+   本文件由 newtab/style.css 与 precision-ui.css 在顶部引入。 */
+
+:root {
+  /* ---------- 011 缓动曲线 ---------- */
+  --ease-out: cubic-bezier(0, 0, 0.58, 1);
+  --ease-out-strong: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.42, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.42, 0, 0.58, 1);
+  --ease-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* 不支持 linear() 时退回强 ease-out */
+  --ease-spring: var(--ease-out-strong);
+
+  /* ---------- 011 时长令牌 ---------- */
+  --dur-fast: 120ms; /* 悬停 / 按压等即时反馈 */
+  --dur-sm-in: 180ms; /* 小 UI 入场（Toast、菜单、勾选） */
+  --dur-sm-out: 140ms; /* 小 UI 退场（比入场短） */
+  --dur-md-in: 300ms; /* 中 UI 入场（弹窗、抽屉） */
+  --dur-md-out: 240ms; /* 中 UI 退场 */
+  --dur-lg-in: 420ms; /* 大 / 全屏入场 */
+  --dur-lg-out: 320ms; /* 大 / 全屏退场 */
+
+  /* ---------- 004 递进圆角（4 的倍数） ---------- */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 32px;
+}
+
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --ease-spring: linear(
+      0,
+      0.32,
+      0.78,
+      1.04,
+      1.09,
+      1.06,
+      1.02,
+      1,
+      0.99,
+      0.99,
+      1
+    );
+  }
+}
+
+/* 004 连续曲率：支持时统一 superellipse；胶囊与圆形保持正圆。 */
+@supports (corner-shape: superellipse(1.25)) {
+  :where(*) {
+    corner-shape: superellipse(1.25);
+  }
+  :where(
+      .yt-live-dot,
+      .yt-tile .dot,
+      .yt-brand-dot,
+      .yt-round,
+      [style*='border-radius: 50%'],
+      [style*='border-radius: 999']
+    ) {
+    corner-shape: round;
+  }
+}
+
+/* ---------- 007 中英文排版 ---------- */
+body {
+  text-autospace: normal;
+}
+
+/* 按钮文字始终一行 */
+button,
+.ant-btn {
+  white-space: nowrap;
+}
+
+/* 时钟与所有计数使用等宽数字，数字变化时宽度不跳动 */
+b,
+strong,
+.ant-tag,
+.yt-tnum,
+.yt-clock,
+.yt-meta,
+.yt-status-item,
+[class*='count'],
+[class*='Count'],
+[class*='badge'],
+[class*='Badge'] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 标题按词/语义平衡断行；正文与描述优先美观断行 */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.ant-modal-title,
+.ant-card-head-title,
+.ant-typography h1,
+.ant-typography h2,
+.ant-typography h3,
+.ant-typography h4,
+.yt-clock,
+.yt-gchip,
+.yt-bm-title,
+.yt-bm-folder-head .fname,
+.yt-empty-title {
+  text-wrap: balance;
+  /* 中文按词断行；没有 BudouX 时不引新依赖 */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+p,
+.ant-typography,
+.ant-modal-body,
+.yt-date-pill,
+.yt-meta,
+.yt-empty-desc {
+  text-wrap: pretty;
+}
+
+/* 单行截断：文本本身溢出省略，父级 flex 子项需配合 min-width: 0 */
+.yt-truncate {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 022 空状态 ---------- */
+.yt-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--radius-sm);
+  text-align: center;
+  color: var(--ink-2);
+  animation: yt-empty-in var(--dur-md-in) var(--ease-out) both;
+}
+
+.yt-empty-state.is-leaving {
+  animation: yt-empty-out var(--dur-sm-in) var(--ease-in) both;
+  pointer-events: none;
+}
+
+.yt-empty-state[data-size='page'] {
+  min-height: 240px;
+  padding: 64px 24px;
+}
+
+.yt-empty-state[data-size='card'] {
+  margin: var(--radius-lg);
+  padding: 32px 24px;
+  border: 1px dashed var(--hairline-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.yt-empty-state[data-size='row'],
+.yt-empty-state[data-size='menu'] {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: var(--radius-sm);
+  text-align: left;
+  font-size: 12px;
+  color: var(--ink-3);
+  animation-duration: var(--dur-sm-in);
+}
+
+.yt-empty-state[data-size='row'] {
+  padding: 10px 14px;
+}
+
+.yt-empty-state[data-size='menu'] {
+  padding: 9px 8px;
+  font-size: 12.5px;
+}
+
+.yt-empty-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.yt-empty-state[data-size='page'] .yt-empty-icon,
+.yt-empty-state[data-size='card'] .yt-empty-icon {
+  width: 40px;
+  height: 40px;
+  color: var(--ink-3);
+}
+
+.yt-empty-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.yt-empty-state[data-size='row'] .yt-empty-title,
+.yt-empty-state[data-size='menu'] .yt-empty-title {
+  font-size: inherit;
+  font-weight: 400;
+  line-height: inherit;
+  color: inherit;
+}
+
+.yt-empty-desc {
+  margin: 0;
+  max-width: 42ch;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+.yt-empty-state[data-size='row'] .yt-empty-desc,
+.yt-empty-state[data-size='menu'] .yt-empty-desc {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.yt-empty-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--radius-sm);
+  margin-top: var(--radius-xs);
+}
+
+.yt-empty-state[data-size='row'] .yt-empty-actions,
+.yt-empty-state[data-size='menu'] .yt-empty-actions {
+  margin-top: 0;
+}
+
+/* 空状态幽灵按钮与行内链接 */
+.yt-btn.yt-btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--hairline-strong);
+}
+
+.yt-btn.yt-btn-ghost:hover {
+  background: var(--surface-hover);
+  border-color: var(--ink-3);
+}
+
+.yt-empty-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.yt-empty-link:hover {
+  text-decoration: underline;
+}
+
+/* 空状态与内容切换：内容到位时空状态原地淡出，内容 180ms 淡入顶上 */
+.yt-empty-swap {
+  position: relative;
+}
+
+.yt-empty-swap.is-swapping > .yt-empty-swap-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.yt-content-enter {
+  animation: yt-content-in var(--dur-sm-in) var(--ease-out) both;
+}
+
+@keyframes yt-empty-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes yt-empty-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: none;
+  }
+}
+
+@keyframes yt-content-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes yt-empty-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes yt-empty-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* 弹窗：32 外层 + 16 内边距 → 面板与按钮 16，标签 8 */
+.ant-modal .ant-modal-content {
+  border-radius: var(--radius-xl) !important;
+  padding: var(--radius-lg) !important;
+}
+
+.ant-modal .ant-modal-content .ant-btn {
+  border-radius: var(--radius-lg) !important;
+}
+
+.ant-modal .ant-modal-content .ant-tag {
+  border-radius: var(--radius-sm) !important;
+}
+
+/* 减弱动态效果：保留淡入淡出，移除位移。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+
+  .yt-empty-state {
+    animation-name: yt-empty-fade-in !important;
+    animation-duration: var(--dur-md-in) !important;
+  }
+
+  .yt-empty-state.is-leaving {
+    animation-name: yt-empty-fade-out !important;
+    animation-duration: var(--dur-sm-in) !important;
+  }
+}
