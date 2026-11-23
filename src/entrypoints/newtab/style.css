@@ -76,6 +76,8 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  /* 常驻滚动条槽：内容高度跨越视口时滚动条出现/消失不再让居中内容左右横移。 */
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -1032,7 +1034,45 @@ input {
   transform: rotate(180deg);
 }
 
+/* 展开/收起：面板常驻，grid 行高 0fr→1fr 平滑改变高度（内容不卸载）。 */
+.yt-bm-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-md-out) var(--ease-out-strong);
+}
+
+.yt-bm-collapse.is-expanded {
+  grid-template-rows: 1fr;
+  transition-duration: var(--dur-md-in);
+}
+
+.yt-bm-collapse > .yt-bm-panel {
+  min-height: 0;
+  overflow: hidden;
+  /* 收起动画结束后再隐藏，避免被裁掉的内容仍可聚焦/被读屏读到。 */
+  visibility: hidden;
+  transition: visibility 0s linear var(--dur-md-out);
+}
+
+.yt-bm-collapse.is-expanded > .yt-bm-panel {
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+/* 减弱动态效果：直接切换，不做高度动画。 */
+@media (prefers-reduced-motion: reduce) {
+  .yt-bm-collapse,
+  .yt-bm-collapse > .yt-bm-panel {
+    transition: none;
+  }
+}
+
 .yt-bm-panel {
+  padding: 0;
+}
+
+/* 内边距放在内层：外层作为 grid 裁切项可收缩到 0，不留残余高度。 */
+.yt-bm-panel-inner {
   padding: 6px 16px 16px;
 }
 

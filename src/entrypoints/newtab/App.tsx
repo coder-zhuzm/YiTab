@@ -754,10 +754,9 @@ export default function NewTabApp() {
   // 书签区展开/收起：即时生效并写回设置，下次打开沿用
   const handleToggleBookmarks = async () => {
     const next = !settings.bookmarksExpanded;
-    // 015：展开/收起属于视图切换，用 View Transitions 平滑过渡。
-    runViewTransition(() => {
-      setSettings((prev) => ({ ...prev, bookmarksExpanded: next }));
-    });
+    // 面板高度由 .yt-bm-collapse 的 grid-template-rows 过渡平滑过渡；
+    // 这里不再用 View Transition（整页快照会让高度一步到位，反而产生跳变）。
+    setSettings((prev) => ({ ...prev, bookmarksExpanded: next }));
     setSettings(await saveNewTabSettings({ bookmarksExpanded: next }));
   };
 
@@ -1178,6 +1177,11 @@ export default function NewTabApp() {
     () => bookmarkCards.reduce((n, c) => n + c.totalCount, 0),
     [bookmarkCards],
   );
+
+  // 书签面板常驻 DOM，用 CSS grid 行高做展开/收起动画；无书签时始终展示空状态。
+  const bookmarkPanelOpen = bookmarksLoaded
+    ? settings.bookmarksExpanded || bookmarkCards.length === 0
+    : settings.bookmarksExpanded;
 
   const toggleFolderExpand = (folderId: string) => {
     setExpandedFolderIds((prev) => {
@@ -1803,15 +1807,12 @@ export default function NewTabApp() {
               </button>
             </div>
 
-            {!bookmarksLoaded ? (
-              settings.bookmarksExpanded ? (
-                <div className="yt-bm-panel">
-                  <BookmarkListSkeleton />
-                </div>
-              ) : null
-            ) : (
-              (settings.bookmarksExpanded || bookmarkCards.length === 0) && (
+            <div className={`yt-bm-collapse${bookmarkPanelOpen ? ' is-expanded' : ''}`}>
               <div className="yt-bm-panel">
+                <div className="yt-bm-panel-inner">
+                {!bookmarksLoaded ? (
+                  <BookmarkListSkeleton />
+                ) : (
                 <EmptyStateSwap
                   show={displayBookmarkCards.length === 0}
                   size="row"
@@ -2009,9 +2010,10 @@ export default function NewTabApp() {
                     );
                   })}
                 </EmptyStateSwap>
+                )}
+                </div>
               </div>
-              )
-            )}
+            </div>
           </section>
 
         {/* ---------- 模态框 ---------- */}
