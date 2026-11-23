@@ -1,0 +1,538 @@
+/* P1 反馈与连续性样式
+   017 加载状态 · 016 Toast · 015 FLIP / View Transitions
+   所有缓动与时长均引用 foundation.css 中的 P0 令牌。 */
+
+/* ---------- 017 原地小 spinner ---------- */
+.yt-inline-spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.yt-spinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--hairline-strong);
+  border-top-color: var(--accent);
+  animation: yt-spin 700ms linear infinite;
+}
+
+@keyframes yt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- 017 骨架屏：贴合真实内容 + 1.2s shimmer ---------- */
+.yt-skel {
+  display: block;
+  border-radius: var(--radius-xs);
+  background-color: var(--surface-well);
+  background-image: linear-gradient(
+    100deg,
+    var(--surface-well) 20%,
+    var(--surface-hover) 42%,
+    var(--surface-well) 64%
+  );
+  background-size: 200% 100%;
+  animation: yt-shimmer var(--dur-shimmer) linear infinite;
+}
+
+@keyframes yt-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.yt-skeleton-tile {
+  pointer-events: none;
+}
+
+.yt-skeleton-tile .yt-skel-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+}
+
+.yt-skeleton-tile .yt-skel-label {
+  width: 64%;
+  height: 11px;
+  margin-top: 3px;
+}
+
+.yt-bm-skeleton {
+  padding-top: 8px;
+}
+
+.yt-bm-skel-folder {
+  padding-top: 14px;
+}
+
+.yt-bm-skel-folder + .yt-bm-skel-folder {
+  margin-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.yt-bm-skel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding-bottom: 6px;
+}
+
+.yt-bm-skel-head .yt-skel-folder {
+  width: 118px;
+  height: 11px;
+}
+
+.yt-bm-skel-head .yt-skel-count {
+  width: 22px;
+  height: 9px;
+}
+
+.yt-bm-skel-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 24px;
+}
+
+.yt-bm-skel-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  padding: 0 8px;
+  margin-left: -8px;
+}
+
+.yt-bm-skel-row .yt-skel-favicon {
+  width: 16px;
+  height: 16px;
+}
+
+.yt-bm-skel-row .yt-skel-title {
+  flex: 1 1 auto;
+  height: 10px;
+}
+
+.yt-bm-skel-row .yt-skel-domain {
+  flex: 0 0 auto;
+  width: 30%;
+  height: 9px;
+}
+
+/* ---------- 016 Toast：顶部居中 / 40px 高 / 16px 圆角 ---------- */
+.yt-toast-region {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.yt-toast {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px;
+  max-width: 100%;
+  padding: 0 12px 0 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-popover);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: auto;
+  transform-origin: top center;
+  animation: yt-toast-in var(--dur-toast-in) var(--ease-out) both;
+}
+
+.yt-toast.is-leaving {
+  animation: yt-toast-out var(--dur-toast-out) var(--ease-in) both;
+}
+
+.yt-toast-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.yt-toast-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.yt-toast[data-tone='success'] .yt-toast-dot {
+  background: var(--ok);
+}
+
+.yt-toast[data-tone='warning'] .yt-toast-dot {
+  background: var(--accent);
+}
+
+.yt-toast[data-tone='error'] .yt-toast-dot {
+  background: var(--danger);
+}
+
+.yt-toast-action {
+  flex: none;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-spring);
+}
+
+.yt-toast-action:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.yt-toast-action:active {
+  transform: scale(0.96);
+}
+
+/* 撤销倒计时圆环 */
+.yt-toast-ring {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
+.yt-toast-ring svg {
+  width: 16px;
+  height: 16px;
+  transform: rotate(-90deg);
+}
+
+.yt-toast-ring .track {
+  fill: none;
+  stroke: var(--hairline-strong);
+  stroke-width: 2;
+}
+
+.yt-toast-ring .meter {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 43.98;
+  stroke-dashoffset: 0;
+  animation: yt-toast-countdown var(--toast-duration, 6000ms) linear forwards;
+}
+
+@keyframes yt-toast-countdown {
+  to {
+    stroke-dashoffset: 43.98;
+  }
+}
+
+/* 进度型 Toast：底部 3px 进度条，只动 transform */
+.yt-toast[data-kind='progress'] {
+  padding-bottom: 2px;
+}
+
+.yt-toast-progress {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 4px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--surface-well);
+  overflow: hidden;
+}
+
+.yt-toast-progress > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform var(--dur-sm-in) var(--ease-out);
+}
+
+@keyframes yt-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.96);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes yt-toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+    filter: blur(4px);
+  }
+}
+
+/* ---------- 017 右上角进度 / 结果卡片：344px ---------- */
+.yt-progress-card {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 80;
+  width: 344px;
+  max-width: calc(100vw - 32px);
+  padding: 14px 14px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-popover);
+  animation: yt-progress-card-in var(--dur-md-in) var(--ease-out) both;
+}
+
+@keyframes yt-progress-card-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.yt-progress-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.yt-progress-icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.yt-progress-icon > svg {
+  font-size: 16px;
+}
+
+.yt-progress-card.is-success .yt-progress-icon {
+  color: var(--ok);
+}
+
+.yt-progress-card.is-error .yt-progress-icon {
+  color: var(--danger);
+}
+
+.yt-progress-card.is-cancelled .yt-progress-icon {
+  color: var(--ink-3);
+}
+
+.yt-progress-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.yt-progress-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.yt-progress-detail {
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.yt-progress-cancel {
+  flex: none;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-spring);
+}
+
+.yt-progress-cancel:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.yt-progress-cancel:active {
+  transform: scale(0.96);
+}
+
+.yt-progress-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.yt-progress-close:hover {
+  background: var(--surface-well);
+  color: var(--ink);
+}
+
+.yt-progress-bar {
+  position: relative;
+  height: 4px;
+  margin-top: 12px;
+  border-radius: 2px;
+  background: var(--surface-well);
+  overflow: hidden;
+}
+
+.yt-progress-bar > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform var(--dur-sm-in) var(--ease-out);
+}
+
+.yt-progress-card.is-success .yt-progress-bar > span {
+  background: var(--ok);
+}
+
+.yt-progress-card.is-error .yt-progress-bar > span {
+  background: var(--danger);
+}
+
+.yt-progress-bar.is-indeterminate > span {
+  width: 38%;
+  animation: yt-progress-indeterminate var(--dur-shimmer) var(--ease-in-out) infinite;
+}
+
+@keyframes yt-progress-indeterminate {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(280%);
+  }
+}
+
+.yt-progress-pct {
+  margin-top: 6px;
+  text-align: right;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+
+/* ---------- 015 分段控件指示条 ---------- */
+.yt-seg-indicator {
+  position: absolute;
+  top: var(--radius-xs);
+  bottom: var(--radius-xs);
+  left: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgba(17, 19, 24, 0.08),
+    0 0 0 1px var(--hairline);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+  will-change: transform;
+}
+
+.yt-seg-indicator.is-ready {
+  opacity: 1;
+}
+
+/* ---------- 015 View Transitions：视图切换 420ms，仅透明度 ---------- */
+::view-transition-group(root) {
+  animation-duration: var(--dur-lg-in);
+  animation-timing-function: var(--ease-out);
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur-lg-in);
+  animation-timing-function: var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yt-skel,
+  .yt-progress-bar.is-indeterminate > span {
+    animation: none;
+  }
+
+  ::view-transition-group(root),
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01ms !important;
+  }
+}

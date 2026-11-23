@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AppstoreOutlined,
   BookOutlined,
@@ -28,7 +28,6 @@ import {
   Form,
   Input,
   type InputRef,
-  message,
   Modal,
   Popconfirm,
   Select,
@@ -103,12 +102,27 @@ import { ThemeModeButton } from '@/components/ThemeToggle';
 import { AdaptiveFavicon } from '@/components/AdaptiveFavicon';
 import { EmptyShortcutIcon, EmptyState, EmptyStateSwap } from '@/components/EmptyState';
 import { TruncatedText } from '@/components/TruncatedText';
+import {
+  BookmarkListSkeleton,
+  DelayedSpinner,
+  ProgressCard,
+  ShortcutGridSkeleton,
+  useProgressTask,
+} from '@/components/Loading';
+import { SegmentedControl, type SegmentedControlOption } from '@/components/SegmentedControl';
+import { useToast } from '@/components/Toast';
+import { prefersReducedMotion, readCssDurationMs, readCssVariable, runViewTransition } from '@/lib/motion';
 import { sendToBackground } from '@/lib/messaging';
 
 /** 「继续上次」最多展示的入口数 */
 const RESUME_LIMIT = 3;
 /** 书签文件夹默认展示条数，超出折叠 */
 const BOOKMARK_PREVIEW_LIMIT = 5;
+
+const PROFILE_SEGMENTS: Array<SegmentedControlOption<ProfileMode>> = [
+  { id: 'work', label: '办公内网' },
+  { id: 'home', label: '个人' },
+];
 
 function hostnameOf(url: string): string {
   try {
@@ -203,6 +217,13 @@ function EngineGlyph({ id }: { id: string }) {
 
 export default function NewTabApp() {
   const { isDark, mode: themeMode, setMode: setThemeMode } = useThemeMode();
+  const toast = useToast();
+  // 超过 3s 的加载（如超大树书签）升级为右上角进度卡片。
+  const bookmarkTask = useProgressTask();
+
+  // 015 FLIP：切换分组 / 模式 / 排序前记录磁贴位置，DOM 更新后播放位移。
+  const tilesRef = useRef<HTMLDivElement>(null);
+  const tilePositionsRef = useRef<Map<string, DOMRect> | null>(null);
 
   // CSS 令牌由 data-theme 驱动；「跟随系统」已在 useThemeMode 内解析成 isDark。
   useEffect(() => {
@@ -232,6 +253,7 @@ export default function NewTabApp() {
 
   const [bookmarkCards, setBookmarkCards] = useState<BookmarkFolderCard[]>([]);
   const [bookmarksLoaded, setBookmarksLoaded] = useState(false);
+  const [resumeLoaded, setResumeLoaded] = useState(false);
   const [bookmarkSearch, setBookmarkSearch] = useState('');
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
   // 正在确认删除的磁贴。Popconfirm 渲染在 body 上，鼠标移过去时磁贴失去 :hover，
@@ -378,13 +400,24 @@ export default function NewTabApp() {
       });
 
       // 4. 书签目录与会话快照
-      loadBookmarkCards().then((cards) => {
-        setBookmarkCards(cards);
-        setBookmarksLoaded(true);
-      });
-      getSnapshots().then((snaps) => {
-        if (snaps && snaps.length > 0) setRecentSnapshot(snaps[0]);
-      });
+      // 017：书签布局已知，先用骨架屏；超过 3s 才升级为右上角可取消进度卡片。
+      void bookmarkTask
+        .run(
+          { title: '正在读取书签', detail: '解析书签目录…' },
+          async (context) => {
+            const cards = await loadBookmarkCards();
+            if (!context.cancelled) setBookmarkCards(cards);
+            setBookmarksLoaded(true);
+            return `${cards.length} 个书签目录`;
+          },
+        )
+        .catch(() => setBookmarksLoaded(true));
+      getSnapshots()
+        .then((snaps) => {
+          if (snaps && snaps.length > 0) setRecentSnapshot(snaps[0]);
+        })
+        .catch(() => undefined)
+        .finally(() => setResumeLoaded(true));
 
       // 5. 端侧 AI 配置
       const aiSet = await getAiSettings();
@@ -693,21 +726,22 @@ export default function NewTabApp() {
 
   const handleToggleProfile = async (newProfile: ProfileMode) => {
     const updated = await saveNewTabSettings({ profile: newProfile });
-    setSettings(updated);
     const targetEngineId =
       newProfile === 'home'
         ? updated.homeEngineId || updated.defaultEngineId
         : updated.workEngineId || updated.defaultEngineId;
-    setActiveEngine(SEARCH_ENGINES.find((e) => e.id === targetEngineId) || SEARCH_ENGINES[0]);
 
     // 模式切换时自适应分组
-    if (newProfile === 'home') {
-      const homeGroup = pinnedData.groups.find((g) => /生活|个人|常用|home|life/i.test(g.name));
-      if (homeGroup) setActiveGroupId(homeGroup.id);
-    } else {
-      const workGroup = pinnedData.groups.find((g) => /工作|开发|技术|work|dev/i.test(g.name));
-      if (workGroup) setActiveGroupId(workGroup.id);
-    }
+    const groupPattern = newProfile === 'home' ? /生活|个人|常用|home|life/i : /工作|开发|技术|work|dev/i;
+    const targetGroup = pinnedData.groups.find((g) => groupPattern.test(g.name));
+
+    // 015：先记录磁贴旧位置，再用 View Transitions 提交视图切换。
+    captureTilePositions();
+    runViewTransition(() => {
+      setSettings(updated);
+      setActiveEngine(SEARCH_ENGINES.find((e) => e.id === targetEngineId) || SEARCH_ENGINES[0]);
+      if (targetGroup) setActiveGroupId(targetGroup.id);
+    });
   };
 
   const handleSelectEngine = async (engine: SearchEngine) => {
@@ -720,7 +754,10 @@ export default function NewTabApp() {
   // 书签区展开/收起：即时生效并写回设置，下次打开沿用
   const handleToggleBookmarks = async () => {
     const next = !settings.bookmarksExpanded;
-    setSettings((prev) => ({ ...prev, bookmarksExpanded: next }));
+    // 015：展开/收起属于视图切换，用 View Transitions 平滑过渡。
+    runViewTransition(() => {
+      setSettings((prev) => ({ ...prev, bookmarksExpanded: next }));
+    });
     setSettings(await saveNewTabSettings({ bookmarksExpanded: next }));
   };
 
@@ -733,6 +770,49 @@ export default function NewTabApp() {
     if (activeGroupId === 'all') return list;
     return list.filter((i) => i.groupId === activeGroupId);
   }, [pinnedData, activeGroupId, settings.profile]);
+
+  /** 015 FLIP 第一步：DOM 更新前记录每个磁贴的屏幕位置。 */
+  const captureTilePositions = useCallback(() => {
+    const root = tilesRef.current;
+    if (!root) return;
+    const positions = new Map<string, DOMRect>();
+    root.querySelectorAll<HTMLElement>('[data-tile-id]').forEach((element) => {
+      const id = element.dataset.tileId;
+      if (id) positions.set(id, element.getBoundingClientRect());
+    });
+    tilePositionsRef.current = positions;
+  }, []);
+
+  /** 015 FLIP 第三步：计算反位移并用 transform 播放回原位，不触发布局属性。 */
+  useLayoutEffect(() => {
+    const previous = tilePositionsRef.current;
+    if (!previous) return;
+    tilePositionsRef.current = null;
+
+    const root = tilesRef.current;
+    if (!root || prefersReducedMotion()) return;
+
+    const duration = readCssDurationMs('--dur-lg-in', 420);
+    const easing = readCssVariable('--ease-out-strong', 'cubic-bezier(0.22, 1, 0.36, 1)');
+
+    root.querySelectorAll<HTMLElement>('[data-tile-id]').forEach((element) => {
+      const id = element.dataset.tileId;
+      if (!id) return;
+      const before = previous.get(id);
+      if (!before) return;
+      const after = element.getBoundingClientRect();
+      const dx = before.left - after.left;
+      const dy = before.top - after.top;
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+      element.animate(
+        [
+          { transform: `translate3d(${dx}px, ${dy}px, 0)` },
+          { transform: 'translate3d(0, 0, 0)' },
+        ],
+        { duration, easing },
+      );
+    });
+  }, [filteredItems]);
 
   // 「继续上次」：深层路由胶囊优先，其次会话快照；个人模式过滤内网
   const resumeEntries = useMemo(() => {
@@ -869,34 +949,56 @@ export default function NewTabApp() {
     const res = await addPinnedItemIfAbsent({ title: bm.title, url: bm.url, groupId });
     setPinnedData(await getPinnedData());
     if (res.added) {
-      messageApi.success(`已固定「${res.item.title}」到「${res.groupName}」`);
+      toast.status(`已固定「${res.item.title}」到「${res.groupName}」`, { tone: 'success' });
     } else {
-      messageApi.info(`「${res.item.title}」已在工作台「${res.groupName}」中`);
+      toast.status(`「${res.item.title}」已在工作台「${res.groupName}」中`);
     }
   };
 
-  // 书签目录一键导入为工作台分组
+  // 书签目录一键导入为工作台分组（016 进度型 Toast 展示逐条进度）
   const handleImportFolderAsGroup = async (card: BookmarkFolderCard) => {
     const pool = (card.allItems || card.items).filter(
       (it) => it.url && !it.isInvalid && /^https?:\/\//i.test(it.url),
     );
     if (pool.length === 0) {
-      messageApi.warning('该目录下没有可导入的有效网页书签');
+      toast.status('该目录下没有可导入的有效网页书签', { tone: 'warning' });
       return;
     }
-    const existingGroup = pinnedData.groups.find((g) => g.name === card.name);
-    const group = existingGroup ?? (await addPinnedGroup(card.name));
-    let addedCount = 0;
-    for (const bm of pool.slice(0, 24)) {
-      const res = await addPinnedItemIfAbsent({ title: bm.title, url: bm.url, groupId: group.id });
-      if (res.added) addedCount++;
-    }
-    setPinnedData(await getPinnedData());
-    setActiveGroupId(group.id);
-    if (addedCount > 0) {
-      messageApi.success(`已将「${card.name}」的 ${addedCount} 个书签导入到工作台`);
-    } else {
-      messageApi.info(`「${card.name}」中的书签均已在工作台`);
+
+    const progressId = toast.progress(`正在导入「${card.name}」`, 0);
+    try {
+      const existingGroup = pinnedData.groups.find((g) => g.name === card.name);
+      const group = existingGroup ?? (await addPinnedGroup(card.name));
+      const batch = pool.slice(0, 24);
+      let addedCount = 0;
+
+      for (let index = 0; index < batch.length; index++) {
+        const bm = batch[index];
+        const res = await addPinnedItemIfAbsent({
+          title: bm.title,
+          url: bm.url,
+          groupId: group.id,
+        });
+        if (res.added) addedCount++;
+        toast.update(progressId, {
+          message: `正在导入「${card.name}」 ${index + 1}/${batch.length}`,
+          progress: (index + 1) / batch.length,
+        });
+      }
+
+      setPinnedData(await getPinnedData());
+      setActiveGroupId(group.id);
+      toast.dismiss(progressId);
+      if (addedCount > 0) {
+        toast.status(`已将「${card.name}」的 ${addedCount} 个书签导入到工作台`, {
+          tone: 'success',
+        });
+      } else {
+        toast.status(`「${card.name}」中的书签均已在工作台`);
+      }
+    } catch {
+      toast.dismiss(progressId);
+      toast.status('导入书签失败，请重试', { tone: 'error' });
     }
   };
 
@@ -952,10 +1054,38 @@ export default function NewTabApp() {
     }
   };
 
-  /** 删除快捷方式。确认交给调用处的 Popconfirm，鼠标无需离开按钮 */
+  /**
+   * 删除快捷方式：017 可逆操作先乐观移除，失败回滚；
+   * 成功后给出带倒计时圆环的「撤销」Toast（016）。
+   */
   const handleDeleteItem = async (item: PinnedItem) => {
-    await deletePinnedItem(item.id);
-    setPinnedData(await getPinnedData());
+    const snapshot = pinnedData;
+    setPinnedData({ ...snapshot, items: snapshot.items.filter((i) => i.id !== item.id) });
+    try {
+      await deletePinnedItem(item.id);
+    } catch {
+      setPinnedData(snapshot);
+      toast.status('删除失败，已恢复快捷方式', { tone: 'error' });
+      return;
+    }
+
+    toast.action(`已删除「${item.title}」`, {
+      actionLabel: '撤销',
+      onAction: async () => {
+        try {
+          await addPinnedItem({
+            title: item.title,
+            url: item.url,
+            groupId: item.groupId,
+            customIcon: item.customIcon,
+          });
+          setPinnedData(await getPinnedData());
+          toast.status('已恢复快捷方式', { tone: 'success' });
+        } catch {
+          toast.status('撤销失败，请重新添加', { tone: 'error' });
+        }
+      },
+    });
   };
 
   const handleOpenGroupModal = (group?: { id: string; name: string }) => {
@@ -974,7 +1104,7 @@ export default function NewTabApp() {
       const values = await groupForm.validateFields();
       if (editingGroup) {
         await renamePinnedGroup(editingGroup.id, values.name);
-        messageApi.success('分组已重命名');
+        toast.status('分组已重命名', { tone: 'success' });
       } else {
         await addPinnedGroup(values.name);
       }
@@ -989,7 +1119,7 @@ export default function NewTabApp() {
 
   const handleDeleteGroup = (group: { id: string; name: string }) => {
     if (pinnedData.groups.length <= 1) {
-      messageApi.warning('至少需要保留一个分组');
+      toast.status('至少需要保留一个分组', { tone: 'warning' });
       return;
     }
     modal.confirm({
@@ -1002,20 +1132,41 @@ export default function NewTabApp() {
         await deletePinnedGroup(group.id);
         setPinnedData(await getPinnedData());
         if (activeGroupId === group.id) setActiveGroupId('all');
-        messageApi.success('分组已删除');
+        toast.status('分组已删除', { tone: 'success' });
       },
     });
   };
 
+  /**
+   * 拖拽排序：017 可逆操作先本地移动（配合 FLIP 连续过渡），
+   * 持久化失败再回滚并提示。
+   */
   const handleDropTile = async (targetId: string) => {
     if (!draggingItemId || draggingItemId === targetId) return;
-    await reorderPinnedItems(draggingItemId, targetId);
-    setPinnedData(await getPinnedData());
+
+    const draggedId = draggingItemId;
+    const snapshot = pinnedData;
+    const fromIndex = snapshot.items.findIndex((item) => item.id === draggedId);
+    const toIndex = snapshot.items.findIndex((item) => item.id === targetId);
     setDraggingItemId(null);
     setDragOverItemId(null);
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    const nextItems = [...snapshot.items];
+    const [moved] = nextItems.splice(fromIndex, 1);
+    nextItems.splice(toIndex, 0, moved);
+    captureTilePositions();
+    setPinnedData({ ...snapshot, items: nextItems });
+
+    try {
+      await reorderPinnedItems(draggedId, targetId);
+      setPinnedData(await getPinnedData());
+    } catch {
+      setPinnedData(snapshot);
+      toast.status('排序保存失败，已回滚', { tone: 'error' });
+    }
   };
 
-  const [messageApi, messageContextHolder] = message.useMessage();
   const [modal, modalContextHolder] = Modal.useModal();
 
   const displayBookmarkCards = useMemo(
@@ -1041,7 +1192,7 @@ export default function NewTabApp() {
     if (!url) return;
     if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
       chrome.tabs.create({ url, active: false });
-      messageApi.success('已在后台标签页打开');
+      toast.status('已在后台标签页打开', { tone: 'success' });
     } else {
       window.open(url, '_blank');
     }
@@ -1051,9 +1202,9 @@ export default function NewTabApp() {
     if (!url) return;
     try {
       await navigator.clipboard.writeText(url);
-      messageApi.success('已复制网址到剪贴板');
+      toast.status('已复制网址到剪贴板', { tone: 'success' });
     } catch {
-      messageApi.error('复制网址失败');
+      toast.status('复制网址失败', { tone: 'error' });
     }
   };
 
@@ -1069,17 +1220,17 @@ export default function NewTabApp() {
     const pool = card.allItems || card.items;
     const validItems = pool.filter((it) => it.url && !it.isInvalid);
     if (validItems.length === 0) {
-      messageApi.warning('该目录下无有效网址');
+      toast.status('该目录下无有效网址', { tone: 'warning' });
       return;
     }
     if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
       for (const it of validItems) {
         chrome.tabs.create({ url: it.url, active: false });
       }
-      messageApi.success(`已在后台打开该目录下全部 ${validItems.length} 个书签`);
+      toast.status(`已在后台打开该目录下全部 ${validItems.length} 个书签`, { tone: 'success' });
     } else {
       validItems.slice(0, 5).forEach((it) => window.open(it.url, '_blank'));
-      messageApi.success(`已打开 ${Math.min(validItems.length, 5)} 个书签`);
+      toast.status(`已打开 ${Math.min(validItems.length, 5)} 个书签`, { tone: 'success' });
     }
   };
 
@@ -1092,10 +1243,10 @@ export default function NewTabApp() {
           title: String(values.title ?? '').trim(),
           url: String(values.url ?? '').trim(),
         });
-        messageApi.success('书签修改成功');
+        toast.status('书签修改成功', { tone: 'success' });
         setBookmarkCards(await loadBookmarkCards());
       } else {
-        messageApi.info('当前环境不支持直接更新 Chrome 书签');
+        toast.status('当前环境不支持直接更新 Chrome 书签');
       }
       setEditingBookmark(null);
     } catch {
@@ -1113,10 +1264,10 @@ export default function NewTabApp() {
       onOk: async () => {
         if (typeof chrome !== 'undefined' && chrome.bookmarks?.remove) {
           await chrome.bookmarks.remove(item.id);
-          messageApi.success('书签已删除');
+          toast.status('书签已删除', { tone: 'success' });
           setBookmarkCards(await loadBookmarkCards());
         } else {
-          messageApi.info('当前环境不支持直接删除 Chrome 书签');
+          toast.status('当前环境不支持直接删除 Chrome 书签');
         }
       },
     });
@@ -1128,12 +1279,12 @@ export default function NewTabApp() {
       for (const tab of snapshot.tabs) {
         if (tab.url) chrome.tabs.create({ url: tab.url, active: false });
       }
-      messageApi.success(`已在后台开启 ${snapshot.tabs.length} 个标签页`);
+      toast.status(`已在后台开启 ${snapshot.tabs.length} 个标签页`, { tone: 'success' });
     } else {
       snapshot.tabs.slice(0, 5).forEach((t) => {
         if (t.url) window.open(t.url, '_blank');
       });
-      messageApi.success('已恢复会话页面');
+      toast.status('已恢复会话页面', { tone: 'success' });
     }
   };
 
@@ -1234,8 +1385,8 @@ export default function NewTabApp() {
         },
       }}
     >
-      {messageContextHolder}
       {modalContextHolder}
+      <ProgressCard controller={bookmarkTask} />
       <div className="yt-shell">
         {/* ---------- 顶部：时钟 / 模式 / 搜索 / 设置 ---------- */}
         <header className="yt-top">
@@ -1345,22 +1496,13 @@ export default function NewTabApp() {
               )}
             </div>
 
-            <div className="yt-seg" role="group" aria-label="模式">
-              <button
-                type="button"
-                aria-pressed={settings.profile === 'work'}
-                onClick={() => void handleToggleProfile('work')}
-              >
-                办公内网
-              </button>
-              <button
-                type="button"
-                aria-pressed={settings.profile === 'home'}
-                onClick={() => void handleToggleProfile('home')}
-              >
-                个人
-              </button>
-            </div>
+            <SegmentedControl
+              className="yt-seg"
+              ariaLabel="模式"
+              value={settings.profile}
+              options={PROFILE_SEGMENTS}
+              onChange={(nextProfile) => void handleToggleProfile(nextProfile)}
+            />
 
             <ThemeModeButton
               mode={themeMode}
@@ -1398,7 +1540,12 @@ export default function NewTabApp() {
                   className="yt-gchip"
                   aria-current={activeGroupId === g.id}
                   title={g.id === 'all' ? '全部快捷方式' : '右键可重命名或删除分组'}
-                  onClick={() => setActiveGroupId(g.id)}
+                  onClick={() => {
+                    if (activeGroupId === g.id) return;
+                    // 015：切换分组前记录旧位置，磁贴接下来用 FLIP 移动而非闪现。
+                    captureTilePositions();
+                    setActiveGroupId(g.id);
+                  }}
                 >
                   {g.name}
                   <span className="n">{g.count}</span>
@@ -1464,7 +1611,8 @@ export default function NewTabApp() {
               </button>
             }
           >
-            <div className="yt-tiles">
+            {pinnedLoaded ? (
+              <div className="yt-tiles" ref={tilesRef}>
             {filteredItems.map((item) => {
               const hostname = hostnameOf(item.url);
               const isIntranet = isIntranetHost(hostname);
@@ -1475,6 +1623,7 @@ export default function NewTabApp() {
               return (
                 <div
                   key={item.id}
+                  data-tile-id={item.id}
                   className={`yt-tile${draggingItemId === item.id ? ' dragging' : ''}${dragOverItemId === item.id && draggingItemId !== item.id ? ' drag-over' : ''}`}
                   title={`${item.title}\n${item.url}\n(可拖拽调整排序)`}
                   role="link"
@@ -1559,12 +1708,18 @@ export default function NewTabApp() {
                 </div>
               );
             })}
-          </div>
+              </div>
+            ) : (
+              <ShortcutGridSkeleton />
+            )}
           </EmptyStateSwap>
 
         {/* ---------- 继续上次 ---------- */}
         <div className="yt-resume">
           <span className="cap">继续上次</span>
+          {!resumeLoaded && resumeEntries.length === 0 ? (
+            <DelayedSpinner active label="正在读取上次工作现场" />
+          ) : (
           <EmptyStateSwap
             show={resumeEntries.length === 0}
             size="row"
@@ -1602,20 +1757,22 @@ export default function NewTabApp() {
               );
             })}
           </EmptyStateSwap>
+          )}
         </div>
 
         </section>
 
         {/* ---------- 书签 ---------- */}
-        {(bookmarkCards.length > 0 || bookmarksLoaded) && (
-          <section
-            className={`yt-bookmarks${settings.bookmarksExpanded ? ' is-expanded' : ''}`}
-          >
-            <div className="yt-bm-head">
-              <span className="yt-bm-title">
-                <BookOutlined /> 书签
-                <span className="n">{totalBookmarkCount} 项</span>
+        <section
+          className={`yt-bookmarks${settings.bookmarksExpanded ? ' is-expanded' : ''}`}
+        >
+          <div className="yt-bm-head">
+            <span className="yt-bm-title">
+              <BookOutlined /> 书签
+              <span className="n">
+                {bookmarksLoaded ? `${totalBookmarkCount} 项` : '读取中…'}
               </span>
+            </span>
               <label className="yt-bm-search">
                 <SearchOutlined style={{ fontSize: 12 }} />
                 <input
@@ -1646,7 +1803,14 @@ export default function NewTabApp() {
               </button>
             </div>
 
-            {(settings.bookmarksExpanded || (bookmarksLoaded && bookmarkCards.length === 0)) && (
+            {!bookmarksLoaded ? (
+              settings.bookmarksExpanded ? (
+                <div className="yt-bm-panel">
+                  <BookmarkListSkeleton />
+                </div>
+              ) : null
+            ) : (
+              (settings.bookmarksExpanded || bookmarkCards.length === 0) && (
               <div className="yt-bm-panel">
                 <EmptyStateSwap
                   show={displayBookmarkCards.length === 0}
@@ -1846,9 +2010,9 @@ export default function NewTabApp() {
                   })}
                 </EmptyStateSwap>
               </div>
+              )
             )}
           </section>
-        )}
 
         {/* ---------- 模态框 ---------- */}
         <Modal

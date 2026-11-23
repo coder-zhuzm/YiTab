@@ -1,4 +1,5 @@
 @import '../../styles/foundation.css';
+@import '../../styles/p1-feedback.css';
 
 /* YiTab 工作台 —— Precision Slate 设计令牌与版式
    精密冷灰/石墨表面层级 + 1px 结构发丝线 + 单一钴蓝信号色。
@@ -398,9 +399,12 @@ input {
   transform: scale(0.96);
 }
 
-/* 模式分段控件：外层 9px = 内层 6px + padding 3px */
+/* 模式分段控件：外层 9px = 内层 6px + padding 3px
+   015：按钮等宽，白色指示条由 SegmentedControl 以 transform 滑动。 */
 .yt-seg {
+  position: relative;
   display: inline-flex;
+  align-items: center;
   padding: var(--radius-xs);
   background: var(--surface-well);
   border: 1px solid var(--hairline);
@@ -410,8 +414,10 @@ input {
 
 .yt-seg button {
   position: relative;
+  z-index: 1;
+  width: 74px;
   height: 32px;
-  padding: 0 11px;
+  padding: 0;
   font-size: 12px;
   font-weight: 500;
   color: var(--ink-2);
@@ -420,7 +426,7 @@ input {
   border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-sm-in) var(--ease-spring);
+  transition: color var(--dur-fast) var(--ease-out), transform var(--dur-sm-in) var(--ease-spring);
 }
 
 .yt-seg button::after {
@@ -438,10 +444,10 @@ input {
 }
 
 .yt-seg button[aria-pressed='true'] {
-  background: var(--surface);
+  background: transparent;
   color: var(--ink);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(17, 19, 24, 0.08), 0 0 0 1px var(--hairline);
+  box-shadow: none;
 }
 
 /* ---------- 工作台主甲板 ---------- */

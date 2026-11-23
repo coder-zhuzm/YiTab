@@ -20,6 +20,9 @@
   --dur-md-out: 240ms; /* 中 UI 退场 */
   --dur-lg-in: 420ms; /* 大 / 全屏入场 */
   --dur-lg-out: 320ms; /* 大 / 全屏退场 */
+  --dur-toast-in: 500ms; /* P1 · Toast 入场 */
+  --dur-toast-out: 220ms; /* P1 · Toast 离场 */
+  --dur-shimmer: 1200ms; /* P1 · 骨架屏扫光 */
 
   /* ---------- 004 递进圆角（4 的倍数） ---------- */
   --radius-xs: 4px;

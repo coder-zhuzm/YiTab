@@ -8,6 +8,17 @@
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-23
+
+### ✨ 新增功能 (Features)
+
+- **设计地基 P0**：新增 `src/styles/foundation.css`，集中定义缓动曲线 token（ease-out / ease-out-strong / ease-in / ease-in-out / overshoot / spring）、时长 token 与圆角 token 阶梯（xs 4 / sm 8 / md 12 / lg 16 / xl 32，内圆角 = 外圆角 − 间距）；`corner-shape: superellipse(1.25)` 连续曲率（不支持时自动回落）；全站 transition 改用 token，只动画 transform 与 opacity。
+- **中英文排版**：时钟与计数加等宽数字（tabular-nums）；标题 text-wrap: balance、正文 text-wrap: pretty；按钮文字不换行；长文本截断（min-width: 0 + 省略号，仅真被截断时悬停 tooltip）；中文 text-autospace；「继续上次」显示页面标题、悬停看完整地址。
+- **空状态组件**：新增 `EmptyState`（page/card/row/menu 四级）与 `TruncatedText`；空分组、空书签、无上次会话、命令面板无结果均显示空状态而非隐藏；300ms 淡入 + 6px 上移，减弱动态时只淡入。
+- **加载状态**：新增 `Loading` 组件；300ms 内不显示加载器；0.3–3s 原地 spinner（延迟 300ms、最少显示 500ms）；已知布局用骨架屏（1.2s shimmer）；超 3s 右上角 344px 进度卡片，可取消，完成后转为结果卡片；可逆操作乐观更新。
+- **Toast**：新增 `Toast` 组件（状态型 / 操作型 / 进度型），顶部居中、40px 高、16px 圆角；入场 500ms（上方 10px + 96% 缩放 + 8px 模糊）、离场 220ms；撤销型带倒计时圆环。
+- **界面连续性**：新增 `SegmentedControl`（指示条拉伸落位）与 `motion` 工具（View Transitions API，不支持自动回落）；分组切换快捷方式 FLIP 移动；Ant Design 动效 token 对齐 P0。
+
 ## [2.0.3] - 2026-11-22
 
 ### 🐛 问题修复 (Bug Fixes)
